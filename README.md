@@ -1,0 +1,93 @@
+# CamHub — Unified Camera Monitor
+
+A local-first, privacy-focused dashboard for viewing mixed-brand IP cameras via local streaming adapters (such as `V380Decoder`). CamHub runs completely within your Local Area Network (LAN), never transmits camera credentials over the internet, and does not require third-party cloud accounts.
+
+---
+
+## 📷 Integrated Cameras
+
+### 1. V380 Pro — Kamera 1 (Utama / Indoor)
+- **Device Protocol:** LAN P2P decoded locally via `V380Decoder`
+- **Decoder HTTP Port:** `8080`
+- **Live Stream (MJPEG):** `http://192.168.100.11:8080/stream.mjpg`
+- **Snapshot Endpoint:** `http://192.168.100.11:8080/snapshot`
+
+### 2. V380 Pro — Garasi
+- **Device IP:** `192.168.100.4` (Device ID: `97357757`)
+- **Decoder HTTP Port:** `8081`
+- **Live Stream (MJPEG):** `http://192.168.100.11:8081/stream.mjpg`
+- **Snapshot Endpoint:** `http://192.168.100.11:8081/snapshot`
+
+### 3. O Kam Pro — Kamera 3 (Pending Protocol)
+- **Status:** Adapter Pending
+- **Note:** Protocol (RTSP / ONVIF / MJPEG) is pending verification on LAN. The dashboard structure is already prepared; you can configure its stream URL once verified without modifying the source code.
+
+---
+
+## 🚀 How to Run CamHub
+
+### Step 1: Ensure Local Decoders are Running
+
+Both cameras require their respective local decoder instances to remain running in PowerShell/Terminal windows on this laptop:
+
+#### Start Decoder for Kamera 1 (Port 8080):
+```powershell
+dotnet run -- --id DEVICE_ID_1 `
+  --username "CAMERA_USER" `
+  --password "CAMERA_PASSWORD" `
+  --ip 192.168.100.x --port 8800 `
+  --source lan --output rtsp `
+  --quality sd --enable-api `
+  --http-port 8080 --rtsp-port 8554 --debug
+```
+
+#### Start Decoder for Kamera 2 — Garasi (Port 8081):
+```powershell
+dotnet run -- --id 97357757 `
+  --username "garasi" `
+  --password "CAMERA_PASSWORD" `
+  --ip 192.168.100.4 --port 8800 `
+  --source lan --output rtsp `
+  --quality sd --enable-api `
+  --http-port 8081 --rtsp-port 8555 --debug
+```
+
+### Step 2: Serve the Dashboard
+
+Open PowerShell in this project folder (`C:\DaffaP\Project df\CamHUB`):
+
+```powershell
+python -m http.server 3000
+```
+
+### Step 3: Open in Browser
+
+Open Google Chrome or any modern browser and navigate to:
+```
+http://127.0.0.1:3000
+```
+*(or `http://localhost:3000`)*
+
+---
+
+## 🔍 How to Test Both Cameras from the Dashboard
+
+1. **Check Camera 2 (Garasi):**
+   - With the port 8081 decoder running, the second card will immediately show the green `● LIVE · Connected` status badge, display a `● LIVE` overlay indicator, and render the live video feed.
+2. **Check Camera 1 (Kamera 1):**
+   - If the port 8080 decoder is not yet running, the card will display `● No Signal / Offline` and a clear diagnostic message: *"Cannot reach local decoder on port :8080"*.
+   - Start the decoder on port 8080 in a terminal.
+   - Click **"↻ Retry Connection"** on the card or **"↻ Refresh feeds"** in the top navigation bar.
+   - The card will transition to `Connecting…` and then directly to `Live · Connected`.
+3. **Check Camera 3 (O Kam Pro):**
+   - Displays `Not Configured` with a prompt to set up when its protocol is verified.
+   - Click **"⚙ Configure"** to set its stream URL whenever ready.
+
+---
+
+## 🔒 Security Best Practices
+
+- **Zero Credentials Stored:** CamHub never stores or logs camera usernames or passwords. Passwords are used only in local decoder terminal flags.
+- **LAN-Only Streaming:** All streams operate strictly within your private subnet (`192.168.100.x`).
+- **No Internet Port Forwarding:** Do not expose ports 8080, 8081, or RTSP ports to the public internet. For remote access, use a secure VPN such as WireGuard or Tailscale.
+- **Mixed Content Avoidance:** CamHub is served via local HTTP (`http://127.0.0.1:3000`), allowing standard browsers to load local HTTP MJPEG streams seamlessly without mixed-content blocks.
