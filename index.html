@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b1020" />
+  <title>CamHub — Unified Camera Monitor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">C</div>
+        <div><strong>CamHub</strong><span>UNIFIED MONITOR</span></div>
+      </div>
+      <nav aria-label="Main navigation">
+        <a class="nav-link active" href="#overview"><span class="nav-icon">◫</span> Overview</a>
+        <a class="nav-link" href="#cameras"><span class="nav-icon">▣</span> Cameras <span class="nav-count" id="nav-camera-count">3</span></a>
+        <a class="nav-link" href="#setup"><span class="nav-icon">⚙</span> Setup guide</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="local-pill">
+          <span class="pulse"></span>
+          <div>
+            <strong>Local mode</strong>
+            <small>Streams stay on your LAN</small>
+          </div>
+        </div>
+        <div class="sidebar-caption">CAMHUB MVP · 0.2.0</div>
+      </div>
+    </aside>
+
+    <main class="main-content" id="overview">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">SECURITY / OVERVIEW</div>
+          <h1>Camera overview</h1>
+          <p class="subtitle">Unified local monitoring workspace.</p>
+        </div>
+        <div class="topbar-actions">
+          <span class="local-tag"><span class="pulse"></span> Local network</span>
+          <button class="button button-secondary" id="refresh-all" type="button">↻ Refresh feeds</button>
+        </div>
+      </header>
+
+      <section class="summary-grid" aria-label="Camera summary">
+        <article class="summary-card">
+          <div class="summary-label">Registered cameras</div>
+          <div class="summary-value" id="total-count">03</div>
+          <div class="summary-foot">Configured devices</div>
+          <div class="summary-icon">▦</div>
+        </article>
+        <article class="summary-card">
+          <div class="summary-label">Feed status</div>
+          <div class="summary-value"><span id="online-count">0</span><span class="muted-value" id="summary-total"> / 3</span></div>
+          <div class="summary-foot">Connected in this browser</div>
+          <div class="summary-icon green-icon">◉</div>
+        </article>
+        <article class="summary-card">
+          <div class="summary-label">Brands</div>
+          <div class="summary-value" id="brands-count">02</div>
+          <div class="summary-foot">V380 Pro & O Kam Pro</div>
+          <div class="summary-icon purple-icon">⌘</div>
+        </article>
+      </section>
+
+      <section class="section-heading" id="cameras">
+        <div>
+          <div class="eyebrow">LIVE MONITORING</div>
+          <h2>All cameras</h2>
+          <p class="section-description">Live MJPEG preview streamed directly from local decoder adapters.</p>
+        </div>
+        <span class="last-updated" id="last-updated">Waiting for feeds…</span>
+      </section>
+
+      <section class="camera-grid" id="camera-grid" aria-label="Live camera feeds"></section>
+
+      <section class="setup-panel" id="setup">
+        <div class="setup-copy">
+          <div class="eyebrow">LOCAL DECODER GUIDE</div>
+          <h2>Panduan Decoder Kamera</h2>
+          <p>Jalankan script PowerShell di bawah ini pada dua terminal terpisah agar decoder lokal dapat streaming ke CamHub. Password diinput secara aman via prompt tanpa disimpan di web dashboard.</p>
+          <ul class="setup-list">
+            <li><strong>Kamera 1 (Indoor):</strong> <code>V380Decoder-Latest</code> · Port HTTP <code>8080</code> (LAN IP: 192.168.100.24 · ID: 124095217)</li>
+            <li><strong>Kamera 2 (Garasi):</strong> <code>V380Decoder-Fork</code> · Port HTTP <code>8081</code> (Cloud Source · ID: 97357757)</li>
+            <li><strong>Kamera 3 (O Kam Pro):</strong> Adapter belum dikonfigurasi (menunggu uji protokol).</li>
+          </ul>
+        </div>
+        <div class="setup-code">
+          <div class="code-title">
+            <div class="code-tabs">
+              <button class="code-tab active" data-script-tab="cam1" type="button">Kamera 1 (8080)</button>
+              <button class="code-tab" data-script-tab="cam2" type="button">Kamera 2 (8081)</button>
+              <button class="code-tab" data-script-tab="all" type="button">Semua Script</button>
+            </div>
+            <button class="copy-code-btn" id="copy-script-btn" type="button">📋 Salin Script</button>
+          </div>
+          <pre><code id="setup-script-code">cd "$HOME\V380Decoder-Latest"
+
+$user1 = Read-Host "Username kamera 1"
+$secure1 = Read-Host "Password kamera 1" -AsSecureString
+$ptr1 = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure1)
+$pass1 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr1)
+
+dotnet run --no-build -- `
+  --id 124095217 `
+  --username $user1 `
+  --password $pass1 `
+  --ip 192.168.100.24 `
+  --port 8800 `
+  --source lan `
+  --output rtsp `
+  --quality sd `
+  --enable-api `
+  --http-port 8080 `
+  --rtsp-port 8554 `
+  --debug
+
+[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr1)
+Remove-Variable pass1, secure1, user1 -ErrorAction SilentlyContinue</code></pre>
+          <div class="code-note">Script membersihkan pointer memori string password ($ptr) dan variabel sensitive setelah dieksekusi.</div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span>CamHub · Local-first camera dashboard</span>
+        <span>Direct MJPEG LAN connection · No camera passwords stored</span>
+      </footer>
+    </main>
+  </div>
+
+  <dialog id="config-dialog" class="config-dialog">
+    <form method="dialog" id="config-form">
+      <div class="dialog-head">
+        <div>
+          <div class="eyebrow">CAMERA SETTINGS</div>
+          <h2 id="dialog-title">Configure camera</h2>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Close" type="button" id="close-dialog-btn">✕</button>
+      </div>
+      <input type="hidden" id="camera-id" />
+      <label for="camera-name">Display name</label>
+      <input id="camera-name" maxlength="60" required placeholder="e.g. V380 Pro · Garasi" />
+      
+      <label for="camera-location">Location</label>
+      <input id="camera-location" maxlength="80" required placeholder="e.g. Garasi (192.168.100.4)" />
+      
+      <label for="camera-brand">Brand / adapter</label>
+      <input id="camera-brand" maxlength="60" required placeholder="e.g. V380 Pro / V380Decoder" />
+      
+      <label for="camera-url">MJPEG stream URL</label>
+      <input id="camera-url" type="url" placeholder="http://192.168.100.11:8080/stream.mjpg" />
+
+      <label for="camera-snapshot">Snapshot URL (optional)</label>
+      <input id="camera-snapshot" type="url" placeholder="http://192.168.100.11:8080/snapshot" />
+      
+      <p class="form-hint">Settings are saved only in this browser's local storage. Never enter a URL containing camera usernames or passwords.</p>
+      
+      <div class="dialog-actions">
+        <button class="button button-secondary" value="cancel" type="button" id="cancel-dialog-btn">Cancel</button>
+        <button class="button button-primary" id="save-camera" type="submit">Save camera</button>
+      </div>
+    </form>
+  </dialog>
+  <script src="app.js"></script>
+</body>
+</html>

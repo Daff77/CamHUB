@@ -32,24 +32,54 @@ Both cameras require their respective local decoder instances to remain running 
 
 #### Start Decoder for Kamera 1 (Port 8080):
 ```powershell
-dotnet run -- --id DEVICE_ID_1 `
-  --username "CAMERA_USER" `
-  --password "CAMERA_PASSWORD" `
-  --ip 192.168.100.x --port 8800 `
-  --source lan --output rtsp `
-  --quality sd --enable-api `
-  --http-port 8080 --rtsp-port 8554 --debug
+cd "$HOME\V380Decoder-Latest"
+
+$user1 = Read-Host "Username kamera 1"
+$secure1 = Read-Host "Password kamera 1" -AsSecureString
+$ptr1 = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure1)
+$pass1 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr1)
+
+dotnet run --no-build -- `
+  --id 124095217 `
+  --username $user1 `
+  --password $pass1 `
+  --ip 192.168.100.24 `
+  --port 8800 `
+  --source lan `
+  --output rtsp `
+  --quality sd `
+  --enable-api `
+  --http-port 8080 `
+  --rtsp-port 8554 `
+  --debug
+
+[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr1)
+Remove-Variable pass1, secure1, user1 -ErrorAction SilentlyContinue
 ```
 
 #### Start Decoder for Kamera 2 — Garasi (Port 8081):
 ```powershell
-dotnet run -- --id 97357757 `
-  --username "garasi" `
-  --password "CAMERA_PASSWORD" `
-  --ip 192.168.100.4 --port 8800 `
-  --source lan --output rtsp `
-  --quality sd --enable-api `
-  --http-port 8081 --rtsp-port 8555 --debug
+cd "$HOME\V380Decoder-Fork"
+
+$user2 = Read-Host "Username kamera 2"
+$secure2 = Read-Host "Password kamera 2" -AsSecureString
+$ptr2 = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure2)
+$pass2 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr2)
+
+dotnet run --no-build -- `
+  --id 97357757 `
+  --username $user2 `
+  --password $pass2 `
+  --source cloud `
+  --output rtsp `
+  --quality sd `
+  --enable-api `
+  --http-port 8081 `
+  --rtsp-port 8555 `
+  --debug
+
+[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr2)
+Remove-Variable pass2, secure2, user2 -ErrorAction SilentlyContinue
 ```
 
 ### Step 2: Serve the Dashboard
