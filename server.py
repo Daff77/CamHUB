@@ -174,6 +174,12 @@ class CamHubHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "*")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
 
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
     def send_file_with_range(self, file_path, content_type="video/mp4", as_download=False):
         """Supports HTTP 206 Partial Content for video seeking/scrubbing and downloads."""
         if not os.path.exists(file_path):
