@@ -208,6 +208,11 @@
               <video id="playback-video" controls preload="metadata" playsinline class="playback-video">
                 Your browser does not support HTML5 video.
               </video>
+              <div class="tile-zoom-bar playback-zoom-bar" id="playback-zoom-bar">
+                <button class="tile-zoom-btn" id="playback-zoom-in" type="button" title="Zoom in (+)">＋</button>
+                <button class="tile-zoom-btn zoom-level-badge" id="playback-zoom-reset" type="button" title="Reset zoom (1.0x)"><span id="playback-zoom-val">1.0x</span></button>
+                <button class="tile-zoom-btn" id="playback-zoom-out" type="button" title="Zoom out (-)">－</button>
+              </div>
               <div id="playback-empty-placeholder" class="playback-placeholder">
                 <p>Select a recorded segment from the timeline to start playback</p>
               </div>

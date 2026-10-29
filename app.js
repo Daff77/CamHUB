@@ -356,6 +356,22 @@ function render() {
               </div>
             </div>
 
+            <!-- Floating CCTV Zoom Bar -->
+            <div class="tile-zoom-bar" data-zoom-bar="${escapeHtml(camera.id)}">
+              <button class="tile-zoom-btn" data-zoom-in="${escapeHtml(camera.id)}" type="button" title="Zoom in (+)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
+              <button class="tile-zoom-btn zoom-level-badge" data-zoom-reset="${escapeHtml(camera.id)}" type="button" title="Click to reset zoom (1.0x)">
+                <span data-zoom-val="${escapeHtml(camera.id)}">1.0x</span>
+              </button>
+              <button class="tile-zoom-btn" data-zoom-out="${escapeHtml(camera.id)}" type="button" title="Zoom out (-)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
+              <button class="tile-zoom-btn" data-zoom-fullscreen="${escapeHtml(camera.id)}" type="button" title="Toggle fullscreen">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+              </button>
+            </div>
+
             <img
               class="camera-feed ${status === 'online' ? '' : 'is-hidden'}"
               data-feed="${escapeHtml(camera.id)}"
@@ -774,7 +790,10 @@ function attachEvents() {
 
   document.querySelectorAll("[data-video-wrap]").forEach((wrap) => {
     wrap.onclick = (e) => {
-      if (e.target.closest("button")) return;
+      if (e.target.closest("button") || e.target.closest(".tile-zoom-bar")) return;
+      const cid = wrap.dataset.videoWrap;
+      const z = getZoomState(cid);
+      if (z && z.scale > 1.05) return; // Ignore card focus when zoomed in
       const card = wrap.closest(".camera-card");
       if (card) {
         const isFocused = card.classList.toggle("is-focused");
@@ -797,6 +816,8 @@ function attachEvents() {
       localStorage.setItem("camhub.view.density", mode);
     };
   });
+
+  attachZoomEvents();
 }
 
 function restoreLayoutPreference() {
@@ -808,6 +829,291 @@ function restoreLayoutPreference() {
     grid.classList.remove("density-2col", "density-auto", "density-1col");
     grid.classList.add(`density-${saved}`);
   }
+}
+
+const cameraZoomState = new Map();
+
+function getZoomState(id) {
+  if (!cameraZoomState.has(id)) {
+    cameraZoomState.set(id, { scale: 1.0, x: 0, y: 0 });
+  }
+  return cameraZoomState.get(id);
+}
+
+function applyZoom(id, smooth = false) {
+  const z = getZoomState(id);
+  const wrap = document.querySelector(`[data-video-wrap="${CSS.escape(id)}"]`);
+  const img = document.querySelector(`[data-feed="${CSS.escape(id)}"]`);
+  const valBadge = document.querySelector(`[data-zoom-val="${CSS.escape(id)}"]`);
+
+  if (!wrap || !img) return;
+
+  const rect = wrap.getBoundingClientRect();
+  const maxX = Math.max(0, (rect.width * (z.scale - 1)) / 2);
+  const maxY = Math.max(0, (rect.height * (z.scale - 1)) / 2);
+
+  z.x = Math.max(-maxX, Math.min(maxX, z.x));
+  z.y = Math.max(-maxY, Math.min(maxY, z.y));
+
+  img.style.transition = smooth ? "transform 0.16s ease-out" : "none";
+  img.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.scale})`;
+
+  if (z.scale > 1.02) {
+    wrap.classList.add("is-zoomed");
+    if (valBadge) valBadge.classList.add("is-active");
+  } else {
+    wrap.classList.remove("is-zoomed", "is-panning");
+    if (valBadge) valBadge.classList.remove("is-active");
+    z.x = 0;
+    z.y = 0;
+  }
+
+  if (valBadge) {
+    valBadge.textContent = `${z.scale.toFixed(1)}x`;
+  }
+}
+
+function zoomCamera(id, deltaScale, focalX = 0, focalY = 0) {
+  const z = getZoomState(id);
+  const oldScale = z.scale;
+  let newScale = Math.round((oldScale + deltaScale) * 10) / 10;
+  newScale = Math.max(1.0, Math.min(5.0, newScale));
+
+  if (newScale === oldScale) return;
+
+  if (newScale > 1.0 && oldScale > 0) {
+    const factor = newScale / oldScale;
+    z.x = (z.x - focalX) * factor + focalX;
+    z.y = (z.y - focalY) * factor + focalY;
+  } else {
+    z.x = 0;
+    z.y = 0;
+  }
+
+  z.scale = newScale;
+  applyZoom(id, true);
+}
+
+function resetZoom(id) {
+  const z = getZoomState(id);
+  z.scale = 1.0;
+  z.x = 0;
+  z.y = 0;
+  applyZoom(id, true);
+}
+
+function attachZoomEvents() {
+  document.querySelectorAll("[data-video-wrap]").forEach((wrap) => {
+    const id = wrap.dataset.videoWrap;
+    if (!id) return;
+
+    // Apply current zoom state on re-render
+    applyZoom(id, false);
+
+    // Zoom Buttons
+    const inBtn = wrap.querySelector(`[data-zoom-in="${CSS.escape(id)}"]`);
+    const outBtn = wrap.querySelector(`[data-zoom-out="${CSS.escape(id)}"]`);
+    const resetBtn = wrap.querySelector(`[data-zoom-reset="${CSS.escape(id)}"]`);
+    const fsBtn = wrap.querySelector(`[data-zoom-fullscreen="${CSS.escape(id)}"]`);
+
+    if (inBtn) inBtn.onclick = (e) => { e.stopPropagation(); zoomCamera(id, 0.5); };
+    if (outBtn) outBtn.onclick = (e) => { e.stopPropagation(); zoomCamera(id, -0.5); };
+    if (resetBtn) resetBtn.onclick = (e) => { e.stopPropagation(); resetZoom(id); };
+
+    if (fsBtn) {
+      fsBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (!document.fullscreenElement) {
+          wrap.requestFullscreen().catch(() => {});
+        } else {
+          document.exitFullscreen().catch(() => {});
+        }
+      };
+    }
+
+    // Wheel Zoom (centered around cursor position)
+    wrap.onwheel = (e) => {
+      e.preventDefault();
+      const rect = wrap.getBoundingClientRect();
+      const focalX = e.clientX - rect.left - rect.width / 2;
+      const focalY = e.clientY - rect.top - rect.height / 2;
+      const delta = e.deltaY < 0 ? 0.3 : -0.3;
+      zoomCamera(id, delta, focalX, focalY);
+    };
+
+    // Double-click to toggle 1.0x <-> 2.5x
+    wrap.ondblclick = (e) => {
+      if (e.target.closest("button") || e.target.closest(".tile-zoom-bar")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const z = getZoomState(id);
+      if (z.scale > 1.05) {
+        resetZoom(id);
+      } else {
+        const rect = wrap.getBoundingClientRect();
+        const focalX = e.clientX - rect.left - rect.width / 2;
+        const focalY = e.clientY - rect.top - rect.height / 2;
+        zoomCamera(id, 1.5, focalX, focalY);
+      }
+    };
+
+    // Mouse Drag / Touch Pan
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let origX = 0, origY = 0;
+
+    wrap.onmousedown = (e) => {
+      if (e.target.closest("button") || e.target.closest(".tile-zoom-bar")) return;
+      const z = getZoomState(id);
+      if (z.scale <= 1.0) return;
+
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      origX = z.x;
+      origY = z.y;
+      wrap.classList.add("is-panning");
+      e.preventDefault();
+    };
+
+    const onMouseMove = (e) => {
+      if (!isDragging) return;
+      const z = getZoomState(id);
+      z.x = origX + (e.clientX - startX);
+      z.y = origY + (e.clientY - startY);
+      applyZoom(id, false);
+    };
+
+    const onMouseUp = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      wrap.classList.remove("is-panning");
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
+    // Touch support (1 finger pan when zoomed, 2 finger pinch-to-zoom)
+    let lastTouchDist = null;
+    wrap.ontouchstart = (e) => {
+      if (e.touches.length === 1) {
+        const z = getZoomState(id);
+        if (z.scale > 1.0) {
+          isDragging = true;
+          startX = e.touches[0].clientX;
+          startY = e.touches[0].clientY;
+          origX = z.x;
+          origY = z.y;
+        }
+      } else if (e.touches.length === 2) {
+        isDragging = false;
+        lastTouchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      }
+    };
+
+    wrap.ontouchmove = (e) => {
+      if (e.touches.length === 1 && isDragging) {
+        const z = getZoomState(id);
+        z.x = origX + (e.touches[0].clientX - startX);
+        z.y = origY + (e.touches[0].clientY - startY);
+        applyZoom(id, false);
+      } else if (e.touches.length === 2 && lastTouchDist !== null) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const delta = (dist - lastTouchDist) * 0.01;
+        lastTouchDist = dist;
+        zoomCamera(id, delta);
+      }
+    };
+
+    wrap.ontouchend = () => {
+      isDragging = false;
+      lastTouchDist = null;
+    };
+  });
+}
+
+function initPlaybackZoom() {
+  const video = document.querySelector("#playback-video");
+  const wrapper = document.querySelector(".playback-player-card .player-wrapper");
+  const inBtn = document.querySelector("#playback-zoom-in");
+  const outBtn = document.querySelector("#playback-zoom-out");
+  const resetBtn = document.querySelector("#playback-zoom-reset");
+  const valBadge = document.querySelector("#playback-zoom-val");
+
+  if (!video || !wrapper) return;
+
+  let pScale = 1.0;
+  let pX = 0, pY = 0;
+
+  const applyPbZoom = (smooth = false) => {
+    const rect = wrapper.getBoundingClientRect();
+    const maxX = Math.max(0, (rect.width * (pScale - 1)) / 2);
+    const maxY = Math.max(0, (rect.height * (pScale - 1)) / 2);
+
+    pX = Math.max(-maxX, Math.min(maxX, pX));
+    pY = Math.max(-maxY, Math.min(maxY, pY));
+
+    video.style.transition = smooth ? "transform 0.16s ease-out" : "none";
+    video.style.transform = `translate(${pX}px, ${pY}px) scale(${pScale})`;
+
+    if (valBadge) valBadge.textContent = `${pScale.toFixed(1)}x`;
+    if (pScale > 1.02) {
+      wrapper.classList.add("is-zoomed");
+    } else {
+      wrapper.classList.remove("is-zoomed", "is-panning");
+      pX = 0;
+      pY = 0;
+    }
+  };
+
+  const zoomPb = (delta) => {
+    pScale = Math.max(1.0, Math.min(5.0, Math.round((pScale + delta) * 10) / 10));
+    applyPbZoom(true);
+  };
+
+  if (inBtn) inBtn.onclick = () => zoomPb(0.5);
+  if (outBtn) outBtn.onclick = () => zoomPb(-0.5);
+  if (resetBtn) resetBtn.onclick = () => { pScale = 1.0; pX = 0; pY = 0; applyPbZoom(true); };
+
+  wrapper.onwheel = (e) => {
+    if (e.target.closest("button") || e.target.closest("input")) return;
+    e.preventDefault();
+    zoomPb(e.deltaY < 0 ? 0.3 : -0.3);
+  };
+
+  let isDragging = false;
+  let startX = 0, startY = 0;
+  let origX = 0, origY = 0;
+
+  wrapper.onmousedown = (e) => {
+    if (e.target.closest("button") || e.target.closest(".tile-zoom-bar") || pScale <= 1.0) return;
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    origX = pX;
+    origY = pY;
+    wrapper.classList.add("is-panning");
+    e.preventDefault();
+  };
+
+  window.addEventListener("mousemove", (e) => {
+    if (!isDragging) return;
+    pX = origX + (e.clientX - startX);
+    pY = origY + (e.clientY - startY);
+    applyPbZoom(false);
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (!isDragging) return;
+    isDragging = false;
+    wrapper.classList.remove("is-panning");
+  });
 }
 
 function toggleCameraSelection(id) {
@@ -2020,6 +2326,7 @@ initNav();
 initSetupGuide();
 initServiceControls();
 initPlayback();
+initPlaybackZoom();
 initEventsTimeline();
 initCameraFilter();
 render();
