@@ -1,3 +1,17 @@
+// Global fetch interceptor to automatically bypass Ngrok browser warning for all API calls
+if (typeof window !== "undefined" && window.fetch) {
+  const _origFetch = window.fetch;
+  window.fetch = function(input, init = {}) {
+    init = init || {};
+    const headers = new Headers(init.headers || {});
+    if (!headers.has("ngrok-skip-browser-warning")) {
+      headers.set("ngrok-skip-browser-warning", "1");
+    }
+    init.headers = headers;
+    return _origFetch.call(this, input, init);
+  };
+}
+
 const defaultHost = (typeof window !== "undefined" && window.location && window.location.hostname) ? window.location.hostname : "127.0.0.1";
 
 const DEFAULT_CAMERAS = [
@@ -246,6 +260,37 @@ function updateSummary() {
   }
 }
 
+function isRemoteOrHttps() {
+  if (typeof window === "undefined" || !window.location) return false;
+  return (
+    window.location.protocol === "https:" ||
+    window.location.hostname.includes("ngrok") ||
+    window.location.hostname.includes("loca.lt") ||
+    window.location.hostname.includes("trycloudflare.com")
+  );
+}
+
+function resolveCameraStreamUrl(camera) {
+  if (isRemoteOrHttps()) {
+    return `/proxy/stream/${encodeURIComponent(camera.id)}`;
+  }
+  return camera.url;
+}
+
+function resolveCameraSnapshotUrl(camera) {
+  if (isRemoteOrHttps()) {
+    return `/proxy/snapshot/${encodeURIComponent(camera.id)}`;
+  }
+  return camera.snapshotUrl;
+}
+
+function resolveCameraMetricsUrl(camera) {
+  if (isRemoteOrHttps()) {
+    return `/proxy/metrics/${encodeURIComponent(camera.id)}`;
+  }
+  return camera.metricsUrl;
+}
+
 function startStream(id) {
   const camera = cameras.find((item) => item.id === id);
   if (!camera) return;
@@ -297,14 +342,16 @@ function startStream(id) {
 
   img.onerror = () => {
     clearWatchdog(id);
-    const portMatch = camera.url.match(/:(\d+)/);
-    const portNote = portMatch ? `port :${portMatch[1]}` : "stream URL";
+    const activeUrl = resolveCameraStreamUrl(camera);
+    const portMatch = activeUrl.match(/:(\d+)/);
+    const portNote = portMatch ? `port :${portMatch[1]}` : activeUrl;
     setConnection(id, "offline", `Connection failed on ${portNote}. Verify decoder is running.`);
   };
 
   const cacheBuster = `camhub_t=${Date.now()}`;
-  const sep = camera.url.includes("?") ? "&" : "?";
-  img.src = `${camera.url}${sep}${cacheBuster}`;
+  const activeStreamUrl = resolveCameraStreamUrl(camera);
+  const sep = activeStreamUrl.includes("?") ? "&" : "?";
+  img.src = `${activeStreamUrl}${sep}${cacheBuster}`;
 }
 
 function render() {
@@ -630,18 +677,23 @@ requestAnimationFrame(monitorDisplayFps);
 
 async function pollMetrics() {
   await Promise.allSettled(cameras.map(async (camera) => {
-    if (!camera.metricsUrl) return;
+    const activeMetricsUrl = resolveCameraMetricsUrl(camera);
+    if (!activeMetricsUrl) return;
     try {
       const isHidden = typeof document !== "undefined" && document.hidden;
       const cached = metricsData.get(camera.id);
       const estFps = isHidden ? 0.0 : Math.min(clientDisplayFps, (cached?.stages?.mjpegOutFps ?? cached?.mjpegFps ?? 15.0));
 
-      const fetchUrl = new URL(camera.metricsUrl);
+      const fetchUrl = new URL(activeMetricsUrl, window.location.href);
       fetchUrl.searchParams.set("clientFps", estFps.toFixed(1));
 
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch(fetchUrl.toString(), { cache: "no-store", signal: controller.signal });
+      const res = await fetch(fetchUrl.toString(), {
+        cache: "no-store",
+        headers: { "ngrok-skip-browser-warning": "1" },
+        signal: controller.signal
+      });
       clearTimeout(timer);
       if (!res.ok) return;
       const data = await res.json();

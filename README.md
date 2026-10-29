@@ -129,6 +129,19 @@ Cukup klik tombol hijau **"▶ Run all cameras"** di pojok kanan atas dasbor unt
    - Displays `Not Configured` with a prompt to set up when its protocol is verified.
    - Click **"⚙ Configure"** to set its stream URL whenever ready.
 
+## 🌐 Remote Access with Ngrok
+
+CamHUB comes with built-in reverse proxy endpoints (`/proxy/stream/<camera_id>`, `/proxy/snapshot/<camera_id>`, `/proxy/metrics/<camera_id>`) that allow full multi-camera monitoring over a single Ngrok tunnel (port 3000) with zero Mixed Content issues.
+
+### Quick Start:
+```powershell
+# Jalankan tunnel otomatis
+.\start_ngrok.ps1
+```
+*(Atau klik ganda `start_ngrok.bat` di Windows Explorer)*.
+
+Buka URL HTTPS yang diberikan Ngrok (contoh: `https://xxxx.ngrok-free.app`) di smartphone atau laptop dari luar rumah. Panduan lengkap tersedia di [`docs/NGROK_SETUP.md`](docs/NGROK_SETUP.md).
+
 ---
 
 ## 🔒 Security Best Practices

@@ -11,6 +11,7 @@ import socket
 import argparse
 import subprocess
 from urllib.parse import urlparse, parse_qs
+from urllib.request import Request, urlopen
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -199,11 +200,13 @@ class CamHubHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "*")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("ngrok-skip-browser-warning", "1")
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
+        self.send_header("ngrok-skip-browser-warning", "1")
         super().end_headers()
 
     def send_file_with_range(self, file_path, content_type="video/mp4", as_download=False):
@@ -281,9 +284,181 @@ class CamHubHandler(SimpleHTTPRequestHandler):
         self.send_cors_headers()
         self.end_headers()
 
+    def proxy_mjpeg_stream(self, camera_id):
+        cfg = load_config()
+        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == camera_id), None)
+        if not cam:
+            self.send_json(404, {"error": f"Camera '{camera_id}' not found in configuration"})
+            return
+
+        port = cam.get("port")
+        if not port or not is_port_open(port):
+            self.send_json(503, {"error": f"Camera '{camera_id}' decoder service is offline on port {port}"})
+            return
+
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5.0)
+            sock.connect(("127.0.0.1", port))
+            req = f"GET /stream.mjpg HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n".encode("utf-8")
+            sock.sendall(req)
+
+            header_data = b""
+            while b"\r\n\r\n" not in header_data:
+                chunk = sock.recv(2048)
+                if not chunk:
+                    break
+                header_data += chunk
+
+            header_part, _, body_init = header_data.partition(b"\r\n\r\n")
+            header_lines = header_part.decode("utf-8", errors="replace").split("\r\n")
+
+            content_type = "multipart/x-mixed-replace; boundary=--boundary"
+            for h in header_lines[1:]:
+                if ":" in h:
+                    k, v = h.split(":", 1)
+                    if k.strip().lower() == "content-type":
+                        content_type = v.strip()
+
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+            self.send_header("Connection", "close")
+            self.send_header("ngrok-skip-browser-warning", "1")
+            self.send_cors_headers()
+            self.end_headers()
+
+            if body_init:
+                self.wfile.write(body_init)
+                self.wfile.flush()
+
+            sock.settimeout(None)
+            while True:
+                data = sock.recv(32768)
+                if not data:
+                    break
+                self.wfile.write(data)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception:
+            pass
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except:
+                    pass
+
+    def proxy_snapshot(self, camera_id):
+        cfg = load_config()
+        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == camera_id), None)
+        if not cam:
+            self.send_json(404, {"error": f"Camera '{camera_id}' not found"})
+            return
+
+        port = cam.get("port")
+        if not port or not is_port_open(port):
+            self.send_json(503, {"error": f"Camera '{camera_id}' decoder service is offline on port {port}"})
+            return
+
+        try:
+            req = Request(f"http://127.0.0.1:{port}/snapshot")
+            req.add_header("User-Agent", "CamHub-Proxy/1.0")
+            req.add_header("ngrok-skip-browser-warning", "1")
+            with urlopen(req, timeout=2.5) as resp:
+                data = resp.read()
+
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("ngrok-skip-browser-warning", "1")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            self.send_json(502, {"error": f"Failed to retrieve snapshot from port {port}: {e}"})
+
+    def proxy_metrics(self, camera_id, qs):
+        cfg = load_config()
+        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == camera_id), None)
+        if not cam:
+            self.send_json(404, {"error": f"Camera '{camera_id}' not found"})
+            return
+
+        port = cam.get("port")
+        if not port or not is_port_open(port):
+            self.send_json(503, {"error": f"Camera '{camera_id}' decoder service is offline on port {port}"})
+            return
+
+        client_fps = qs.get("clientFps", [None])[0]
+        query = f"?clientFps={client_fps}" if client_fps else ""
+
+        try:
+            req = Request(f"http://127.0.0.1:{port}/api/metrics{query}")
+            req.add_header("User-Agent", "CamHub-Proxy/1.0")
+            req.add_header("ngrok-skip-browser-warning", "1")
+            with urlopen(req, timeout=2.0) as resp:
+                data = resp.read()
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("ngrok-skip-browser-warning", "1")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            self.send_json(502, {"error": f"Failed to retrieve metrics from port {port}: {e}"})
+
     def do_GET(self):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
+
+        # Reverse Proxy endpoints for Ngrok & remote HTTPS access (avoids Mixed Content & extra port forwards)
+        if url.path.startswith("/proxy/stream/"):
+            cid = url.path[len("/proxy/stream/"):].strip("/")
+            self.proxy_mjpeg_stream(cid)
+            return
+
+        if url.path == "/proxy/stream":
+            cid = qs.get("id", [None])[0]
+            if cid:
+                self.proxy_mjpeg_stream(cid)
+            else:
+                self.send_json(400, {"error": "Missing 'id' parameter"})
+            return
+
+        if url.path.startswith("/proxy/snapshot/"):
+            cid = url.path[len("/proxy/snapshot/"):].strip("/")
+            self.proxy_snapshot(cid)
+            return
+
+        if url.path == "/proxy/snapshot":
+            cid = qs.get("id", [None])[0]
+            if cid:
+                self.proxy_snapshot(cid)
+            else:
+                self.send_json(400, {"error": "Missing 'id' parameter"})
+            return
+
+        if url.path.startswith("/proxy/metrics/"):
+            cid = url.path[len("/proxy/metrics/"):].strip("/")
+            self.proxy_metrics(cid, qs)
+            return
+
+        if url.path == "/proxy/metrics":
+            cid = qs.get("id", [None])[0]
+            if cid:
+                self.proxy_metrics(cid, qs)
+            else:
+                self.send_json(400, {"error": "Missing 'id' parameter"})
+            return
 
         # Health monitor endpoints
         if url.path == "/api/health":
