@@ -13,6 +13,8 @@ import subprocess
 from urllib.parse import urlparse, parse_qs
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
+from health_monitor import CameraHealthMonitor, sanitize_sensitive_data
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "services_config.json")
 
@@ -150,6 +152,7 @@ class ProcessManager:
         return self.start_all()
 
 MANAGER = ProcessManager()
+HEALTH_MONITOR = CameraHealthMonitor(load_config)
 
 class CamHubHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -185,8 +188,40 @@ class CamHubHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         url = urlparse(self.path)
+        qs = parse_qs(url.query)
+
+        # Health monitor endpoints
+        if url.path == "/api/health":
+            cid = qs.get("id", [None])[0]
+            if cid:
+                data = HEALTH_MONITOR.get_camera_health(cid)
+                if data:
+                    self.send_json(200, data)
+                else:
+                    self.send_json(404, {"error": f"Camera '{cid}' not found in health monitor"})
+            else:
+                data = HEALTH_MONITOR.get_all_health()
+                self.send_json(200, data)
+            return
+
+        if url.path.startswith("/api/health/"):
+            cid = url.path[len("/api/health/"):].strip("/")
+            data = HEALTH_MONITOR.get_camera_health(cid)
+            if data:
+                self.send_json(200, data)
+            else:
+                self.send_json(404, {"error": f"Camera '{cid}' not found in health monitor"})
+            return
+
         if url.path == "/api/services/status":
             data = MANAGER.get_status()
+            # Enrich service status with smart health monitor data
+            for cid, s_info in data.get("services", {}).items():
+                h = HEALTH_MONITOR.get_camera_health(cid)
+                if h:
+                    s_info["health"] = h
+                    s_info["healthStatus"] = h.get("status")
+                    s_info["healthReason"] = h.get("reason")
             self.send_json(200, data)
             return
 
@@ -253,12 +288,16 @@ def main():
     server.daemon_threads = True
     print(f"[CAMHUB] Dashboard web server running on http://127.0.0.1:{args.port}", flush=True)
     print(f"[CAMHUB] Service Manager API ready at http://127.0.0.1:{args.port}/api/services/status", flush=True)
+    print(f"[CAMHUB] Health Monitor API ready at http://127.0.0.1:{args.port}/api/health", flush=True)
+
+    HEALTH_MONITOR.start()
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("[CAMHUB] Shutting down...", flush=True)
     finally:
+        HEALTH_MONITOR.stop()
         server.server_close()
 
 if __name__ == "__main__":

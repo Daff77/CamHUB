@@ -1300,3 +1300,181 @@ input:focus {
     scroll-behavior: auto !important;
   }
 }
+
+/* Smart Health Monitor UI */
+.title-with-health {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fleet-health-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--panel);
+  border: 1px solid var(--line);
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  user-select: none;
+}
+
+.fleet-health-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #828282;
+}
+
+.fleet-health-pill.healthy .fleet-health-dot { background-color: var(--live); box-shadow: 0 0 6px rgba(111, 207, 151, 0.4); }
+.fleet-health-pill.degraded .fleet-health-dot { background-color: var(--accent); box-shadow: 0 0 6px rgba(233, 180, 76, 0.4); }
+.fleet-health-pill.offline .fleet-health-dot { background-color: #eb5757; box-shadow: 0 0 6px rgba(235, 87, 87, 0.4); }
+.fleet-health-pill.recovering .fleet-health-dot { background-color: #2d9cdb; box-shadow: 0 0 6px rgba(45, 156, 219, 0.4); }
+
+.fleet-health-pill.healthy { color: var(--live); border-color: rgba(111, 207, 151, 0.25); }
+.fleet-health-pill.degraded { color: var(--accent); border-color: rgba(233, 180, 76, 0.25); }
+.fleet-health-pill.offline { color: #eb5757; border-color: rgba(235, 87, 87, 0.25); }
+.fleet-health-pill.recovering { color: #2d9cdb; border-color: rgba(45, 156, 219, 0.25); }
+
+/* Tile status bar health badge */
+.health-tile-badge {
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background-color: rgba(130, 130, 130, 0.2);
+  color: #828282;
+  margin-left: 4px;
+}
+
+.health-tile-badge.healthy { background-color: rgba(111, 207, 151, 0.15); color: var(--live); }
+.health-tile-badge.degraded { background-color: rgba(233, 180, 76, 0.15); color: var(--accent); }
+.health-tile-badge.offline { background-color: rgba(235, 87, 87, 0.15); color: #eb5757; }
+.health-tile-badge.recovering { background-color: rgba(45, 156, 219, 0.15); color: #2d9cdb; }
+
+/* Analytics card health monitor section */
+.health-badge-pill {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background-color: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.health-badge-pill.healthy { background-color: rgba(111, 207, 151, 0.12); color: var(--live); border-color: rgba(111, 207, 151, 0.3); }
+.health-badge-pill.degraded { background-color: rgba(233, 180, 76, 0.12); color: var(--accent); border-color: rgba(233, 180, 76, 0.3); }
+.health-badge-pill.offline { background-color: rgba(235, 87, 87, 0.12); color: #eb5757; border-color: rgba(235, 87, 87, 0.3); }
+.health-badge-pill.recovering { background-color: rgba(45, 156, 219, 0.12); color: #2d9cdb; border-color: rgba(45, 156, 219, 0.3); }
+
+.health-monitor-section {
+  background-color: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid #828282;
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.2s ease;
+}
+
+.health-monitor-section.healthy { border-left-color: var(--live); }
+.health-monitor-section.degraded { border-left-color: var(--accent); }
+.health-monitor-section.offline { border-left-color: #eb5757; }
+.health-monitor-section.recovering { border-left-color: #2d9cdb; }
+
+.health-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.health-status-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.health-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #828282;
+}
+
+.health-monitor-section.healthy .health-state-dot { background-color: var(--live); }
+.health-monitor-section.degraded .health-state-dot { background-color: var(--accent); }
+.health-monitor-section.offline .health-state-dot { background-color: #eb5757; }
+.health-monitor-section.recovering .health-state-dot { background-color: #2d9cdb; }
+
+.health-state-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.health-time-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.health-duration {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.health-reason {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.health-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.signal-tag {
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background-color: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.signal-tag.pass {
+  color: var(--live);
+  border-color: rgba(111, 207, 151, 0.2);
+  background-color: rgba(111, 207, 151, 0.06);
+}
+
+.signal-tag.warn {
+  color: var(--accent);
+  border-color: rgba(233, 180, 76, 0.2);
+  background-color: rgba(233, 180, 76, 0.06);
+}
+
+.signal-tag.fail {
+  color: #eb5757;
+  border-color: rgba(235, 87, 87, 0.2);
+  background-color: rgba(235, 87, 87, 0.06);
+}

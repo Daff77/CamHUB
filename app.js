@@ -285,6 +285,7 @@ function render() {
                 <span class="status-dot ${statusClass}" data-dot="${escapeHtml(camera.id)}"></span>
                 <h3 class="tile-title">${escapeHtml(camera.name)}</h3>
                 <span class="status-text" data-status-text="${escapeHtml(camera.id)}">${statusWord}</span>
+                <span class="health-tile-badge" data-tile-health="${escapeHtml(camera.id)}">UNKNOWN</span>
               </div>
               <div class="tile-micro-group">
                 <span class="ratio-badge" data-ratio="${escapeHtml(camera.id)}" style="display:none;"></span>
@@ -376,7 +377,10 @@ function renderAnalyticsCards() {
             <span class="status-dot ${isUnconfigured ? 'unconfigured' : 'connecting'}" data-metric-dot="${escapeHtml(camera.id)}"></span>
             ${escapeHtml(camera.name)}
           </div>
-          <span class="metric-card-chip">${escapeHtml(camera.hint || 'LAN')}</span>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span class="health-badge-pill" data-health-badge="${escapeHtml(camera.id)}">UNKNOWN</span>
+            <span class="metric-card-chip">${escapeHtml(camera.hint || 'LAN')}</span>
+          </div>
         </div>
 
         <!-- Pipeline Stage Flow -->
@@ -456,6 +460,27 @@ function renderAnalyticsCards() {
           <svg class="sparkline-svg" data-sparkline="${escapeHtml(camera.id)}" viewBox="0 0 320 44" preserveAspectRatio="none">
             <line x1="0" y1="22" x2="320" y2="22" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="2 2" />
           </svg>
+        </div>
+
+        <!-- Smart Health Monitor Section -->
+        <div class="health-monitor-section" data-health-section="${escapeHtml(camera.id)}">
+          <div class="health-section-head">
+            <div class="health-status-group">
+              <span class="health-state-dot" data-health-dot="${escapeHtml(camera.id)}"></span>
+              <span class="health-state-title" data-health-state="${escapeHtml(camera.id)}">STATUS: UNKNOWN</span>
+            </div>
+            <div class="health-time-group">
+              <span class="health-duration" data-health-duration="${escapeHtml(camera.id)}">—</span>
+              <span class="health-checked" data-health-checked="${escapeHtml(camera.id)}">Checked: —</span>
+            </div>
+          </div>
+          <p class="health-reason" data-health-reason="${escapeHtml(camera.id)}">Evaluating camera signals…</p>
+          <div class="health-signals" data-health-signals="${escapeHtml(camera.id)}">
+            <span class="signal-tag" data-sig-port="${escapeHtml(camera.id)}">Port: —</span>
+            <span class="signal-tag" data-sig-feed="${escapeHtml(camera.id)}">Feed: —</span>
+            <span class="signal-tag" data-sig-frozen="${escapeHtml(camera.id)}">Frozen: —</span>
+            <span class="signal-tag" data-sig-fps="${escapeHtml(camera.id)}">FPS: —</span>
+          </div>
         </div>
       </article>`;
   }).join("");
@@ -1113,6 +1138,112 @@ function initServiceControls() {
   setInterval(checkStatus, 8000);
 }
 
+function formatDuration(sec) {
+  if (!sec || sec < 0) return "0s";
+  sec = Math.round(sec);
+  if (sec < 60) return `${sec}s`;
+  const mins = Math.floor(sec / 60);
+  const remSec = sec % 60;
+  if (mins < 60) return `${mins}m ${remSec}s`;
+  const hrs = Math.floor(mins / 60);
+  const remMin = mins % 60;
+  return `${hrs}h ${remMin}m`;
+}
+
+const cameraHealthData = new Map();
+
+async function pollHealth() {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch("/api/health", { cache: "no-store", signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    // 1. Update Fleet Health pill in header
+    const fleetPill = document.querySelector("#fleet-health-pill");
+    const fleetText = document.querySelector("#fleet-health-text");
+    if (fleetPill && fleetText && data.summary) {
+      const fleetStatus = (data.status || "UNKNOWN").toLowerCase();
+      fleetPill.className = `fleet-health-pill ${fleetStatus}`;
+      fleetText.textContent = `Fleet: ${data.status} (${data.summary.healthy}/${data.summary.total} healthy)`;
+    }
+
+    // 2. Update each camera
+    if (data.cameras) {
+      for (const [cid, h] of Object.entries(data.cameras)) {
+        cameraHealthData.set(cid, h);
+        const status = (h.status || "UNKNOWN").toLowerCase();
+        const statusUpper = h.status || "UNKNOWN";
+
+        // Tile header badge
+        const tileBadge = document.querySelector(`[data-tile-health="${CSS.escape(cid)}"]`);
+        if (tileBadge) {
+          tileBadge.className = `health-tile-badge ${status}`;
+          tileBadge.textContent = statusUpper;
+        }
+
+        // Analytics card badge
+        const cardBadge = document.querySelector(`[data-health-badge="${CSS.escape(cid)}"]`);
+        if (cardBadge) {
+          cardBadge.className = `health-badge-pill ${status}`;
+          cardBadge.textContent = statusUpper;
+        }
+
+        // Analytics card health section
+        const sec = document.querySelector(`[data-health-section="${CSS.escape(cid)}"]`);
+        const stTitle = document.querySelector(`[data-health-state="${CSS.escape(cid)}"]`);
+        const stDur = document.querySelector(`[data-health-duration="${CSS.escape(cid)}"]`);
+        const stChk = document.querySelector(`[data-health-checked="${CSS.escape(cid)}"]`);
+        const stReason = document.querySelector(`[data-health-reason="${CSS.escape(cid)}"]`);
+
+        if (sec) sec.className = `health-monitor-section ${status}`;
+        if (stTitle) stTitle.textContent = `STATUS: ${statusUpper}`;
+        if (stDur) {
+          const isIncident = statusUpper === "DEGRADED" || statusUpper === "OFFLINE";
+          const durSec = isIncident ? h.incidentDurationSeconds : h.stateDurationSeconds;
+          const label = isIncident ? "Incident" : "Stable";
+          stDur.textContent = `${label}: ${formatDuration(durSec)}`;
+        }
+        if (stChk) {
+          const dt = h.lastChecked ? new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(h.lastChecked)) : "—";
+          stChk.textContent = `Checked: ${dt}`;
+        }
+        if (stReason) {
+          stReason.textContent = h.reason || "Operating normally.";
+        }
+
+        // Signals tags
+        const chk = h.checks || {};
+        const pTag = document.querySelector(`[data-sig-port="${CSS.escape(cid)}"]`);
+        const fTag = document.querySelector(`[data-sig-feed="${CSS.escape(cid)}"]`);
+        const zTag = document.querySelector(`[data-sig-frozen="${CSS.escape(cid)}"]`);
+        const fpsTag = document.querySelector(`[data-sig-fps="${CSS.escape(cid)}"]`);
+
+        if (pTag) {
+          pTag.textContent = chk.portListening ? "Port: Open" : "Port: Closed";
+          pTag.className = `signal-tag ${chk.portListening ? "pass" : "fail"}`;
+        }
+        if (fTag) {
+          pTag.textContent = chk.feedAlive ? "Feed: Flowing" : "Feed: Stalled";
+          pTag.className = `signal-tag ${chk.feedAlive ? "pass" : "warn"}`;
+        }
+        if (zTag) {
+          zTag.textContent = chk.streamFrozen ? "Frozen: YES" : "Frozen: No";
+          zTag.className = `signal-tag ${chk.streamFrozen ? "fail" : "pass"}`;
+        }
+        if (fpsTag) {
+          fpsTag.textContent = `FPS: ${h.metrics?.fps ?? 0} fps`;
+          fpsTag.className = `signal-tag ${chk.fpsAdequate ? "pass" : "warn"}`;
+        }
+      }
+    }
+  } catch {
+    // Non-blocking error recovery
+  }
+}
+
 // Initial boot
 initNav();
 initSetupGuide();
@@ -1123,3 +1254,7 @@ restoreLayoutPreference();
 // Start periodic telemetry poller (every 2s)
 setInterval(pollMetrics, 2000);
 pollMetrics();
+
+// Start Smart Health Monitor poller (every 3s)
+setInterval(pollHealth, 3000);
+pollHealth();

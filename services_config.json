@@ -1,4 +1,15 @@
 {
+  "healthMonitor": {
+    "pollIntervalSeconds": 3.0,
+    "httpTimeoutSeconds": 1.5,
+    "minFpsHealthy": 5.0,
+    "minFpsDegraded": 0.5,
+    "frameFreshnessTimeoutSec": 4.5,
+    "frozenFrameThresholdSec": 8.0,
+    "maxReconnectsDegraded": 2,
+    "recoveryStabilitySeconds": 6.0,
+    "consecutiveFailuresForOffline": 2
+  },
   "cameras": [
     {
       "id": "v380-1",
