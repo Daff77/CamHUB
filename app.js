@@ -426,11 +426,14 @@ function updateSparkline(id, history) {
 }
 
 async function pollMetrics() {
-  for (const camera of cameras) {
-    if (!camera.metricsUrl) continue;
+  await Promise.allSettled(cameras.map(async (camera) => {
+    if (!camera.metricsUrl) return;
     try {
-      const res = await fetch(camera.metricsUrl, { cache: "no-store" });
-      if (!res.ok) continue;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch(camera.metricsUrl, { cache: "no-store", signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) return;
       const data = await res.json();
       metricsData.set(camera.id, data);
 
@@ -482,7 +485,7 @@ async function pollMetrics() {
         mDot.className = "status-dot offline";
       }
     }
-  }
+  }));
 }
 
 function attachEvents() {
