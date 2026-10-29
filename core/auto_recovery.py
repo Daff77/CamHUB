@@ -15,7 +15,8 @@ import subprocess
 from enum import Enum
 from health_monitor import sanitize_sensitive_data, is_port_listening
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# CamHUB project root directory (parent of core/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class SupervisorState(str, Enum):
     STOPPED = "STOPPED"

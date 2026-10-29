@@ -16,7 +16,8 @@ import subprocess
 from datetime import datetime
 from urllib.parse import quote, unquote
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# CamHUB project root directory (parent of core/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_RECORDINGS_DIR = os.path.join(BASE_DIR, "recordings")
 
 DEFAULT_RECORDING_CONFIG = {

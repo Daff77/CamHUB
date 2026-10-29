@@ -18,7 +18,8 @@ from urllib.request import Request, urlopen
 import numpy as np
 from PIL import Image
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# CamHUB project root directory (parent of core/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_EVENTS_DIR = os.path.join(BASE_DIR, "events")
 
 DEFAULT_MOTION_CONFIG = {

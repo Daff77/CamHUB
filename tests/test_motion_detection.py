@@ -5,7 +5,13 @@ lighting switch filter, cooldown enforcement, retention purge, and path traversa
 """
 
 import os
+import sys
 import io
+
+# Ensure core directory is in sys.path
+CORE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "core"))
+if CORE_DIR not in sys.path:
+    sys.path.insert(0, CORE_DIR)
 import time
 import shutil
 import tempfile

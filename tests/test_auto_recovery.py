@@ -4,9 +4,17 @@ Tests state machine transitions: STOPPED, STARTING, RUNNING, STOPPING, RESTARTIN
 Tests crash detection, exponential backoff, circuit breaking, stable reset, and camera isolation.
 """
 
+import os
+import sys
 import time
 import unittest
 from unittest.mock import MagicMock, patch
+
+# Ensure core directory is in sys.path
+CORE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "core"))
+if CORE_DIR not in sys.path:
+    sys.path.insert(0, CORE_DIR)
+
 from auto_recovery import (
     SupervisorState,
     CameraSupervisor,

@@ -13,13 +13,26 @@ import subprocess
 from urllib.parse import urlparse, parse_qs
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
-from health_monitor import CameraHealthMonitor, sanitize_sensitive_data
-from auto_recovery import AutoRecoveryManager, kill_process_tree, kill_port_owner
-from recording_manager import RecordingManager, sanitize_path
-from motion_detector import MotionDetectorService
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(BASE_DIR, "services_config.json")
+CORE_DIR = os.path.join(BASE_DIR, "core")
+WEB_DIR = os.path.join(BASE_DIR, "web")
+CONFIG_DIR = os.path.join(BASE_DIR, "config")
+
+# Ensure core package and root directory are in sys.path
+if CORE_DIR not in sys.path:
+    sys.path.insert(0, CORE_DIR)
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from core.health_monitor import CameraHealthMonitor, sanitize_sensitive_data
+from core.auto_recovery import AutoRecoveryManager, kill_process_tree, kill_port_owner
+from core.recording_manager import RecordingManager, sanitize_path
+from core.motion_detector import MotionDetectorService
+
+# Config file discovery: config/services_config.json first, fallback to root
+CONFIG_FILE = os.path.join(CONFIG_DIR, "services_config.json")
+if not os.path.exists(CONFIG_FILE):
+    CONFIG_FILE = os.path.join(BASE_DIR, "services_config.json")
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -159,9 +172,22 @@ MANAGER = AutoRecoveryManager(load_config, health_monitor=HEALTH_MONITOR)
 RECORDING_MANAGER = RecordingManager(load_config, base_dir=BASE_DIR)
 MOTION_SERVICE = MotionDetectorService(load_config, base_dir=BASE_DIR)
 
+STATIC_DIR = WEB_DIR if os.path.isdir(WEB_DIR) else BASE_DIR
+
 class CamHubHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=BASE_DIR, **kwargs)
+        super().__init__(*args, directory=STATIC_DIR, **kwargs)
+
+    def translate_path(self, path):
+        # Look in web/ directory first, fall back to BASE_DIR
+        res = super().translate_path(path)
+        if os.path.exists(res):
+            return res
+        rel = path.lstrip("/")
+        fallback = os.path.join(BASE_DIR, rel)
+        if os.path.exists(fallback):
+            return fallback
+        return res
 
     def log_message(self, format, *args):
         # Silence routine static asset logs

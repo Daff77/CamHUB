@@ -59,14 +59,14 @@
       "rtspPort": 8555,
       "type": "v380",
       "cmd": "dotnet run --project \"C:\\Users\\daffa\\V380Decoder-Fork\\V380Decoder.csproj\" --no-build -- --id 97357757 --username garasi --password Danendra07. --ip 192.168.100.4 --port 8800 --source lan --output rtsp --quality hd --enable-api --enable-onvif --http-port 8081 --rtsp-port 8555 --debug",
-      "fastRtsCmd": "python -u \"C:\\DaffaP\\Project df\\CamHUB\\okam_adapter.py\" --port 8081 --rtsp \"rtsp://192.168.100.4:554/\""
+      "fastRtsCmd": "python -u \"C:\\DaffaP\\Project df\\CamHUB\\core\\okam_adapter.py\" --port 8081 --rtsp \"rtsp://192.168.100.4:554/\""
     },
     {
       "id": "okam-3",
       "name": "Camera 3 · O-Kam Pro",
       "port": 8082,
       "type": "okam",
-      "cmd": "python -u \"C:\\DaffaP\\Project df\\CamHUB\\okam_adapter.py\" --port 8082 --rtsp \"rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0\""
+      "cmd": "python -u \"C:\\DaffaP\\Project df\\CamHUB\\core\\okam_adapter.py\" --port 8082 --rtsp \"rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0\""
     }
   ]
 }

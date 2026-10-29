@@ -5,10 +5,17 @@ path traversal security, and HTTP 206 Partial Content range requests.
 """
 
 import os
+import sys
 import time
 import shutil
 import tempfile
 import unittest
+
+# Ensure core directory is in sys.path
+CORE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "core"))
+if CORE_DIR not in sys.path:
+    sys.path.insert(0, CORE_DIR)
+
 from recording_manager import (
     RecordingManager,
     sanitize_path,

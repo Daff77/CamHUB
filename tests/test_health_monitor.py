@@ -5,8 +5,16 @@ Tests frozen frame detection, low FPS, reconnect bursts, recovery stabilization,
 and sensitive data sanitization.
 """
 
+import os
+import sys
 import time
 import unittest
+
+# Ensure core directory is in sys.path
+CORE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "core"))
+if CORE_DIR not in sys.path:
+    sys.path.insert(0, CORE_DIR)
+
 from health_monitor import (
     CameraHealthState,
     CameraHealthTracker,
