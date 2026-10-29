@@ -22,17 +22,17 @@ const DEFAULT_CAMERAS = [
   {
     id: "okam-3",
     name: "Camera 3 · O Kam Pro",
-    location: "Pending protocol setup",
-    brand: "O Kam Pro (Adapter pending)",
-    url: "",
-    snapshotUrl: "",
-    metricsUrl: "",
-    hint: "Not configured"
+    location: "192.168.100.6 · Port 10554 · VStarcam",
+    brand: "O Kam Pro / VStarcam",
+    url: "http://192.168.100.11:8082/stream.mjpg",
+    snapshotUrl: "http://192.168.100.11:8082/snapshot",
+    metricsUrl: "http://192.168.100.11:8082/api/metrics",
+    hint: "LAN RTSP"
   }
 ];
 
-const STORAGE_KEY = "camhub.control.cameras.v2";
-const PREV_KEYS = ["camhub.control.cameras.v1", "camhub.mvp.cameras.v3", "camhub.mvp.cameras.v2", "camhub.mvp.cameras.v1"];
+const STORAGE_KEY = "camhub.control.cameras.v3";
+const PREV_KEYS = ["camhub.control.cameras.v2", "camhub.control.cameras.v1", "camhub.mvp.cameras.v3", "camhub.mvp.cameras.v2", "camhub.mvp.cameras.v1"];
 
 let cameras = loadCameras();
 const connectionStates = new Map();
@@ -754,7 +754,21 @@ dotnet run --no-build -- \`
   --debug
 
 [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr2)
-Remove-Variable pass2, secure2, user2 -ErrorAction SilentlyContinue`
+Remove-Variable pass2, secure2, user2 -ErrorAction SilentlyContinue
+
+# ==========================================
+# 3. CAMERA 3 — O-Kam Pro / VStarcam (Port 8082)
+# ==========================================
+cd "C:\\DaffaP\\Project df\\CamHUB"
+python okam_adapter.py --port 8082 --rtsp "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0"`,
+
+  okam: `# ==========================================
+# 3. CAMERA 3 — O-Kam Pro / VStarcam (Port 8082)
+# ==========================================
+cd "C:\\DaffaP\\Project df\\CamHUB"
+
+# Runs O-Kam RTSP-to-MJPEG adapter on port 8082
+python okam_adapter.py --port 8082 --rtsp "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0"`
 };
 
 function initSetupGuide() {

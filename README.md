@@ -18,9 +18,14 @@ A local-first, privacy-focused dashboard for viewing mixed-brand IP cameras via 
 - **Live Stream (MJPEG):** `http://192.168.100.11:8081/stream.mjpg`
 - **Snapshot Endpoint:** `http://192.168.100.11:8081/snapshot`
 
-### 3. O Kam Pro — Kamera 3 (Pending Protocol)
-- **Status:** Adapter Pending
-- **Note:** Protocol (RTSP / ONVIF / MJPEG) is pending verification on LAN. The dashboard structure is already prepared; you can configure its stream URL once verified without modifying the source code.
+### 3. O-Kam Pro / VStarcam — Kamera 3
+- **Device IP:** `192.168.100.6`
+- **Native RTSP Port:** `10554` (Lens 1) & `10555` (Lens 2)
+- **Local Adapter:** `okam_adapter.py`
+- **Decoder HTTP Port:** `8082`
+- **Live Stream (MJPEG):** `http://192.168.100.11:8082/stream.mjpg`
+- **Snapshot Endpoint:** `http://192.168.100.11:8082/snapshot`
+- **Telemetry Metrics:** `http://192.168.100.11:8082/api/metrics`
 
 ---
 
@@ -80,6 +85,14 @@ dotnet run --no-build -- `
 
 [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr2)
 Remove-Variable pass2, secure2, user2 -ErrorAction SilentlyContinue
+```
+
+#### Start Adapter for Kamera 3 — O-Kam Pro (Port 8082):
+```powershell
+cd "C:\DaffaP\Project df\CamHUB"
+
+# Jalankan adapter RTSP-to-MJPEG untuk O-Kam Pro
+python okam_adapter.py --port 8082 --rtsp "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0"
 ```
 
 ### Step 2: Serve the Dashboard
