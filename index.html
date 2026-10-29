@@ -22,6 +22,9 @@
           <span class="nav-label">Cameras</span>
           <span class="nav-count" id="nav-camera-count">3</span>
         </a>
+        <a class="nav-link" href="#analytics">
+          <span class="nav-label">Analytics</span>
+        </a>
         <a class="nav-link" href="#setup">
           <span class="nav-label">Setup guide</span>
         </a>
@@ -42,11 +45,33 @@
           <p class="status-sentence" id="status-sentence">Checking camera feeds…</p>
         </div>
         <div class="topbar-actions">
+          <div class="view-switch" role="group" aria-label="Grid layout">
+            <button class="button button-small view-btn active" data-layout="2col" type="button" title="Large dual feed view">2 columns</button>
+            <button class="button button-small view-btn" data-layout="auto" type="button" title="Adaptive grid">Auto</button>
+            <button class="button button-small view-btn" data-layout="1col" type="button" title="Single column cinema view">1 column</button>
+          </div>
           <button class="button" id="refresh-all" type="button">Refresh feeds</button>
         </div>
       </header>
 
-      <section class="camera-grid" id="camera-grid" aria-label="Camera feeds"></section>
+      <section class="camera-grid density-2col" id="camera-grid" aria-label="Camera feeds"></section>
+
+      <section class="analytics-panel" id="analytics">
+        <div class="analytics-header">
+          <div>
+            <h2 class="analytics-title">Stream analytics</h2>
+            <p class="analytics-description">Real-time decoder telemetry, frame rates, and pipeline latency polled directly from local adapters.</p>
+          </div>
+          <div class="analytics-status">
+            <span class="analytics-indicator"></span>
+            <span class="analytics-status-text" id="analytics-status-text">Polling metrics (2s)</span>
+          </div>
+        </div>
+
+        <div class="analytics-cards" id="analytics-cards">
+          <!-- Dynamically populated per camera -->
+        </div>
+      </section>
 
       <section class="setup-panel" id="setup">
         <div class="setup-header">

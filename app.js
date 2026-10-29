@@ -6,6 +6,7 @@ const DEFAULT_CAMERAS = [
     brand: "V380 Pro / V380Decoder-Latest",
     url: "http://192.168.100.11:8080/stream.mjpg",
     snapshotUrl: "http://192.168.100.11:8080/snapshot",
+    metricsUrl: "http://192.168.100.11:8080/api/metrics",
     hint: "LAN"
   },
   {
@@ -15,6 +16,7 @@ const DEFAULT_CAMERAS = [
     brand: "V380 Pro / V380Decoder-Fork",
     url: "http://192.168.100.11:8081/stream.mjpg",
     snapshotUrl: "http://192.168.100.11:8081/snapshot",
+    metricsUrl: "http://192.168.100.11:8081/api/metrics",
     hint: "LAN"
   },
   {
@@ -24,28 +26,42 @@ const DEFAULT_CAMERAS = [
     brand: "O Kam Pro (Adapter pending)",
     url: "",
     snapshotUrl: "",
+    metricsUrl: "",
     hint: "Not configured"
   }
 ];
 
-const STORAGE_KEY = "camhub.control.cameras.v1";
-const PREV_KEYS = ["camhub.mvp.cameras.v3", "camhub.mvp.cameras.v2", "camhub.mvp.cameras.v1"];
+const STORAGE_KEY = "camhub.control.cameras.v2";
+const PREV_KEYS = ["camhub.control.cameras.v1", "camhub.mvp.cameras.v3", "camhub.mvp.cameras.v2", "camhub.mvp.cameras.v1"];
 
 let cameras = loadCameras();
 const connectionStates = new Map();
 const watchdogs = new Map();
+const metricsData = new Map();
+const metricsHistory = new Map();
 
 const grid = document.querySelector("#camera-grid");
 const dialog = document.querySelector("#config-dialog");
 const configForm = document.querySelector("#config-form");
 const closeDialogBtn = document.querySelector("#close-dialog-btn");
 const cancelDialogBtn = document.querySelector("#cancel-dialog-btn");
+const analyticsCards = document.querySelector("#analytics-cards");
 
 function getFormattedTime() {
   return new Intl.DateTimeFormat([], {
     hour: "numeric",
     minute: "2-digit"
   }).format(new Date());
+}
+
+function deriveMetricsUrl(streamUrl) {
+  if (!streamUrl) return "";
+  try {
+    const u = new URL(streamUrl);
+    return `${u.protocol}//${u.host}/api/metrics`;
+  } catch {
+    return "";
+  }
 }
 
 function loadCameras() {
@@ -65,6 +81,7 @@ function loadCameras() {
           const matched = saved.find(item => item.id === def.id || item.id === legacyId);
           if (matched) {
             const isGenericDefault = !matched.location || matched.location.includes("Point") || matched.location.includes("Local network");
+            const url = matched.url !== undefined && matched.url !== "" ? matched.url : def.url;
             return {
               ...def,
               ...matched,
@@ -72,8 +89,9 @@ function loadCameras() {
               name: matched.name || def.name,
               location: isGenericDefault ? def.location : matched.location,
               brand: isGenericDefault ? def.brand : (matched.brand || def.brand),
-              url: matched.url !== undefined && matched.url !== "" ? matched.url : def.url,
+              url: url,
               snapshotUrl: matched.snapshotUrl !== undefined && matched.snapshotUrl !== "" ? matched.snapshotUrl : def.snapshotUrl,
+              metricsUrl: deriveMetricsUrl(url),
               hint: def.hint
             };
           }
@@ -196,7 +214,7 @@ function startStream(id) {
   img.onload = null;
   img.onerror = null;
 
-  // Timeout watchdog (8s)
+  // Watchdog timer (8s)
   const timer = setTimeout(() => {
     if (connectionStates.get(id)?.status === "connecting") {
       setConnection(id, "offline", "Connection timed out (8s). No frames received from decoder.");
@@ -207,6 +225,23 @@ function startStream(id) {
   img.onload = () => {
     clearWatchdog(id);
     setConnection(id, "online");
+
+    // Dynamic stream ratio adjustment
+    if (img.naturalWidth && img.naturalHeight) {
+      const wrap = img.closest(".video-container");
+      if (wrap) {
+        wrap.style.setProperty("--stream-ratio", `${img.naturalWidth} / ${img.naturalHeight}`);
+      }
+      const badge = document.querySelector(`[data-ratio="${CSS.escape(id)}"]`);
+      if (badge) {
+        badge.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+        badge.style.display = "inline-block";
+      }
+      const tileRes = document.querySelector(`[data-telemetry-res="${CSS.escape(id)}"]`);
+      if (tileRes) {
+        tileRes.textContent = `${img.naturalWidth}×${img.naturalHeight}`;
+      }
+    }
   };
 
   img.onerror = () => {
@@ -242,7 +277,10 @@ function render() {
                 <h3 class="tile-title">${escapeHtml(camera.name)}</h3>
                 <span class="status-text" data-status-text="${escapeHtml(camera.id)}">${statusWord}</span>
               </div>
-              <div class="tile-micro" data-micro="${escapeHtml(camera.id)}">${timeStr}</div>
+              <div class="tile-micro-group">
+                <span class="ratio-badge" data-ratio="${escapeHtml(camera.id)}" style="display:none;"></span>
+                <span class="tile-micro" data-micro="${escapeHtml(camera.id)}">${timeStr}</span>
+              </div>
             </div>
           </div>
 
@@ -264,24 +302,178 @@ function render() {
         </div>
 
         <div class="tile-footer">
-          <div class="tile-details">
-            <span class="details-text" title="${escapeHtml(camera.location)}">${escapeHtml(camera.location)}</span>
+          <div class="tile-footer-top">
+            <div class="tile-details">
+              <span class="details-text" title="${escapeHtml(camera.location)}">${escapeHtml(camera.location)}</span>
+            </div>
+            <div class="tile-actions">
+              <button class="button button-small" data-refresh="${escapeHtml(camera.id)}" type="button" title="Reload feed">Reload</button>
+              <button class="button button-small" data-configure="${escapeHtml(camera.id)}" type="button" title="Configure camera">Configure</button>
+              <button class="button button-small button-focus" data-focus="${escapeHtml(camera.id)}" type="button" title="Expand to full row">Focus</button>
+            </div>
           </div>
-          <div class="tile-actions">
-            <button class="button button-small" data-refresh="${escapeHtml(camera.id)}" type="button" title="Reload feed">Reload</button>
-            <button class="button button-small" data-configure="${escapeHtml(camera.id)}" type="button" title="Configure camera">Configure</button>
-            <button class="button button-small button-focus" data-focus="${escapeHtml(camera.id)}" type="button" title="Expand to full row">Focus</button>
+          <div class="tile-telemetry" data-tile-telemetry="${escapeHtml(camera.id)}">
+            <span class="telemetry-item">FPS: <span class="telemetry-val live" data-telemetry-fps="${escapeHtml(camera.id)}">—</span></span>
+            <span>·</span>
+            <span class="telemetry-item">Latency: <span class="telemetry-val accent" data-telemetry-lat="${escapeHtml(camera.id)}">—</span></span>
+            <span>·</span>
+            <span class="telemetry-item">Ratio: <span class="telemetry-val" data-telemetry-res="${escapeHtml(camera.id)}">—</span></span>
+            <span>·</span>
+            <span class="telemetry-item">Clients: <span class="telemetry-val" data-telemetry-clients="${escapeHtml(camera.id)}">—</span></span>
           </div>
         </div>
       </article>`;
   }).join("");
 
+  renderAnalyticsCards();
   updateSummary();
   attachEvents();
 
   cameras.forEach((camera) => {
     startStream(camera.id);
   });
+}
+
+function renderAnalyticsCards() {
+  if (!analyticsCards) return;
+
+  analyticsCards.innerHTML = cameras.map((camera) => {
+    const isUnconfigured = !camera.url;
+    return `
+      <article class="metric-card" data-metric-card="${escapeHtml(camera.id)}">
+        <div class="metric-card-head">
+          <div class="metric-card-title">
+            <span class="status-dot ${isUnconfigured ? 'unconfigured' : 'connecting'}" data-metric-dot="${escapeHtml(camera.id)}"></span>
+            ${escapeHtml(camera.name)}
+          </div>
+          <span class="metric-card-chip">${escapeHtml(camera.hint || 'LAN')}</span>
+        </div>
+
+        <div class="metric-grid">
+          <div class="metric-item">
+            <span class="metric-label">Source stream rate</span>
+            <span class="metric-value live" data-val-source-fps="${escapeHtml(camera.id)}">— fps</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Transcode output</span>
+            <span class="metric-value live" data-val-xcode-fps="${escapeHtml(camera.id)}">— fps</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Pipeline latency</span>
+            <span class="metric-value latency" data-val-latency="${escapeHtml(camera.id)}">— ms</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Total frames</span>
+            <span class="metric-value" data-val-frames="${escapeHtml(camera.id)}">—</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Active subscribers</span>
+            <span class="metric-value" data-val-clients="${escapeHtml(camera.id)}">—</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Stream resolution</span>
+            <span class="metric-value" data-val-resolution="${escapeHtml(camera.id)}">—</span>
+          </div>
+        </div>
+
+        <div class="sparkline-wrap">
+          <div class="sparkline-label">
+            <span>FPS stability (last 30s)</span>
+            <span data-val-fps-current="${escapeHtml(camera.id)}">—</span>
+          </div>
+          <svg class="sparkline-svg" data-sparkline="${escapeHtml(camera.id)}" viewBox="0 0 320 44" preserveAspectRatio="none">
+            <line x1="0" y1="22" x2="320" y2="22" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="2 2" />
+          </svg>
+        </div>
+      </article>`;
+  }).join("");
+}
+
+function updateSparkline(id, history) {
+  const svg = document.querySelector(`[data-sparkline="${CSS.escape(id)}"]`);
+  if (!svg || !history || history.length < 2) return;
+
+  const width = 320;
+  const height = 44;
+  const pad = 4;
+  const maxVal = Math.max(...history, 16);
+  const minVal = 0;
+  const range = maxVal - minVal || 1;
+
+  const points = history.map((val, idx) => {
+    const x = pad + (idx / (history.length - 1)) * (width - pad * 2);
+    const y = height - pad - ((val - minVal) / range) * (height - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+
+  const polylinePts = points.join(" ");
+  const polygonPts = `${points[0].split(",")[0]},${height - pad} ${polylinePts} ${points[points.length - 1].split(",")[0]},${height - pad}`;
+
+  svg.innerHTML = `
+    <line x1="0" y1="${height / 2}" x2="${width}" y2="${height / 2}" stroke="rgba(255,255,255,0.08)" stroke-width="1" stroke-dasharray="3 3" />
+    <polygon points="${polygonPts}" fill="rgba(111, 207, 151, 0.12)" />
+    <polyline points="${polylinePts}" fill="none" stroke="var(--live)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  `;
+}
+
+async function pollMetrics() {
+  for (const camera of cameras) {
+    if (!camera.metricsUrl) continue;
+    try {
+      const res = await fetch(camera.metricsUrl, { cache: "no-store" });
+      if (!res.ok) continue;
+      const data = await res.json();
+      metricsData.set(camera.id, data);
+
+      // Record history
+      let history = metricsHistory.get(camera.id);
+      if (!history) {
+        history = [];
+        metricsHistory.set(camera.id, history);
+      }
+      history.push(data.sourceFps || 0);
+      if (history.length > 20) history.shift();
+
+      // Update per-tile telemetry strip
+      const fpsEl = document.querySelector(`[data-telemetry-fps="${CSS.escape(camera.id)}"]`);
+      const latEl = document.querySelector(`[data-telemetry-lat="${CSS.escape(camera.id)}"]`);
+      const clientsEl = document.querySelector(`[data-telemetry-clients="${CSS.escape(camera.id)}"]`);
+      if (fpsEl) fpsEl.textContent = `${data.sourceFps?.toFixed(1) ?? '—'} fps`;
+      if (latEl) latEl.textContent = `${Math.round(data.xcodeLatencyMs ?? 0)} ms`;
+      if (clientsEl) clientsEl.textContent = `${data.activeRtspSessions ?? 0} RTSP · ${data.activeMjpegClients ?? 0} Web`;
+
+      // Update analytics card
+      const srcFps = document.querySelector(`[data-val-source-fps="${CSS.escape(camera.id)}"]`);
+      const xcodeFps = document.querySelector(`[data-val-xcode-fps="${CSS.escape(camera.id)}"]`);
+      const latVal = document.querySelector(`[data-val-latency="${CSS.escape(camera.id)}"]`);
+      const framesVal = document.querySelector(`[data-val-frames="${CSS.escape(camera.id)}"]`);
+      const clientsVal = document.querySelector(`[data-val-clients="${CSS.escape(camera.id)}"]`);
+      const curFps = document.querySelector(`[data-val-fps-current="${CSS.escape(camera.id)}"]`);
+      const mDot = document.querySelector(`[data-metric-dot="${CSS.escape(camera.id)}"]`);
+
+      if (srcFps) srcFps.textContent = `${data.sourceFps?.toFixed(1) ?? '0.0'} fps`;
+      if (xcodeFps) xcodeFps.textContent = `${data.xcodeOutFps?.toFixed(1) ?? '0.0'} fps`;
+      if (latVal) latVal.textContent = `${Math.round(data.xcodeLatencyMs ?? 0)} ms`;
+      if (framesVal) framesVal.textContent = Number(data.totalSourceFrames || 0).toLocaleString();
+      if (clientsVal) clientsVal.textContent = `${data.activeRtspSessions ?? 0} RTSP · ${data.activeMjpegClients ?? 0} Web`;
+      if (curFps) curFps.textContent = `${data.sourceFps?.toFixed(1) ?? '0.0'} fps`;
+      if (mDot) mDot.className = "status-dot online";
+
+      const img = document.querySelector(`[data-feed="${CSS.escape(camera.id)}"]`);
+      if (img && img.naturalWidth) {
+        const resVal = document.querySelector(`[data-val-resolution="${CSS.escape(camera.id)}"]`);
+        if (resVal) resVal.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+      }
+
+      updateSparkline(camera.id, history);
+    } catch {
+      // Offline or network error
+      const mDot = document.querySelector(`[data-metric-dot="${CSS.escape(camera.id)}"]`);
+      if (mDot && connectionStates.get(camera.id)?.status === "offline") {
+        mDot.className = "status-dot offline";
+      }
+    }
+  }
 }
 
 function attachEvents() {
@@ -313,7 +505,7 @@ function attachEvents() {
     };
   });
 
-  // Focus mode toggle (Section 5: "Clicking a tile expands it to full row (focus mode); click again to restore.")
+  // Focus mode
   document.querySelectorAll("[data-focus]").forEach((btn) => {
     btn.onclick = (e) => {
       e.stopPropagation();
@@ -325,7 +517,6 @@ function attachEvents() {
     };
   });
 
-  // Also allow clicking video area to toggle focus mode
   document.querySelectorAll("[data-video-wrap]").forEach((wrap) => {
     wrap.onclick = (e) => {
       if (e.target.closest("button")) return;
@@ -339,6 +530,29 @@ function attachEvents() {
       }
     };
   });
+
+  // Layout View Switcher (2col, auto, 1col)
+  document.querySelectorAll("[data-layout]").forEach((btn) => {
+    btn.onclick = () => {
+      document.querySelectorAll("[data-layout]").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      const mode = btn.dataset.layout;
+      grid.classList.remove("density-2col", "density-auto", "density-1col");
+      grid.classList.add(`density-${mode}`);
+      localStorage.setItem("camhub.view.density", mode);
+    };
+  });
+}
+
+function restoreLayoutPreference() {
+  const saved = localStorage.getItem("camhub.view.density") || "2col";
+  const btn = document.querySelector(`[data-layout="${saved}"]`);
+  if (btn) {
+    document.querySelectorAll("[data-layout]").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    grid.classList.remove("density-2col", "density-auto", "density-1col");
+    grid.classList.add(`density-${saved}`);
+  }
 }
 
 function openConfig(id) {
@@ -415,6 +629,7 @@ configForm.addEventListener("submit", (event) => {
   camera.brand = document.querySelector("#camera-brand").value.trim();
   camera.url = urlInput;
   camera.snapshotUrl = snapshotInput;
+  camera.metricsUrl = deriveMetricsUrl(urlInput);
 
   saveCameras();
   closeDialog();
@@ -584,5 +799,11 @@ function initSetupGuide() {
   }
 }
 
+// Initial boot
 initSetupGuide();
 render();
+restoreLayoutPreference();
+
+// Start periodic telemetry poller (every 2s)
+setInterval(pollMetrics, 2000);
+pollMetrics();
