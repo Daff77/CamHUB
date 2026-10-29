@@ -853,9 +853,125 @@ function initNav() {
   }, { passive: true });
 }
 
+function showToast(message, type = "info", duration = 3500) {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    setTimeout(() => toast.remove(), 250);
+  }, duration);
+}
+
+function initServiceControls() {
+  const runBtn = document.getElementById("run-all-cameras");
+  const runText = document.getElementById("run-all-text");
+  if (!runBtn) return;
+
+  let allRunning = false;
+  let isProcessing = false;
+
+  const updateBtnState = (running) => {
+    allRunning = running;
+    if (running) {
+      runBtn.classList.add("is-running");
+      runBtn.title = "Restart all camera processes";
+      if (runText) runText.textContent = "Restart all cameras";
+      const icon = runBtn.querySelector(".btn-icon");
+      if (icon) {
+        icon.innerHTML = `<polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>`;
+        icon.setAttribute("fill", "none");
+        icon.setAttribute("stroke", "currentColor");
+        icon.setAttribute("stroke-width", "2");
+      }
+    } else {
+      runBtn.classList.remove("is-running");
+      runBtn.title = "Start all decoder and adapter services directly";
+      if (runText) runText.textContent = "Run all cameras";
+      const icon = runBtn.querySelector(".btn-icon");
+      if (icon) {
+        icon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3"></polygon>`;
+        icon.setAttribute("fill", "currentColor");
+        icon.removeAttribute("stroke");
+      }
+    }
+  };
+
+  const checkStatus = async () => {
+    if (isProcessing) return;
+    try {
+      const res = await fetch("/api/services/status", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        updateBtnState(Boolean(data.allRunning));
+      }
+    } catch {
+      // Host server might be plain http-server
+    }
+  };
+
+  runBtn.addEventListener("click", async () => {
+    if (isProcessing) return;
+    isProcessing = true;
+    runBtn.classList.add("is-loading");
+    runBtn.disabled = true;
+
+    const action = allRunning ? "restart-all" : "start-all";
+    const actionText = allRunning ? "Restarting all cameras…" : "Starting all cameras…";
+    if (runText) runText.textContent = actionText;
+
+    const icon = runBtn.querySelector(".btn-icon");
+    if (icon) {
+      icon.classList.add("btn-spinner");
+      icon.innerHTML = `<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.25" fill="none"></circle><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"></path>`;
+    }
+
+    showToast(allRunning ? "Restarting camera services..." : "Launching camera decoders and adapters...", "info", 2500);
+
+    try {
+      const res = await fetch(`/api/services/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        showToast("All camera services active (8080, 8081, 8082). Connecting feeds...", "success", 4000);
+        updateBtnState(Boolean(data.status?.allRunning ?? true));
+
+        // Allow 1.2s for sockets to bind, then restart client feeds
+        setTimeout(() => {
+          cameras.forEach((cam) => startStream(cam.id));
+          pollMetrics();
+        }, 1200);
+      } else {
+        showToast("Failed to communicate with CamHub service manager", "error", 4000);
+      }
+    } catch (err) {
+      showToast("Could not reach service manager. Run server.py on port 3000.", "error", 4500);
+    } finally {
+      isProcessing = false;
+      runBtn.classList.remove("is-loading");
+      runBtn.disabled = false;
+      if (icon) icon.classList.remove("btn-spinner");
+      await checkStatus();
+    }
+  });
+
+  // Initial check & periodic sync
+  checkStatus();
+  setInterval(checkStatus, 8000);
+}
+
 // Initial boot
 initNav();
 initSetupGuide();
+initServiceControls();
 render();
 restoreLayoutPreference();
 

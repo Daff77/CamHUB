@@ -70,6 +70,12 @@
             <button class="button button-small view-btn" data-layout="auto" type="button" title="Adaptive grid">Auto</button>
             <button class="button button-small view-btn" data-layout="1col" type="button" title="Single column cinema view">1 column</button>
           </div>
+          <button class="button button-primary" id="run-all-cameras" type="button" title="Start all decoder and adapter services directly">
+            <svg class="btn-icon play-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span id="run-all-text">Run all cameras</span>
+          </button>
           <button class="button" id="refresh-all" type="button">Refresh feeds</button>
         </div>
       </header>
@@ -161,6 +167,8 @@
       </div>
     </form>
   </dialog>
+
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
   <script src="app.js"></script>
 </body>

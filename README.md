@@ -95,13 +95,14 @@ cd "C:\DaffaP\Project df\CamHUB"
 python okam_adapter.py --port 8082 --rtsp "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0"
 ```
 
-### Step 2: Serve the Dashboard
+### Step 2: Serve the Dashboard & Service Manager
 
 Open PowerShell in this project folder (`C:\DaffaP\Project df\CamHUB`):
 
 ```powershell
-python -m http.server 3000
+python server.py --port 3000
 ```
+*(Catatan: Menjalankan `server.py` memungkinkan tombol **"Run all cameras"** di dasbor web untuk otomatis menyalakan seluruh background decoder tanpa perlu membuka 3 jendela terminal terpisah).*
 
 ### Step 3: Open in Browser
 
@@ -110,6 +111,8 @@ Open Google Chrome or any modern browser and navigate to:
 http://127.0.0.1:3000
 ```
 *(or `http://localhost:3000`)*
+
+Cukup klik tombol hijau **"▶ Run all cameras"** di pojok kanan atas dasbor untuk menyalakan ketiga kamera sekaligus!
 
 ---
 
