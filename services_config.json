@@ -1,0 +1,73 @@
+{
+  "healthMonitor": {
+    "pollIntervalSeconds": 3.0,
+    "httpTimeoutSeconds": 1.5,
+    "minFpsHealthy": 5.0,
+    "minFpsDegraded": 0.5,
+    "frameFreshnessTimeoutSec": 4.5,
+    "frozenFrameThresholdSec": 8.0,
+    "maxReconnectsDegraded": 2,
+    "recoveryStabilitySeconds": 6.0,
+    "consecutiveFailuresForOffline": 2
+  },
+  "autoRecovery": {
+    "enabled": true,
+    "maxRestartAttempts": 5,
+    "windowSeconds": 300,
+    "initialBackoffSeconds": 2.0,
+    "maxBackoffSeconds": 30.0,
+    "backoffMultiplier": 2.0,
+    "unhealthyThresholdSeconds": 25.0,
+    "stableDurationToResetAttempts": 30.0
+  },
+  "recording": {
+    "enabled": true,
+    "storagePath": "recordings",
+    "segmentDurationSeconds": 60,
+    "retentionDays": 7,
+    "maxStorageGb": 20.0,
+    "minDiskFreeGb": 5.0,
+    "preferredSource": "rtsp",
+    "autoRecordCameras": []
+  },
+  "motionDetection": {
+    "enabled": true,
+    "samplingIntervalSeconds": 0.5,
+    "analysisWidth": 320,
+    "analysisHeight": 180,
+    "motionThreshold": 25.0,
+    "minMotionAreaPercent": 1.5,
+    "maxMotionAreaPercent": 65.0,
+    "cooldownSeconds": 15.0,
+    "minEventDurationSeconds": 0.6,
+    "retentionDays": 7,
+    "maxStorageMb": 1000.0
+  },
+  "cameras": [
+    {
+      "id": "v380-1",
+      "name": "Camera 1 · Indoor",
+      "port": 8080,
+      "rtspPort": 8554,
+      "type": "v380",
+      "cmd": "dotnet run --project \"C:\\Users\\daffa\\V380Decoder-Fork\\V380Decoder.csproj\" --no-build -- --id 124095217 --username hendra --password Danendra07. --ip 192.168.100.24 --port 8800 --source lan --output rtsp --quality hd --enable-api --enable-onvif --http-port 8080 --rtsp-port 8554 --debug"
+    },
+    {
+      "id": "v380-2",
+      "name": "Camera 2 · Garage",
+      "port": 8081,
+      "rtspPort": 8555,
+      "type": "v380",
+      "cmd": "dotnet run --project \"C:\\Users\\daffa\\V380Decoder-Fork\\V380Decoder.csproj\" --no-build -- --id 97357757 --username garasi --password Danendra07. --ip 192.168.100.4 --port 8800 --source lan --output rtsp --quality hd --enable-api --enable-onvif --http-port 8081 --rtsp-port 8555 --debug",
+      "fastRtsCmd": "python -u \"C:\\DaffaP\\Project df\\CamHUB\\core\\okam_adapter.py\" --port 8081 --rtsp \"rtsp://192.168.100.4:554/\""
+    },
+    {
+      "id": "okam-3",
+      "name": "Camera 3 · O-Kam Pro",
+      "port": 8082,
+      "type": "okam",
+      "cmd": "python -u \"C:\\DaffaP\\Project df\\CamHUB\\core\\okam_adapter.py\" --port 8082 --rtsp \"rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0\""
+    }
+  ]
+}
+

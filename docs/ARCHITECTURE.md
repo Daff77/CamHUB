@@ -79,3 +79,4 @@ CamHUB/
 - Serves frontend assets from `web/` with strict anti-caching headers (`Cache-Control: no-cache, no-store, must-revalidate`).
 - Provides unified REST APIs (`/api/services`, `/api/health`, `/api/recovery`, `/api/recordings`, `/api/events`).
 - Supports video streaming with HTTP 206 Partial Content.
+

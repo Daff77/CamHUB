@@ -13,7 +13,13 @@ import socket
 import threading
 import subprocess
 from enum import Enum
-from health_monitor import sanitize_sensitive_data, is_port_listening
+try:
+    from core.health_monitor import sanitize_sensitive_data, is_port_listening
+except ImportError:
+    try:
+        from .health_monitor import sanitize_sensitive_data, is_port_listening
+    except ImportError:
+        from health_monitor import sanitize_sensitive_data, is_port_listening
 
 # CamHUB project root directory (parent of core/)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

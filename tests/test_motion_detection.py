@@ -19,12 +19,20 @@ import unittest
 from datetime import datetime
 from PIL import Image, ImageDraw
 
-from motion_detector import (
-    CameraMotionTracker,
-    MotionDetectorService,
-    sanitize_path,
-    DEFAULT_MOTION_CONFIG
-)
+try:
+    from core.motion_detector import (
+        CameraMotionTracker,
+        MotionDetectorService,
+        sanitize_path,
+        DEFAULT_MOTION_CONFIG
+    )
+except ImportError:
+    from motion_detector import (
+        CameraMotionTracker,
+        MotionDetectorService,
+        sanitize_path,
+        DEFAULT_MOTION_CONFIG
+    )
 
 def create_synthetic_frame(width=320, height=180, base_color=80, box=None) -> bytes:
     """Generates synthetic JPEG bytes with optional highlighted moving box."""

@@ -192,7 +192,7 @@ class CamHubHandler(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         # Silence routine static asset logs
         if "/api/services" in (args[0] if args else ""):
-            print(f"[API] {self.command} {args[0]}", flush=True)
+            print(f"[API] {args[0]}", flush=True)
 
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")

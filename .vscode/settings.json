@@ -1,0 +1,10 @@
+{
+  "python.analysis.extraPaths": [
+    "./core",
+    "."
+  ],
+  "python.autoComplete.extraPaths": [
+    "./core",
+    "."
+  ]
+}

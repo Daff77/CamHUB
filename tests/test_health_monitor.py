@@ -10,18 +10,29 @@ import sys
 import time
 import unittest
 
-# Ensure core directory is in sys.path
-CORE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "core"))
-if CORE_DIR not in sys.path:
-    sys.path.insert(0, CORE_DIR)
+# Ensure core and root directories are in sys.path
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+CORE_DIR = os.path.join(ROOT_DIR, "core")
+for p in (ROOT_DIR, CORE_DIR):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
-from health_monitor import (
-    CameraHealthState,
-    CameraHealthTracker,
-    CameraHealthMonitor,
-    sanitize_sensitive_data,
-    DEFAULT_THRESHOLDS
-)
+try:
+    from core.health_monitor import (
+        CameraHealthState,
+        CameraHealthTracker,
+        CameraHealthMonitor,
+        sanitize_sensitive_data,
+        DEFAULT_THRESHOLDS
+    )
+except ImportError:
+    from health_monitor import (
+        CameraHealthState,
+        CameraHealthTracker,
+        CameraHealthMonitor,
+        sanitize_sensitive_data,
+        DEFAULT_THRESHOLDS
+    )
 
 class TestSmartHealthMonitor(unittest.TestCase):
 

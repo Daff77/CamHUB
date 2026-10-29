@@ -11,17 +11,27 @@ import shutil
 import tempfile
 import unittest
 
-# Ensure core directory is in sys.path
-CORE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "core"))
-if CORE_DIR not in sys.path:
-    sys.path.insert(0, CORE_DIR)
+# Ensure core and root directories are in sys.path
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+CORE_DIR = os.path.join(ROOT_DIR, "core")
+for p in (ROOT_DIR, CORE_DIR):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
-from recording_manager import (
-    RecordingManager,
-    sanitize_path,
-    get_disk_space_stats,
-    DEFAULT_RECORDING_CONFIG
-)
+try:
+    from core.recording_manager import (
+        RecordingManager,
+        sanitize_path,
+        get_disk_space_stats,
+        DEFAULT_RECORDING_CONFIG
+    )
+except ImportError:
+    from recording_manager import (
+        RecordingManager,
+        sanitize_path,
+        get_disk_space_stats,
+        DEFAULT_RECORDING_CONFIG
+    )
 
 class TestLocalRecording(unittest.TestCase):
 
