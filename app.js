@@ -1,12 +1,14 @@
+const defaultHost = (typeof window !== "undefined" && window.location && window.location.hostname) ? window.location.hostname : "127.0.0.1";
+
 const DEFAULT_CAMERAS = [
   {
     id: "v380-1",
     name: "Camera 1 · Indoor",
     location: "192.168.100.24 · ID 124095217 · Port 8080",
     brand: "V380 Pro / V380Decoder-Latest",
-    url: "http://192.168.100.11:8080/stream.mjpg",
-    snapshotUrl: "http://192.168.100.11:8080/snapshot",
-    metricsUrl: "http://192.168.100.11:8080/api/metrics",
+    url: `http://${defaultHost}:8080/stream.mjpg`,
+    snapshotUrl: `http://${defaultHost}:8080/snapshot`,
+    metricsUrl: `http://${defaultHost}:8080/api/metrics`,
     hint: "LAN"
   },
   {
@@ -14,9 +16,9 @@ const DEFAULT_CAMERAS = [
     name: "Camera 2 · Garage",
     location: "192.168.100.4 · ID 97357757 · Port 8081",
     brand: "V380 Pro / V380Decoder-Fork",
-    url: "http://192.168.100.11:8081/stream.mjpg",
-    snapshotUrl: "http://192.168.100.11:8081/snapshot",
-    metricsUrl: "http://192.168.100.11:8081/api/metrics",
+    url: `http://${defaultHost}:8081/stream.mjpg`,
+    snapshotUrl: `http://${defaultHost}:8081/snapshot`,
+    metricsUrl: `http://${defaultHost}:8081/api/metrics`,
     hint: "LAN"
   },
   {
@@ -24,9 +26,9 @@ const DEFAULT_CAMERAS = [
     name: "Camera 3 · O Kam Pro",
     location: "192.168.100.6 · Port 10554 · VStarcam",
     brand: "O Kam Pro / VStarcam",
-    url: "http://192.168.100.11:8082/stream.mjpg",
-    snapshotUrl: "http://192.168.100.11:8082/snapshot",
-    metricsUrl: "http://192.168.100.11:8082/api/metrics",
+    url: `http://${defaultHost}:8082/stream.mjpg`,
+    snapshotUrl: `http://${defaultHost}:8082/snapshot`,
+    metricsUrl: `http://${defaultHost}:8082/api/metrics`,
     hint: "LAN RTSP"
   }
 ];
@@ -81,7 +83,14 @@ function loadCameras() {
           const matched = saved.find(item => item.id === def.id || item.id === legacyId);
           if (matched) {
             const isGenericDefault = !matched.location || matched.location.includes("Point") || matched.location.includes("Local network");
-            const url = matched.url !== undefined && matched.url !== "" ? matched.url : def.url;
+            let url = matched.url !== undefined && matched.url !== "" ? matched.url : def.url;
+            let snapshotUrl = matched.snapshotUrl !== undefined && matched.snapshotUrl !== "" ? matched.snapshotUrl : def.snapshotUrl;
+            if (url && url.includes("192.168.100.11") && defaultHost !== "192.168.100.11") {
+              url = url.replace("192.168.100.11", defaultHost);
+            }
+            if (snapshotUrl && snapshotUrl.includes("192.168.100.11") && defaultHost !== "192.168.100.11") {
+              snapshotUrl = snapshotUrl.replace("192.168.100.11", defaultHost);
+            }
             return {
               ...def,
               ...matched,
@@ -90,7 +99,7 @@ function loadCameras() {
               location: isGenericDefault ? def.location : matched.location,
               brand: isGenericDefault ? def.brand : (matched.brand || def.brand),
               url: url,
-              snapshotUrl: matched.snapshotUrl !== undefined && matched.snapshotUrl !== "" ? matched.snapshotUrl : def.snapshotUrl,
+              snapshotUrl: snapshotUrl,
               metricsUrl: deriveMetricsUrl(url),
               hint: def.hint
             };
