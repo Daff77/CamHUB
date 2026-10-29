@@ -799,7 +799,36 @@ function initSetupGuide() {
   }
 }
 
+function initNav() {
+  const navLinks = document.querySelectorAll(".nav-link");
+  navLinks.forEach((link) => {
+    link.addEventListener("click", () => {
+      navLinks.forEach((l) => l.classList.remove("active"));
+      link.classList.add("active");
+    });
+  });
+
+  const sections = [
+    { id: "overview", link: document.querySelector('.nav-link[href="#overview"]') },
+    { id: "analytics", link: document.querySelector('.nav-link[href="#analytics"]') },
+    { id: "setup", link: document.querySelector('.nav-link[href="#setup"]') }
+  ];
+
+  window.addEventListener("scroll", () => {
+    const scrollPos = window.scrollY + 140;
+    for (let i = sections.length - 1; i >= 0; i--) {
+      const el = document.getElementById(sections[i].id);
+      if (el && scrollPos >= el.offsetTop) {
+        navLinks.forEach((l) => l.classList.remove("active"));
+        if (sections[i].link) sections[i].link.classList.add("active");
+        break;
+      }
+    }
+  }, { passive: true });
+}
+
 // Initial boot
+initNav();
 initSetupGuide();
 render();
 restoreLayoutPreference();

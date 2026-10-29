@@ -87,12 +87,22 @@ body {
 }
 
 .brand {
-  margin-bottom: 28px;
-  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  padding: 0 10px;
+}
+
+.brand-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-dot);
+  background-color: var(--accent);
 }
 
 .brand-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: -0.015em;
@@ -102,22 +112,24 @@ body {
 .nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .nav-link {
   height: 36px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   padding: 0 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-ctrl);
   color: var(--muted);
   text-decoration: none;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 450;
   transition: background-color 0.12s ease, color 0.12s ease;
   position: relative;
+  overflow: hidden;
+  user-select: none;
 }
 
 .nav-link:hover {
@@ -128,23 +140,57 @@ body {
 .nav-link.active {
   background-color: var(--raise);
   color: var(--text);
+  font-weight: 550;
 }
 
 .nav-link.active::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
   background-color: var(--accent);
-  border-radius: 1px;
+}
+
+.nav-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: color 0.12s ease;
+}
+
+.nav-link:hover .nav-icon {
+  color: var(--text);
+}
+
+.nav-link.active .nav-icon {
+  color: var(--accent);
+}
+
+.nav-label {
+  flex: 1;
+  white-space: nowrap;
 }
 
 .nav-count {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: var(--radius-dot);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.nav-link.active .nav-count {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .sidebar-bottom {
