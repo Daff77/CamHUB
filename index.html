@@ -89,6 +89,30 @@
           <p class="status-sentence" id="status-sentence">Checking camera feeds…</p>
         </div>
         <div class="topbar-actions">
+          <div class="camera-filter-wrapper">
+            <button class="button button-small camera-filter-toggle-btn" id="camera-filter-toggle-btn" type="button" aria-haspopup="true" aria-expanded="false" title="Filter which cameras appear on dashboard">
+              <svg class="btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 6h16M7 12h10M10 18h4"></path>
+              </svg>
+              <span id="camera-filter-toggle-text">Cameras (3/3)</span>
+              <span class="filter-dropdown-arrow">▾</span>
+            </button>
+            <div class="camera-filter-dropdown" id="camera-filter-dropdown" style="display: none;">
+              <div class="filter-dropdown-head">
+                <span class="filter-dropdown-title">Display Cameras</span>
+                <div class="filter-dropdown-links">
+                  <button type="button" class="filter-link-btn" id="filter-all-btn">All</button>
+                  <span class="sep">·</span>
+                  <button type="button" class="filter-link-btn" id="filter-healthy-btn">Healthy</button>
+                  <span class="sep">·</span>
+                  <button type="button" class="filter-link-btn" id="filter-none-btn">None</button>
+                </div>
+              </div>
+              <div class="filter-dropdown-list" id="filter-dropdown-list">
+                <!-- Populated dynamically with checkboxes & live status -->
+              </div>
+            </div>
+          </div>
           <div class="view-switch" role="group" aria-label="Grid layout">
             <button class="button button-small view-btn active" data-layout="2col" type="button" title="Large dual feed view">2 columns</button>
             <button class="button button-small view-btn" data-layout="auto" type="button" title="Adaptive grid">Auto</button>
@@ -103,6 +127,24 @@
           <button class="button" id="refresh-all" type="button">Refresh feeds</button>
         </div>
       </header>
+
+      <!-- Quick Camera Visibility Bar -->
+      <div class="camera-selection-bar" id="camera-selection-bar">
+        <div class="cam-sel-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <span>Display:</span>
+        </div>
+        <div class="camera-filter-chips" id="camera-filter-chips">
+          <!-- Populated dynamically with status badges -->
+        </div>
+        <div class="cam-sel-actions">
+          <span class="cam-sel-count" id="cam-sel-count">3 of 3 visible</span>
+          <button type="button" class="cam-sel-reset-btn" id="cam-sel-reset-btn" style="display: none;">Show all</button>
+        </div>
+      </div>
 
       <section class="camera-grid density-2col" id="camera-grid" aria-label="Camera feeds"></section>
 

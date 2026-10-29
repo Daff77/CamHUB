@@ -35,8 +35,45 @@ const DEFAULT_CAMERAS = [
 
 const STORAGE_KEY = "camhub.control.cameras.v3";
 const PREV_KEYS = ["camhub.control.cameras.v2", "camhub.control.cameras.v1", "camhub.mvp.cameras.v3", "camhub.mvp.cameras.v2", "camhub.mvp.cameras.v1"];
+const SELECTED_CAMERAS_KEY = "camhub.selected_cameras.v1";
 
 let cameras = loadCameras();
+
+function getSelectedCameraIds() {
+  try {
+    const raw = localStorage.getItem(SELECTED_CAMERAS_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length > 0) {
+        return new Set(arr);
+      }
+    }
+  } catch {}
+  return new Set(cameras.map((c) => c.id));
+}
+
+let selectedCameraIds = getSelectedCameraIds();
+
+function saveSelectedCameraIds() {
+  try {
+    localStorage.setItem(SELECTED_CAMERAS_KEY, JSON.stringify(Array.from(selectedCameraIds)));
+  } catch {}
+}
+
+function isCameraSelected(id) {
+  return selectedCameraIds.has(id);
+}
+
+function stopStream(id) {
+  clearWatchdog(id);
+  const img = document.querySelector(`[data-feed="${CSS.escape(id)}"]`);
+  if (img) {
+    img.onload = null;
+    img.onerror = null;
+    img.removeAttribute("src");
+  }
+}
+
 const connectionStates = new Map();
 const watchdogs = new Map();
 const metricsData = new Map();
@@ -191,16 +228,21 @@ function setConnection(id, status, message = "") {
 }
 
 function updateSummary() {
-  const onlineCount = cameras.filter((camera) => connectionStates.get(camera.id)?.status === "online").length;
+  const visibleCameras = cameras.filter((c) => isCameraSelected(c.id));
+  const onlineCount = visibleCameras.filter((camera) => connectionStates.get(camera.id)?.status === "online").length;
   const sentenceEl = document.querySelector("#status-sentence");
   const navCountEl = document.querySelector("#nav-camera-count");
   const timeStr = getFormattedTime();
 
   if (sentenceEl) {
-    sentenceEl.textContent = `${onlineCount} of ${cameras.length} cameras connected. Checked ${timeStr}.`;
+    if (visibleCameras.length < cameras.length) {
+      sentenceEl.textContent = `${onlineCount} of ${visibleCameras.length} displayed cameras connected (${visibleCameras.length}/${cameras.length} visible). Checked ${timeStr}.`;
+    } else {
+      sentenceEl.textContent = `${onlineCount} of ${cameras.length} cameras connected. Checked ${timeStr}.`;
+    }
   }
   if (navCountEl) {
-    navCountEl.textContent = String(cameras.length);
+    navCountEl.textContent = visibleCameras.length < cameras.length ? `${visibleCameras.length}/${cameras.length}` : String(cameras.length);
   }
 }
 
@@ -268,79 +310,104 @@ function startStream(id) {
 function render() {
   const timeStr = getFormattedTime();
 
-  grid.innerHTML = cameras.map((camera) => {
-    const isUnconfigured = !camera.url;
-    const stateObj = connectionStates.get(camera.id);
-    const status = stateObj?.status || (camera.url ? "connecting" : "unconfigured");
-    const statusClass = status;
-    const statusWord = status === "online" ? "Live" : status === "connecting" ? "Connecting" : status === "offline" ? "Offline" : "Not configured";
-    const placeholderMsg = stateObj?.message || (status === "connecting" ? "Connecting to camera stream…" : status === "offline" ? "Stream unavailable. Verify local decoder is active." : "Protocol adapter not configured.");
+  const visibleCameras = cameras.filter((camera) => isCameraSelected(camera.id));
 
-    return `
-      <article class="camera-card ${isUnconfigured ? 'is-unconfigured' : ''}" data-camera="${escapeHtml(camera.id)}">
-        <div class="video-container" data-video-wrap="${escapeHtml(camera.id)}">
-          <div class="tile-scrim">
-            <div class="tile-status-bar">
-              <div class="tile-title-group">
-                <span class="status-dot ${statusClass}" data-dot="${escapeHtml(camera.id)}"></span>
-                <h3 class="tile-title">${escapeHtml(camera.name)}</h3>
-                <span class="status-text" data-status-text="${escapeHtml(camera.id)}">${statusWord}</span>
-                <span class="health-tile-badge" data-tile-health="${escapeHtml(camera.id)}">UNKNOWN</span>
+  if (visibleCameras.length === 0) {
+    grid.innerHTML = `
+      <div class="no-cameras-selected">
+        <div class="no-cam-icon">📹</div>
+        <h3 class="no-cam-title">No cameras selected</h3>
+        <p class="no-cam-desc">All camera feeds are currently hidden. Choose one or more cameras using the selection bar above to display them.</p>
+        <button class="button button-accent button-small" id="empty-state-show-all" type="button">Show all cameras</button>
+      </div>`;
+    const emptyBtn = document.getElementById("empty-state-show-all");
+    if (emptyBtn) {
+      emptyBtn.onclick = () => selectAllCameras(true);
+    }
+  } else {
+    grid.innerHTML = visibleCameras.map((camera) => {
+      const isUnconfigured = !camera.url;
+      const stateObj = connectionStates.get(camera.id);
+      const status = stateObj?.status || (camera.url ? "connecting" : "unconfigured");
+      const statusClass = status;
+      const statusWord = status === "online" ? "Live" : status === "connecting" ? "Connecting" : status === "offline" ? "Offline" : "Not configured";
+      const placeholderMsg = stateObj?.message || (status === "connecting" ? "Connecting to camera stream…" : status === "offline" ? "Stream unavailable. Verify local decoder is active." : "Protocol adapter not configured.");
+
+      // Read current health status
+      const h = cameraHealthData.get(camera.id);
+      const healthStatus = (h?.status || "UNKNOWN").toLowerCase();
+      const healthUpper = h?.status || "UNKNOWN";
+
+      return `
+        <article class="camera-card ${isUnconfigured ? 'is-unconfigured' : ''}" data-camera="${escapeHtml(camera.id)}">
+          <div class="video-container" data-video-wrap="${escapeHtml(camera.id)}">
+            <div class="tile-scrim">
+              <div class="tile-status-bar">
+                <div class="tile-title-group">
+                  <span class="status-dot ${statusClass}" data-dot="${escapeHtml(camera.id)}"></span>
+                  <h3 class="tile-title">${escapeHtml(camera.name)}</h3>
+                  <span class="status-text" data-status-text="${escapeHtml(camera.id)}">${statusWord}</span>
+                  <span class="health-tile-badge ${healthStatus}" data-tile-health="${escapeHtml(camera.id)}">${healthUpper}</span>
+                </div>
+                <div class="tile-micro-group">
+                  <span class="ratio-badge" data-ratio="${escapeHtml(camera.id)}" style="display:none;"></span>
+                  <span class="tile-micro" data-micro="${escapeHtml(camera.id)}">${timeStr}</span>
+                </div>
               </div>
-              <div class="tile-micro-group">
-                <span class="ratio-badge" data-ratio="${escapeHtml(camera.id)}" style="display:none;"></span>
-                <span class="tile-micro" data-micro="${escapeHtml(camera.id)}">${timeStr}</span>
+            </div>
+
+            <img
+              class="camera-feed ${status === 'online' ? '' : 'is-hidden'}"
+              data-feed="${escapeHtml(camera.id)}"
+              alt="Live feed: ${escapeHtml(camera.name)}"
+            />
+
+            <div class="feed-placeholder ${status === 'online' ? 'is-hidden' : ''}" data-placeholder="${escapeHtml(camera.id)}">
+              <div class="placeholder-content">
+                <p class="placeholder-message" data-placeholder-message="${escapeHtml(camera.id)}">${escapeHtml(placeholderMsg)}</p>
+                ${isUnconfigured
+                  ? `<button class="button button-accent button-small" data-placeholder-config="${escapeHtml(camera.id)}" type="button">Set up protocol</button>`
+                  : `<button class="button button-small" data-retry-btn="${escapeHtml(camera.id)}" type="button" style="${status === 'offline' ? 'display:inline-flex;' : 'display:none;'}">Retry connection</button>`
+                }
               </div>
             </div>
           </div>
 
-          <img
-            class="camera-feed ${status === 'online' ? '' : 'is-hidden'}"
-            data-feed="${escapeHtml(camera.id)}"
-            alt="Live feed: ${escapeHtml(camera.name)}"
-          />
-
-          <div class="feed-placeholder ${status === 'online' ? 'is-hidden' : ''}" data-placeholder="${escapeHtml(camera.id)}">
-            <div class="placeholder-content">
-              <p class="placeholder-message" data-placeholder-message="${escapeHtml(camera.id)}">${escapeHtml(placeholderMsg)}</p>
-              ${isUnconfigured
-                ? `<button class="button button-accent button-small" data-placeholder-config="${escapeHtml(camera.id)}" type="button">Set up protocol</button>`
-                : `<button class="button button-small" data-retry-btn="${escapeHtml(camera.id)}" type="button" style="${status === 'offline' ? 'display:inline-flex;' : 'display:none;'}">Retry connection</button>`
-              }
+          <div class="tile-footer">
+            <div class="tile-footer-top">
+              <div class="tile-details">
+                <span class="details-text" title="${escapeHtml(camera.location)}">${escapeHtml(camera.location)}</span>
+              </div>
+              <div class="tile-actions">
+                <button class="button button-small" data-refresh="${escapeHtml(camera.id)}" type="button" title="Reload feed">Reload</button>
+                <button class="button button-small" data-configure="${escapeHtml(camera.id)}" type="button" title="Configure camera">Configure</button>
+                <button class="button button-small button-focus" data-focus="${escapeHtml(camera.id)}" type="button" title="Expand to full row">Focus</button>
+              </div>
+            </div>
+            <div class="tile-telemetry" data-tile-telemetry="${escapeHtml(camera.id)}">
+              <span class="telemetry-item">FPS: <span class="telemetry-val live" data-telemetry-fps="${escapeHtml(camera.id)}">—</span></span>
+              <span>·</span>
+              <span class="telemetry-item">Latency: <span class="telemetry-val accent" data-telemetry-lat="${escapeHtml(camera.id)}">—</span></span>
+              <span>·</span>
+              <span class="telemetry-item">Ratio: <span class="telemetry-val" data-telemetry-res="${escapeHtml(camera.id)}">—</span></span>
+              <span>·</span>
+              <span class="telemetry-item">Clients: <span class="telemetry-val" data-telemetry-clients="${escapeHtml(camera.id)}">—</span></span>
             </div>
           </div>
-        </div>
-
-        <div class="tile-footer">
-          <div class="tile-footer-top">
-            <div class="tile-details">
-              <span class="details-text" title="${escapeHtml(camera.location)}">${escapeHtml(camera.location)}</span>
-            </div>
-            <div class="tile-actions">
-              <button class="button button-small" data-refresh="${escapeHtml(camera.id)}" type="button" title="Reload feed">Reload</button>
-              <button class="button button-small" data-configure="${escapeHtml(camera.id)}" type="button" title="Configure camera">Configure</button>
-              <button class="button button-small button-focus" data-focus="${escapeHtml(camera.id)}" type="button" title="Expand to full row">Focus</button>
-            </div>
-          </div>
-          <div class="tile-telemetry" data-tile-telemetry="${escapeHtml(camera.id)}">
-            <span class="telemetry-item">FPS: <span class="telemetry-val live" data-telemetry-fps="${escapeHtml(camera.id)}">—</span></span>
-            <span>·</span>
-            <span class="telemetry-item">Latency: <span class="telemetry-val accent" data-telemetry-lat="${escapeHtml(camera.id)}">—</span></span>
-            <span>·</span>
-            <span class="telemetry-item">Ratio: <span class="telemetry-val" data-telemetry-res="${escapeHtml(camera.id)}">—</span></span>
-            <span>·</span>
-            <span class="telemetry-item">Clients: <span class="telemetry-val" data-telemetry-clients="${escapeHtml(camera.id)}">—</span></span>
-          </div>
-        </div>
-      </article>`;
-  }).join("");
+        </article>`;
+    }).join("");
+  }
 
   renderAnalyticsCards();
   updateSummary();
   attachEvents();
 
   cameras.forEach((camera) => {
-    startStream(camera.id);
+    if (isCameraSelected(camera.id)) {
+      startStream(camera.id);
+    } else {
+      stopStream(camera.id);
+    }
   });
 }
 
@@ -743,6 +810,171 @@ function restoreLayoutPreference() {
   }
 }
 
+function toggleCameraSelection(id) {
+  if (selectedCameraIds.has(id)) {
+    selectedCameraIds.delete(id);
+  } else {
+    selectedCameraIds.add(id);
+  }
+  saveSelectedCameraIds();
+  updateCameraFilterUI();
+  render();
+}
+
+function selectAllCameras(selectAll = true) {
+  if (selectAll) {
+    selectedCameraIds = new Set(cameras.map((c) => c.id));
+  } else {
+    selectedCameraIds.clear();
+  }
+  saveSelectedCameraIds();
+  updateCameraFilterUI();
+  render();
+}
+
+function selectHealthyCamerasOnly() {
+  selectedCameraIds.clear();
+  cameras.forEach((c) => {
+    const h = cameraHealthData.get(c.id);
+    const status = (h?.status || "UNKNOWN").toUpperCase();
+    if (status === "HEALTHY") {
+      selectedCameraIds.add(c.id);
+    }
+  });
+  if (selectedCameraIds.size === 0) {
+    selectedCameraIds = new Set(cameras.map((c) => c.id));
+    showToast("No healthy cameras found at the moment", "warn", 3000);
+  } else {
+    showToast(`Showing ${selectedCameraIds.size} healthy camera(s)`, "info", 2500);
+  }
+  saveSelectedCameraIds();
+  updateCameraFilterUI();
+  render();
+}
+
+function updateCameraFilterUI() {
+  const toggleText = document.querySelector("#camera-filter-toggle-text");
+  const chipsContainer = document.querySelector("#camera-filter-chips");
+  const dropdownList = document.querySelector("#filter-dropdown-list");
+  const countLabel = document.querySelector("#cam-sel-count");
+  const resetBtn = document.querySelector("#cam-sel-reset-btn");
+
+  const total = cameras.length;
+  const selCount = selectedCameraIds.size;
+
+  if (toggleText) {
+    toggleText.textContent = `Cameras (${selCount}/${total})`;
+  }
+
+  if (countLabel) {
+    countLabel.textContent = `${selCount} of ${total} visible`;
+  }
+
+  if (resetBtn) {
+    resetBtn.style.display = selCount < total ? "inline-block" : "none";
+  }
+
+  // Render quick chips
+  if (chipsContainer) {
+    chipsContainer.innerHTML = cameras.map((c) => {
+      const isSel = isCameraSelected(c.id);
+      const h = cameraHealthData.get(c.id);
+      const st = (h?.status || "UNKNOWN").toLowerCase();
+      const stUpper = h?.status || "UNKNOWN";
+      const reason = h?.reason || "Checking camera status…";
+      const fps = h?.metrics?.fps !== undefined ? `${h.metrics.fps} fps` : "";
+
+      return `
+        <button
+          type="button"
+          class="camera-filter-chip ${isSel ? 'active' : 'inactive'}"
+          data-cam-chip="${escapeHtml(c.id)}"
+          title="${escapeHtml(reason)}"
+        >
+          <span class="chip-check-icon">${isSel ? '✓' : '＋'}</span>
+          <span class="chip-status-dot ${st}"></span>
+          <span class="chip-name">${escapeHtml(c.name)}</span>
+          ${fps ? `<span class="chip-fps">${fps}</span>` : ''}
+          <span class="chip-status-badge ${st}">${stUpper}</span>
+        </button>
+      `;
+    }).join("");
+
+    chipsContainer.querySelectorAll("[data-cam-chip]").forEach((btn) => {
+      btn.onclick = () => {
+        toggleCameraSelection(btn.dataset.camChip);
+      };
+    });
+  }
+
+  // Render dropdown list
+  if (dropdownList) {
+    dropdownList.innerHTML = cameras.map((c) => {
+      const isSel = isCameraSelected(c.id);
+      const h = cameraHealthData.get(c.id);
+      const st = (h?.status || "UNKNOWN").toLowerCase();
+      const stUpper = h?.status || "UNKNOWN";
+      const reason = h?.reason || "Checking camera status…";
+      const fps = h?.metrics?.fps !== undefined ? `${h.metrics.fps} fps` : "";
+
+      return `
+        <label class="filter-item-row" title="${escapeHtml(reason)}">
+          <input
+            type="checkbox"
+            class="filter-item-check"
+            data-cam-check="${escapeHtml(c.id)}"
+            ${isSel ? 'checked' : ''}
+          />
+          <span class="chip-status-dot ${st}"></span>
+          <div class="filter-item-info">
+            <span class="filter-item-name">${escapeHtml(c.name)}</span>
+            <span class="filter-item-sub">${escapeHtml(c.location || c.id)}${fps ? ` · ${fps}` : ''}</span>
+          </div>
+          <span class="chip-status-badge ${st}">${stUpper}</span>
+        </label>
+      `;
+    }).join("");
+
+    dropdownList.querySelectorAll("[data-cam-check]").forEach((chk) => {
+      chk.onchange = () => {
+        toggleCameraSelection(chk.dataset.camCheck);
+      };
+    });
+  }
+}
+
+function initCameraFilter() {
+  const toggleBtn = document.querySelector("#camera-filter-toggle-btn");
+  const dropdown = document.querySelector("#camera-filter-dropdown");
+  const allBtn = document.querySelector("#filter-all-btn");
+  const healthyBtn = document.querySelector("#filter-healthy-btn");
+  const noneBtn = document.querySelector("#filter-none-btn");
+  const resetBtn = document.querySelector("#cam-sel-reset-btn");
+
+  if (toggleBtn && dropdown) {
+    toggleBtn.onclick = (e) => {
+      e.stopPropagation();
+      const isVisible = dropdown.style.display !== "none";
+      dropdown.style.display = isVisible ? "none" : "flex";
+      toggleBtn.setAttribute("aria-expanded", String(!isVisible));
+    };
+
+    document.addEventListener("click", (e) => {
+      if (!dropdown.contains(e.target) && !toggleBtn.contains(e.target)) {
+        dropdown.style.display = "none";
+        toggleBtn.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+
+  if (allBtn) allBtn.onclick = () => selectAllCameras(true);
+  if (healthyBtn) healthyBtn.onclick = () => selectHealthyCamerasOnly();
+  if (noneBtn) noneBtn.onclick = () => selectAllCameras(false);
+  if (resetBtn) resetBtn.onclick = () => selectAllCameras(true);
+
+  updateCameraFilterUI();
+}
+
 function openConfig(id) {
   const camera = cameras.find((item) => item.id === id);
   if (!camera) return;
@@ -826,7 +1058,7 @@ configForm.addEventListener("submit", (event) => {
 
 document.querySelector("#refresh-all").addEventListener("click", () => {
   cameras.forEach((camera) => {
-    if (camera.url) {
+    if (camera.url && isCameraSelected(camera.id)) {
       startStream(camera.id);
     }
   });
@@ -834,7 +1066,7 @@ document.querySelector("#refresh-all").addEventListener("click", () => {
 
 window.addEventListener("focus", () => {
   cameras.forEach((camera) => {
-    if (camera.url && connectionStates.get(camera.id)?.status === "offline") {
+    if (camera.url && isCameraSelected(camera.id) && connectionStates.get(camera.id)?.status === "offline") {
       startStream(camera.id);
     }
   });
@@ -1246,6 +1478,7 @@ async function pollHealth() {
           fpsTag.className = `signal-tag ${chk.fpsAdequate ? "pass" : "warn"}`;
         }
       }
+      updateCameraFilterUI();
     }
 
     // 3. Update Supervisor & Auto-Recovery state
@@ -1788,6 +2021,7 @@ initSetupGuide();
 initServiceControls();
 initPlayback();
 initEventsTimeline();
+initCameraFilter();
 render();
 restoreLayoutPreference();
 
