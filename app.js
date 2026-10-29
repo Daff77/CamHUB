@@ -343,6 +343,27 @@ function render() {
   });
 }
 
+const clientRenderMetrics = new Map();
+
+function trackClientRender(id) {
+  const now = performance.now();
+  let m = clientRenderMetrics.get(id);
+  if (!m) {
+    m = { frames: [], fps: 0 };
+    clientRenderMetrics.set(id, m);
+  }
+  m.frames.push(now);
+  while (m.frames.length > 0 && m.frames[0] < now - 2000) {
+    m.frames.shift();
+  }
+  if (m.frames.length >= 2) {
+    const durSec = (m.frames[m.frames.length - 1] - m.frames[0]) / 1000;
+    if (durSec > 0) {
+      m.fps = Math.round(((m.frames.length - 1) / durSec) * 10) / 10;
+    }
+  }
+}
+
 function renderAnalyticsCards() {
   if (!analyticsCards) return;
 
@@ -358,26 +379,67 @@ function renderAnalyticsCards() {
           <span class="metric-card-chip">${escapeHtml(camera.hint || 'LAN')}</span>
         </div>
 
+        <!-- Pipeline Stage Flow -->
+        <div class="pipeline-section">
+          <div class="pipeline-title">Pipeline Stage Flow</div>
+          <div class="pipeline-flow" data-pipeline-flow="${escapeHtml(camera.id)}">
+            <div class="stage-step">
+              <span class="stage-name">Target</span>
+              <span class="stage-fps" data-stage-target="${escapeHtml(camera.id)}">15.0 fps</span>
+            </div>
+            <span class="stage-arrow">→</span>
+            <div class="stage-step">
+              <span class="stage-name">LAN Ingest</span>
+              <span class="stage-fps live" data-stage-source="${escapeHtml(camera.id)}">— fps</span>
+            </div>
+            <span class="stage-arrow">→</span>
+            <div class="stage-step">
+              <span class="stage-name">Decoder</span>
+              <span class="stage-fps live" data-stage-decoder="${escapeHtml(camera.id)}">— fps</span>
+            </div>
+            <span class="stage-arrow">→</span>
+            <div class="stage-step">
+              <span class="stage-name">MJPEG</span>
+              <span class="stage-fps live" data-stage-mjpeg="${escapeHtml(camera.id)}">— fps</span>
+            </div>
+            <span class="stage-arrow">→</span>
+            <div class="stage-step">
+              <span class="stage-name">Browser</span>
+              <span class="stage-fps live" data-stage-browser="${escapeHtml(camera.id)}">— fps</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottleneck Diagnosis Box -->
+        <div class="diagnosis-box" data-diagnosis-box="${escapeHtml(camera.id)}">
+          <div class="diagnosis-head">
+            <span class="diagnosis-pill" data-diagnosis-pill="${escapeHtml(camera.id)}">Analyzing…</span>
+            <span class="diagnosis-stage" data-diagnosis-stage="${escapeHtml(camera.id)}"></span>
+          </div>
+          <p class="diagnosis-desc" data-diagnosis-desc="${escapeHtml(camera.id)}">Gathering pipeline telemetry data…</p>
+        </div>
+
+        <!-- Detailed Metric Grid -->
         <div class="metric-grid">
-          <div class="metric-item">
-            <span class="metric-label">Source stream rate</span>
-            <span class="metric-value live" data-val-source-fps="${escapeHtml(camera.id)}">— fps</span>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">Transcode output</span>
-            <span class="metric-value live" data-val-xcode-fps="${escapeHtml(camera.id)}">— fps</span>
-          </div>
           <div class="metric-item">
             <span class="metric-label">Pipeline latency</span>
             <span class="metric-value latency" data-val-latency="${escapeHtml(camera.id)}">— ms</span>
           </div>
           <div class="metric-item">
-            <span class="metric-label">Total frames</span>
-            <span class="metric-value" data-val-frames="${escapeHtml(camera.id)}">—</span>
-          </div>
-          <div class="metric-item">
             <span class="metric-label">Active subscribers</span>
             <span class="metric-value" data-val-clients="${escapeHtml(camera.id)}">—</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Queue / Dropped</span>
+            <span class="metric-value" data-val-drops="${escapeHtml(camera.id)}">Q: 0 · Drop: 0</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Decode errors</span>
+            <span class="metric-value" data-val-errors="${escapeHtml(camera.id)}">0</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Total frames</span>
+            <span class="metric-value" data-val-frames="${escapeHtml(camera.id)}">—</span>
           </div>
           <div class="metric-item">
             <span class="metric-label">Stream resolution</span>
@@ -385,6 +447,7 @@ function renderAnalyticsCards() {
           </div>
         </div>
 
+        <!-- Sparkline FPS Stability -->
         <div class="sparkline-wrap">
           <div class="sparkline-label">
             <span>FPS stability (last 30s)</span>
@@ -425,13 +488,35 @@ function updateSparkline(id, history) {
   `;
 }
 
+let clientDisplayFps = 60.0;
+let lastRafTime = performance.now();
+let rafFrameCount = 0;
+
+function monitorDisplayFps(now) {
+  rafFrameCount++;
+  if (now - lastRafTime >= 1000) {
+    clientDisplayFps = Math.round((rafFrameCount * 1000) / (now - lastRafTime));
+    rafFrameCount = 0;
+    lastRafTime = now;
+  }
+  requestAnimationFrame(monitorDisplayFps);
+}
+requestAnimationFrame(monitorDisplayFps);
+
 async function pollMetrics() {
   await Promise.allSettled(cameras.map(async (camera) => {
     if (!camera.metricsUrl) return;
     try {
+      const isHidden = typeof document !== "undefined" && document.hidden;
+      const cached = metricsData.get(camera.id);
+      const estFps = isHidden ? 0.0 : Math.min(clientDisplayFps, (cached?.stages?.mjpegOutFps ?? cached?.mjpegFps ?? 15.0));
+
+      const fetchUrl = new URL(camera.metricsUrl);
+      fetchUrl.searchParams.set("clientFps", estFps.toFixed(1));
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch(camera.metricsUrl, { cache: "no-store", signal: controller.signal });
+      const res = await fetch(fetchUrl.toString(), { cache: "no-store", signal: controller.signal });
       clearTimeout(timer);
       if (!res.ok) return;
       const data = await res.json();
@@ -443,32 +528,92 @@ async function pollMetrics() {
         history = [];
         metricsHistory.set(camera.id, history);
       }
-      history.push(data.sourceFps || 0);
-      if (history.length > 20) history.shift();
+      const primaryFps = data.stages?.sourceFps ?? data.sourceFps ?? 0;
+      history.push(primaryFps);
+      if (history.length > 30) history.shift();
 
       // Update per-tile telemetry strip
       const fpsEl = document.querySelector(`[data-telemetry-fps="${CSS.escape(camera.id)}"]`);
       const latEl = document.querySelector(`[data-telemetry-lat="${CSS.escape(camera.id)}"]`);
       const clientsEl = document.querySelector(`[data-telemetry-clients="${CSS.escape(camera.id)}"]`);
-      if (fpsEl) fpsEl.textContent = `${data.sourceFps?.toFixed(1) ?? '—'} fps`;
-      if (latEl) latEl.textContent = `${Math.round(data.xcodeLatencyMs ?? 0)} ms`;
+      const latMs = data.latency?.decodeLatencyMs ?? data.xcodeLatencyMs ?? 0;
+      if (fpsEl) fpsEl.textContent = `${primaryFps.toFixed(1)} fps`;
+      if (latEl) latEl.textContent = `${Math.round(latMs)} ms`;
       if (clientsEl) clientsEl.textContent = `${data.activeRtspSessions ?? 0} RTSP · ${data.activeMjpegClients ?? 0} Web`;
 
-      // Update analytics card
-      const srcFps = document.querySelector(`[data-val-source-fps="${CSS.escape(camera.id)}"]`);
-      const xcodeFps = document.querySelector(`[data-val-xcode-fps="${CSS.escape(camera.id)}"]`);
+      // Update Pipeline Stage Flow
+      const stages = data.stages || {};
+      const targetFps = stages.cameraDeclaredFps > 0 ? stages.cameraDeclaredFps : 15.0;
+      const srcFpsVal = stages.sourceFps ?? data.sourceFps ?? 0;
+      const xcodeFpsVal = stages.decoderOutFps ?? data.xcodeOutFps ?? 0;
+      const mjpegFpsVal = stages.mjpegOutFps ?? data.mjpegFps ?? 0;
+      const browserFpsVal = stages.browserRenderFps > 0 ? stages.browserRenderFps : (isHidden ? 0.0 : mjpegFpsVal);
+
+      function setStageFps(sel, val, target) {
+        const el = document.querySelector(`[${sel}="${CSS.escape(camera.id)}"]`);
+        if (!el) return;
+        el.textContent = `${val.toFixed(1)} fps`;
+        el.className = "stage-fps";
+        if (val >= target * 0.8) {
+          el.classList.add("live");
+        } else if (val >= target * 0.4) {
+          el.classList.add("warn");
+        } else {
+          el.classList.add("bad");
+        }
+      }
+
+      const targetEl = document.querySelector(`[data-stage-target="${CSS.escape(camera.id)}"]`);
+      if (targetEl) targetEl.textContent = `${targetFps.toFixed(1)} fps`;
+
+      setStageFps("data-stage-source", srcFpsVal, targetFps);
+      setStageFps("data-stage-decoder", xcodeFpsVal, targetFps);
+      setStageFps("data-stage-mjpeg", mjpegFpsVal, targetFps);
+      setStageFps("data-stage-browser", browserFpsVal, targetFps);
+
+      // Update Bottleneck Diagnosis
+      const diag = data.bottleneck;
+      const diagBox = document.querySelector(`[data-diagnosis-box="${CSS.escape(camera.id)}"]`);
+      const diagPill = document.querySelector(`[data-diagnosis-pill="${CSS.escape(camera.id)}"]`);
+      const diagStage = document.querySelector(`[data-diagnosis-stage="${CSS.escape(camera.id)}"]`);
+      const diagDesc = document.querySelector(`[data-diagnosis-desc="${CSS.escape(camera.id)}"]`);
+
+      if (diag && diagBox && diagPill && diagDesc) {
+        const sev = diag.severity || "none";
+        diagBox.className = `diagnosis-box ${sev !== "none" ? `severity-${sev}` : ""}`;
+        diagPill.className = `diagnosis-pill ${sev !== "none" ? sev : ""}`;
+
+        let pillText = "Pipeline Smooth";
+        if (diag.dominantStage === "CameraSource") pillText = "Ingest / Sensor";
+        else if (diag.dominantStage === "Transcoder") pillText = "Decode Latency";
+        else if (diag.dominantStage === "MjpegEncoder") pillText = "MJPEG Backlog";
+        else if (diag.dominantStage === "BrowserClient") pillText = "Browser Throttled";
+        diagPill.textContent = pillText;
+
+        if (diagStage) {
+          diagStage.textContent = diag.dominantStage && diag.dominantStage !== "None" ? `Stage: ${diag.dominantStage}` : "All stages OK";
+        }
+        diagDesc.textContent = diag.description || "Pipeline berjalan optimal.";
+      }
+
+      // Update Metric Grid
       const latVal = document.querySelector(`[data-val-latency="${CSS.escape(camera.id)}"]`);
       const framesVal = document.querySelector(`[data-val-frames="${CSS.escape(camera.id)}"]`);
       const clientsVal = document.querySelector(`[data-val-clients="${CSS.escape(camera.id)}"]`);
+      const dropsVal = document.querySelector(`[data-val-drops="${CSS.escape(camera.id)}"]`);
+      const errorsVal = document.querySelector(`[data-val-errors="${CSS.escape(camera.id)}"]`);
       const curFps = document.querySelector(`[data-val-fps-current="${CSS.escape(camera.id)}"]`);
       const mDot = document.querySelector(`[data-metric-dot="${CSS.escape(camera.id)}"]`);
 
-      if (srcFps) srcFps.textContent = `${data.sourceFps?.toFixed(1) ?? '0.0'} fps`;
-      if (xcodeFps) xcodeFps.textContent = `${data.xcodeOutFps?.toFixed(1) ?? '0.0'} fps`;
-      if (latVal) latVal.textContent = `${Math.round(data.xcodeLatencyMs ?? 0)} ms`;
+      if (latVal) latVal.textContent = `${Math.round(latMs)} ms`;
       if (framesVal) framesVal.textContent = Number(data.totalSourceFrames || 0).toLocaleString();
       if (clientsVal) clientsVal.textContent = `${data.activeRtspSessions ?? 0} RTSP · ${data.activeMjpegClients ?? 0} Web`;
-      if (curFps) curFps.textContent = `${data.sourceFps?.toFixed(1) ?? '0.0'} fps`;
+
+      const health = data.health || {};
+      const totalDrops = (health.droppedDecoderIn || 0) + (health.droppedMjpegIn || 0);
+      if (dropsVal) dropsVal.textContent = `Q: ${health.queueDepth ?? 0} · Drop: ${totalDrops}`;
+      if (errorsVal) errorsVal.textContent = `${health.decodingErrors ?? 0} err · ${health.reconnectCount ?? 0} rcn`;
+      if (curFps) curFps.textContent = `${primaryFps.toFixed(1)} fps`;
       if (mDot) mDot.className = "status-dot online";
 
       const img = document.querySelector(`[data-feed="${CSS.escape(camera.id)}"]`);

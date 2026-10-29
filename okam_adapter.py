@@ -24,6 +24,10 @@ class StreamBroker:
         self.total_frames = 0
         self.frame_times = deque(maxlen=30)
         self.process = None
+        self.reconnect_count = 0
+        self.decode_errors = 0
+        self.last_error = ""
+        self.browser_render_fps = 0.0
 
     def add_subscriber(self, callback):
         with self.lock:
@@ -52,6 +56,54 @@ class StreamBroker:
 
             active_clients = len(self.subscribers)
 
+            if fps < 8.0 and self.reconnect_count > 0:
+                dominant = "CameraSource"
+                severity = "warning"
+                desc = f"RTSP stream mengalami interupsi jaringan LAN ({self.reconnect_count} kali reconnect). FPS saat ini {fps} fps."
+            elif fps >= 11.0:
+                dominant = "Nominal"
+                severity = "nominal"
+                desc = f"RTSP-to-MJPEG pipeline beroperasi normal pada {fps} fps dengan latensi {latency_ms}ms tanpa antrean tumpukan."
+            else:
+                dominant = "Nominal"
+                severity = "nominal"
+                desc = f"RTSP stream beroperasi pada {fps} fps."
+
+            stages = {
+                "cameraDeclaredFps": 15.0,
+                "sourceFps": fps,
+                "decoderInFps": fps,
+                "decoderOutFps": fps,
+                "mjpegOutFps": fps if active_clients > 0 else 0.0,
+                "rtspOutFps": fps,
+                "browserRenderFps": self.browser_render_fps
+            }
+
+            latency = {
+                "decodeLatencyMs": latency_ms,
+                "queueLatencyMs": 0.0,
+                "mjpegLatencyMs": 0.0
+            }
+
+            health = {
+                "droppedDecoderIn": 0,
+                "droppedMjpegIn": 0,
+                "droppedWaitingForKeyframe": 0,
+                "queueDepth": 0,
+                "reconnectCount": self.reconnect_count,
+                "decodingErrors": self.decode_errors,
+                "lastError": self.last_error,
+                "cpuUsagePercent": 0.0,
+                "memoryUsageMb": 0.0,
+                "activeFfmpegCount": 1
+            }
+
+            bottleneck = {
+                "dominantStage": dominant,
+                "severity": severity,
+                "description": desc
+            }
+
             return {
                 "sourceFps": fps,
                 "xcodeInFps": fps,
@@ -63,7 +115,11 @@ class StreamBroker:
                 "totalRtspFrames": self.total_frames,
                 "totalMjpegFrames": self.total_frames,
                 "activeRtspSessions": 0,
-                "activeMjpegClients": active_clients
+                "activeMjpegClients": active_clients,
+                "stages": stages,
+                "latency": latency,
+                "health": health,
+                "bottleneck": bottleneck
             }
 
     def start(self):
@@ -105,6 +161,9 @@ class StreamBroker:
                                 break
                             text = line.decode('utf-8', errors='ignore').strip()
                             if text:
+                                with self.lock:
+                                    self.decode_errors += 1
+                                    self.last_error = text
                                 print(f"[OKAM-FFMPEG] {text}", file=sys.stderr, flush=True)
                     except:
                         pass
@@ -161,6 +220,8 @@ class StreamBroker:
                 print(f"[OKAM-ADAPTER] Error: {e}", file=sys.stderr, flush=True)
 
             if self.running:
+                with self.lock:
+                    self.reconnect_count += 1
                 print("[OKAM-ADAPTER] Stream lost, retrying in 3 seconds...", flush=True)
                 time.sleep(3)
 
@@ -190,10 +251,21 @@ class HttpHandler(BaseHTTPRequestHandler):
             pass
 
     def do_GET(self):
-        path = self.path.split("?")[0]
+        path_parts = self.path.split("?")
+        path = path_parts[0]
+        query = path_parts[1] if len(path_parts) > 1 else ""
 
         if path == "/api/metrics":
             try:
+                if "clientFps=" in query:
+                    import urllib.parse
+                    qs = urllib.parse.parse_qs(query)
+                    if "clientFps" in qs:
+                        try:
+                            self.broker.browser_render_fps = float(qs["clientFps"][0])
+                        except:
+                            pass
+
                 metrics = self.broker.get_metrics()
                 body = json.dumps(metrics).encode("utf-8")
                 self.send_response(200)

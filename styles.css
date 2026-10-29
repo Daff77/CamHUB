@@ -895,6 +895,130 @@ body {
   gap: 4px;
 }
 
+/* Bottleneck Analyzer Pipeline & Diagnosis */
+.pipeline-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pipeline-title {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.pipeline-flow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  padding: 8px 10px;
+  gap: 4px;
+}
+
+.stage-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+
+.stage-name {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.stage-fps {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.stage-fps.live {
+  color: var(--live);
+}
+
+.stage-fps.warn {
+  color: var(--accent);
+}
+
+.stage-fps.bad {
+  color: #eb5757;
+}
+
+.stage-arrow {
+  color: var(--line);
+  font-size: 11px;
+  user-select: none;
+}
+
+.diagnosis-box {
+  background-color: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--live);
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.2s ease;
+}
+
+.diagnosis-box.severity-warning {
+  border-left-color: var(--accent);
+}
+
+.diagnosis-box.severity-critical {
+  border-left-color: #eb5757;
+}
+
+.diagnosis-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.diagnosis-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background-color: rgba(111, 207, 151, 0.15);
+  color: var(--live);
+}
+
+.diagnosis-pill.warning {
+  background-color: rgba(233, 180, 76, 0.15);
+  color: var(--accent);
+}
+
+.diagnosis-pill.critical {
+  background-color: rgba(235, 87, 87, 0.15);
+  color: #eb5757;
+}
+
+.diagnosis-stage {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: inherit;
+}
+
+.diagnosis-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 .sparkline-label {
   display: flex;
   align-items: center;
