@@ -16,6 +16,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from health_monitor import CameraHealthMonitor, sanitize_sensitive_data
 from auto_recovery import AutoRecoveryManager, kill_process_tree, kill_port_owner
 from recording_manager import RecordingManager, sanitize_path
+from motion_detector import MotionDetectorService
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "services_config.json")
@@ -156,6 +157,7 @@ class ProcessManager:
 HEALTH_MONITOR = CameraHealthMonitor(load_config)
 MANAGER = AutoRecoveryManager(load_config, health_monitor=HEALTH_MONITOR)
 RECORDING_MANAGER = RecordingManager(load_config, base_dir=BASE_DIR)
+MOTION_SERVICE = MotionDetectorService(load_config, base_dir=BASE_DIR)
 
 class CamHubHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -340,6 +342,63 @@ class CamHubHandler(SimpleHTTPRequestHandler):
                 self.send_json(403, {"error": str(e)})
             return
 
+        # Motion Detection & Events
+        if url.path == "/api/events":
+            cam_id = qs.get("cameraId", [None])[0]
+            date_str = qs.get("date", [None])[0]
+            score_str = qs.get("minScore", [None])[0]
+            limit_str = qs.get("limit", ["100"])[0]
+            min_score = float(score_str) if score_str else None
+            limit = int(limit_str) if limit_str.isdigit() else 100
+            events = MOTION_SERVICE.list_events(camera_id=cam_id, date_str=date_str, min_score=min_score, limit=limit)
+            self.send_json(200, {"events": events, "count": len(events)})
+            return
+
+        if url.path == "/api/events/detail":
+            evt_id = qs.get("id", [None])[0]
+            if not evt_id:
+                self.send_json(400, {"error": "Missing 'id' parameter"})
+                return
+            evt = MOTION_SERVICE.get_event(evt_id)
+            if evt:
+                self.send_json(200, evt)
+            else:
+                self.send_json(404, {"error": "Event not found"})
+            return
+
+        if url.path == "/api/events/stats":
+            stats = MOTION_SERVICE.get_stats()
+            self.send_json(200, stats)
+            return
+
+        if url.path == "/api/events/snapshot":
+            evt_id = qs.get("id", [None])[0]
+            if not evt_id:
+                self.send_json(400, {"error": "Missing 'id' parameter"})
+                return
+            evt = MOTION_SERVICE.get_event(evt_id)
+            if not evt:
+                self.send_json(404, {"error": "Event not found"})
+                return
+            try:
+                full_path = sanitize_path(BASE_DIR, os.path.join(BASE_DIR, evt["snapshotPath"]))
+                if os.path.exists(full_path):
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Content-Length", str(os.path.getsize(full_path)))
+                    self.send_header("Cache-Control", "public, max-age=86400")
+                    self.send_cors_headers()
+                    self.end_headers()
+                    with open(full_path, "rb") as f:
+                        shutil.copyfileobj(f, self.wfile, length=65536)
+                    return
+                else:
+                    self.send_json(404, {"error": "Snapshot image file not found on disk"})
+                    return
+            except Exception as e:
+                self.send_json(403, {"error": str(e)})
+                return
+
         super().do_GET()
 
     def do_POST(self):
@@ -439,13 +498,21 @@ class CamHubHandler(SimpleHTTPRequestHandler):
     def do_DELETE(self):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
-        seg_id = qs.get("id", [None])[0]
+        item_id = qs.get("id", [None])[0]
 
         if url.path == "/api/recordings":
-            if not seg_id:
+            if not item_id:
                 self.send_json(400, {"error": "Missing 'id' query parameter"})
                 return
-            ok, msg = RECORDING_MANAGER.delete_recording(seg_id)
+            ok, msg = RECORDING_MANAGER.delete_recording(item_id)
+            self.send_json(200 if ok else 404, {"success": ok, "message": msg})
+            return
+
+        if url.path == "/api/events":
+            if not item_id:
+                self.send_json(400, {"error": "Missing 'id' query parameter"})
+                return
+            ok, msg = MOTION_SERVICE.delete_event(item_id)
             self.send_json(200 if ok else 404, {"success": ok, "message": msg})
             return
 
@@ -464,16 +531,19 @@ def main():
     print(f"[CAMHUB] Health Monitor API ready at http://127.0.0.1:{args.port}/api/health", flush=True)
     print(f"[CAMHUB] Auto-Recovery API ready at http://127.0.0.1:{args.port}/api/recovery/status", flush=True)
     print(f"[CAMHUB] Recording & Playback API ready at http://127.0.0.1:{args.port}/api/recordings", flush=True)
+    print(f"[CAMHUB] Motion Detection API ready at http://127.0.0.1:{args.port}/api/events", flush=True)
 
     HEALTH_MONITOR.start()
     MANAGER.start()
     RECORDING_MANAGER.start()
+    MOTION_SERVICE.start()
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("[CAMHUB] Shutting down...", flush=True)
     finally:
+        MOTION_SERVICE.stop()
         RECORDING_MANAGER.stop()
         MANAGER.shutdown_all()
         MANAGER.stop()

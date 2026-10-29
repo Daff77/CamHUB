@@ -30,6 +30,19 @@
     "preferredSource": "rtsp",
     "autoRecordCameras": []
   },
+  "motionDetection": {
+    "enabled": true,
+    "samplingIntervalSeconds": 0.5,
+    "analysisWidth": 320,
+    "analysisHeight": 180,
+    "motionThreshold": 25.0,
+    "minMotionAreaPercent": 1.5,
+    "maxMotionAreaPercent": 65.0,
+    "cooldownSeconds": 15.0,
+    "minEventDurationSeconds": 0.6,
+    "retentionDays": 7,
+    "maxStorageMb": 1000.0
+  },
   "cameras": [
     {
       "id": "v380-1",

@@ -137,7 +137,7 @@ class RecordingManager:
     def __init__(self, config_provider, base_dir: str = None):
         self.config_provider = config_provider
         self.base_dir = base_dir or BASE_DIR
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.active_sessions = {}  # camera_id -> RecordingSession
         self.index = {}  # segment_id -> metadata dict
         self.running = False

@@ -48,6 +48,15 @@
           </span>
           <span class="nav-label">Playback</span>
         </a>
+        <a class="nav-link" href="#events">
+          <span class="nav-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+            </svg>
+          </span>
+          <span class="nav-label">Events</span>
+          <span class="nav-count" id="nav-events-count">0</span>
+        </a>
         <a class="nav-link" href="#setup">
           <span class="nav-icon">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -183,6 +192,63 @@
         </div>
       </section>
 
+      <!-- Motion Detection & Event Timeline Section -->
+      <section class="events-panel" id="events">
+        <div class="events-header">
+          <div>
+            <h2 class="events-title">Motion events & timeline</h2>
+            <p class="events-description">Edge motion detection, activity snapshots with bounding box localization, and historical event review.</p>
+          </div>
+          <div class="events-status-pill" id="events-status-pill">
+            <span class="events-dot" id="events-dot"></span>
+            <span class="events-status-text" id="events-status-text">Analytics: Active</span>
+          </div>
+        </div>
+
+        <!-- Controls & Filter Toolbar -->
+        <div class="events-toolbar">
+          <div class="events-filters">
+            <div class="filter-item">
+              <label for="events-cam-select">Camera</label>
+              <select id="events-cam-select" class="select-ctrl">
+                <option value="">All cameras</option>
+              </select>
+            </div>
+            <div class="filter-item">
+              <label for="events-date-select">Date</label>
+              <input type="date" id="events-date-select" class="date-ctrl" />
+            </div>
+            <div class="filter-item">
+              <label for="events-score-select">Min Score</label>
+              <select id="events-score-select" class="select-ctrl">
+                <option value="">Any score</option>
+                <option value="5">&gt; 5%</option>
+                <option value="15">&gt; 15%</option>
+                <option value="30">&gt; 30%</option>
+              </select>
+            </div>
+            <button class="button button-small" id="events-refresh-btn" type="button">Refresh</button>
+          </div>
+
+          <div class="events-meta-summary">
+            <span class="events-meta-item" id="events-fps-stat">FPS: 0.0</span>
+            <span class="events-meta-divider">·</span>
+            <span class="events-meta-item" id="events-storage-stat">Storage: 0 MB</span>
+          </div>
+        </div>
+
+        <!-- Events Grid / Timeline -->
+        <div class="events-container">
+          <div class="events-list-head">
+            <span class="events-list-title">Detected Activity</span>
+            <span class="events-list-count" id="events-list-count">0 events</span>
+          </div>
+          <div class="events-cards-grid" id="events-cards-grid">
+            <div class="events-loading">Loading event timeline…</div>
+          </div>
+        </div>
+      </section>
+
       <section class="setup-panel" id="setup">
         <div class="setup-header">
           <h2 class="setup-title">Setup guide</h2>
@@ -250,6 +316,27 @@
         <button class="button button-accent" id="save-camera" type="submit">Save camera</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="event-dialog" class="event-dialog">
+    <div class="dialog-head">
+      <h2 id="event-modal-title">Motion Event Snapshot</h2>
+      <button class="icon-button" aria-label="Close" type="button" id="close-event-dialog-btn">✕</button>
+    </div>
+    <div class="event-modal-body">
+      <div class="event-modal-image-wrapper">
+        <img id="event-modal-img" src="" alt="Event snapshot" class="event-modal-img" />
+        <div id="event-modal-bbox" class="event-modal-bbox" style="display:none;"></div>
+      </div>
+      <div class="event-modal-meta" id="event-modal-meta">
+        <!-- Event stats injected here -->
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <a id="event-modal-jump-playback" class="button button-primary" href="#playback">Jump to Playback</a>
+      <button class="button button-warn" id="event-modal-delete-btn" type="button">Delete event</button>
+      <button class="button" id="close-event-dialog-action" type="button">Close</button>
+    </div>
   </dialog>
 
   <div class="toast-container" id="toast-container" aria-live="polite"></div>

@@ -8,3 +8,6 @@ __pycache__/
 recordings/**/*.mp4
 recordings/*.mp4
 recordings/recordings_index.json
+events/**/*.jpg
+events/*.jpg
+events/events_index.json

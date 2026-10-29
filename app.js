@@ -1013,6 +1013,8 @@ function initNav() {
   const sections = [
     { id: "overview", link: document.querySelector('.nav-link[href="#overview"]') },
     { id: "analytics", link: document.querySelector('.nav-link[href="#analytics"]') },
+    { id: "playback", link: document.querySelector('.nav-link[href="#playback"]') },
+    { id: "events", link: document.querySelector('.nav-link[href="#events"]') },
     { id: "setup", link: document.querySelector('.nav-link[href="#setup"]') }
   ];
 
@@ -1518,11 +1520,274 @@ function initPlayback() {
   setInterval(loadStorageStatus, 10000);
 }
 
+function initEventsTimeline() {
+  const camSelect = document.querySelector("#events-cam-select");
+  const dateSelect = document.querySelector("#events-date-select");
+  const scoreSelect = document.querySelector("#events-score-select");
+  const refreshBtn = document.querySelector("#events-refresh-btn");
+  const cardsGrid = document.querySelector("#events-cards-grid");
+  const countLabel = document.querySelector("#events-list-count");
+  const navCount = document.querySelector("#nav-events-count");
+  const fpsStat = document.querySelector("#events-fps-stat");
+  const storageStat = document.querySelector("#events-storage-stat");
+  const statusPill = document.querySelector("#events-status-pill");
+
+  // Modal elements
+  const modal = document.querySelector("#event-dialog");
+  const modalImg = document.querySelector("#event-modal-img");
+  const modalBbox = document.querySelector("#event-modal-bbox");
+  const modalMeta = document.querySelector("#event-modal-meta");
+  const modalTitle = document.querySelector("#event-modal-title");
+  const modalJumpBtn = document.querySelector("#event-modal-jump-playback");
+  const modalDelBtn = document.querySelector("#event-modal-delete-btn");
+  const closeBtn = document.querySelector("#close-event-dialog-btn");
+  const closeAction = document.querySelector("#close-event-dialog-action");
+
+  let currentSelectedEvent = null;
+
+  // Populate camera select
+  if (camSelect) {
+    camSelect.innerHTML = `<option value="">All cameras</option>` +
+      cameras.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("");
+  }
+
+  // Close modal handlers
+  if (closeBtn) closeBtn.onclick = () => modal.close();
+  if (closeAction) closeAction.onclick = () => modal.close();
+
+  const loadStats = async () => {
+    try {
+      const res = await fetch("/api/events/stats", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (fpsStat) fpsStat.textContent = `FPS: ${data.analyticsFps?.toFixed(1) || "0.0"}`;
+      if (storageStat) storageStat.textContent = `Storage: ${data.storageMb || 0} MB / ${data.maxStorageMb || 1000} MB`;
+      if (navCount) navCount.textContent = data.eventsToday || 0;
+      if (statusPill) {
+        statusPill.title = `Total events: ${data.totalEvents}, today: ${data.eventsToday}`;
+      }
+    } catch {}
+  };
+
+  const loadEvents = async () => {
+    if (!cardsGrid) return;
+    const cid = camSelect ? camSelect.value : "";
+    const dt = dateSelect ? dateSelect.value : "";
+    const minScore = scoreSelect ? scoreSelect.value : "";
+
+    const params = new URLSearchParams();
+    if (cid) params.set("cameraId", cid);
+    if (dt) params.set("date", dt);
+    if (minScore) params.set("minScore", minScore);
+    params.set("limit", "60");
+
+    try {
+      const res = await fetch(`/api/events?${params.toString()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to load events");
+      const data = await res.json();
+      const events = data.events || [];
+
+      if (countLabel) countLabel.textContent = `${events.length} event${events.length === 1 ? '' : 's'}`;
+
+      if (events.length === 0) {
+        cardsGrid.innerHTML = `
+          <div class="segments-empty" style="grid-column: 1 / -1; padding: 40px 10px;">
+            No motion events detected matching current filters.
+          </div>`;
+        return;
+      }
+
+      cardsGrid.innerHTML = events.map(evt => {
+        const bbox = evt.boundingBox || { x: 0, y: 0, width: 0, height: 0 };
+        const leftPct = (bbox.x * 100).toFixed(1);
+        const topPct = (bbox.y * 100).toFixed(1);
+        const widthPct = (bbox.width * 100).toFixed(1);
+        const heightPct = (bbox.height * 100).toFixed(1);
+
+        return `
+        <div class="event-card" data-event-id="${escapeHtml(evt.id)}">
+          <div class="event-thumb-wrap" data-open-event="${escapeHtml(evt.id)}">
+            <img class="event-thumb-img" src="/api/events/snapshot?id=${encodeURIComponent(evt.id)}" alt="Snapshot" loading="lazy" />
+            <div class="event-bbox-overlay" style="left: ${leftPct}%; top: ${topPct}%; width: ${widthPct}%; height: ${heightPct}%;"></div>
+            <span class="event-score-pill">Score: ${evt.score}%</span>
+          </div>
+          <div class="event-card-body">
+            <div class="event-card-top">
+              <span class="event-cam-badge">${escapeHtml(evt.cameraName || evt.cameraId)}</span>
+              <span class="event-duration">${evt.durationSeconds || 0}s motion</span>
+            </div>
+            <div class="event-timestamp">${escapeHtml(evt.isoTime || '')}</div>
+            <div class="event-card-actions">
+              <a href="#playback" class="event-btn-link" data-jump-playback="${escapeHtml(evt.cameraId)}" data-timestamp="${evt.timestamp}">Jump to Playback</a>
+              <button type="button" class="event-del-btn" data-del-event="${escapeHtml(evt.id)}">Delete</button>
+            </div>
+          </div>
+        </div>`;
+      }).join("");
+
+      // Open lightbox
+      cardsGrid.querySelectorAll("[data-open-event]").forEach(wrap => {
+        wrap.onclick = () => {
+          const eid = wrap.dataset.openEvent;
+          const evt = events.find(x => x.id === eid);
+          if (evt) openEventModal(evt);
+        };
+      });
+
+      // Jump to playback
+      cardsGrid.querySelectorAll("[data-jump-playback]").forEach(link => {
+        link.onclick = (e) => {
+          e.preventDefault();
+          const cid = link.dataset.jumpPlayback;
+          const ts = parseInt(link.dataset.timestamp, 10);
+          jumpToPlayback(cid, ts);
+        };
+      });
+
+      // Delete event
+      cardsGrid.querySelectorAll("[data-del-event]").forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          const eid = btn.dataset.delEvent;
+          if (!confirm("Delete this event and snapshot image?")) return;
+          try {
+            const dRes = await fetch(`/api/events?id=${encodeURIComponent(eid)}`, { method: "DELETE" });
+            const dData = await dRes.json();
+            if (dData.success) {
+              showToast("Event deleted", "success", 2000);
+              loadEvents();
+              loadStats();
+            } else {
+              showToast(dData.message || "Failed to delete event", "error", 3000);
+            }
+          } catch {
+            showToast("Error deleting event", "error", 3000);
+          }
+        };
+      });
+
+    } catch (e) {
+      cardsGrid.innerHTML = `
+        <div class="segments-empty" style="grid-column: 1 / -1;">
+          Could not connect to event timeline service
+        </div>`;
+    }
+  };
+
+  const openEventModal = (evt) => {
+    currentSelectedEvent = evt;
+    if (modalTitle) modalTitle.textContent = `${evt.cameraName || evt.cameraId} · ${evt.isoTime}`;
+    if (modalImg) modalImg.src = `/api/events/snapshot?id=${encodeURIComponent(evt.id)}`;
+
+    if (modalBbox) {
+      const b = evt.boundingBox;
+      if (b && b.width > 0 && b.height > 0) {
+        modalBbox.style.display = "block";
+        modalBbox.style.left = `${(b.x * 100).toFixed(1)}%`;
+        modalBbox.style.top = `${(b.y * 100).toFixed(1)}%`;
+        modalBbox.style.width = `${(b.width * 100).toFixed(1)}%`;
+        modalBbox.style.height = `${(b.height * 100).toFixed(1)}%`;
+      } else {
+        modalBbox.style.display = "none";
+      }
+    }
+
+    if (modalMeta) {
+      modalMeta.innerHTML = `
+        <div class="event-meta-cell">
+          <span class="event-meta-cell-label">Camera</span>
+          <span class="event-meta-cell-value">${escapeHtml(evt.cameraName || evt.cameraId)}</span>
+        </div>
+        <div class="event-meta-cell">
+          <span class="event-meta-cell-label">Motion Score</span>
+          <span class="event-meta-cell-value">${evt.score}%</span>
+        </div>
+        <div class="event-meta-cell">
+          <span class="event-meta-cell-label">Duration</span>
+          <span class="event-meta-cell-value">${evt.durationSeconds || 0}s</span>
+        </div>
+        <div class="event-meta-cell">
+          <span class="event-meta-cell-label">Timestamp</span>
+          <span class="event-meta-cell-value">${escapeHtml(evt.isoTime)}</span>
+        </div>
+        <div class="event-meta-cell">
+          <span class="event-meta-cell-label">Snapshot Size</span>
+          <span class="event-meta-cell-value">${formatBytes(evt.fileSizeBytes)}</span>
+        </div>
+      `;
+    }
+
+    if (modalJumpBtn) {
+      modalJumpBtn.onclick = (e) => {
+        e.preventDefault();
+        modal.close();
+        jumpToPlayback(evt.cameraId, evt.timestamp);
+      };
+    }
+
+    if (modalDelBtn) {
+      modalDelBtn.onclick = async () => {
+        if (!confirm("Delete this event and snapshot?")) return;
+        try {
+          const dRes = await fetch(`/api/events?id=${encodeURIComponent(evt.id)}`, { method: "DELETE" });
+          const dData = await dRes.json();
+          if (dData.success) {
+            modal.close();
+            showToast("Event deleted", "success", 2000);
+            loadEvents();
+            loadStats();
+          }
+        } catch {}
+      };
+    }
+
+    modal.showModal();
+  };
+
+  const jumpToPlayback = (cid, timestampMs) => {
+    // Navigate to #playback
+    const pbLink = document.querySelector('.nav-link[href="#playback"]');
+    if (pbLink) pbLink.click();
+    const pbSec = document.getElementById("playback");
+    if (pbSec) pbSec.scrollIntoView({ behavior: "smooth" });
+
+    // Set filter in playback
+    const pbCam = document.querySelector("#playback-cam-select");
+    const pbDate = document.querySelector("#playback-date-select");
+    if (pbCam) {
+      pbCam.value = cid;
+      pbCam.dispatchEvent(new Event("change"));
+    }
+    if (pbDate && timestampMs) {
+      const dt = new Date(timestampMs).toISOString().split("T")[0];
+      pbDate.value = dt;
+      pbDate.dispatchEvent(new Event("change"));
+    }
+    showToast(`Jumped to playback for ${cid}`, "info", 3000);
+  };
+
+  if (camSelect) camSelect.onchange = loadEvents;
+  if (dateSelect) dateSelect.onchange = loadEvents;
+  if (scoreSelect) scoreSelect.onchange = loadEvents;
+  if (refreshBtn) {
+    refreshBtn.onclick = () => {
+      loadEvents();
+      loadStats();
+    };
+  }
+
+  loadStats();
+  loadEvents();
+  setInterval(loadStats, 5000);
+  setInterval(loadEvents, 10000);
+}
+
 // Initial boot
 initNav();
 initSetupGuide();
 initServiceControls();
 initPlayback();
+initEventsTimeline();
 render();
 restoreLayoutPreference();
 

@@ -313,7 +313,7 @@ class AutoRecoveryManager:
         self.config_provider = config_provider
         self.health_monitor = health_monitor
         self.supervisors = {}
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.running = False
         self.worker_thread = None
 
