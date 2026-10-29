@@ -481,6 +481,12 @@ function renderAnalyticsCards() {
             <span class="signal-tag" data-sig-frozen="${escapeHtml(camera.id)}">Frozen: —</span>
             <span class="signal-tag" data-sig-fps="${escapeHtml(camera.id)}">FPS: —</span>
           </div>
+
+          <!-- Process Supervisor & Auto-Recovery Status -->
+          <div class="supervisor-line" data-supervisor-line="${escapeHtml(camera.id)}">
+            <span class="supervisor-pill" data-sup-pill="${escapeHtml(camera.id)}">Supervisor: STOPPED</span>
+            <button class="button button-small button-reset-breaker" data-reset-breaker="${escapeHtml(camera.id)}" type="button" style="display:none;">Reset Circuit Breaker</button>
+          </div>
         </div>
       </article>`;
   }).join("");
@@ -1239,15 +1245,284 @@ async function pollHealth() {
         }
       }
     }
+
+    // 3. Update Supervisor & Auto-Recovery state
+    try {
+      const sRes = await fetch("/api/services/status", { cache: "no-store" });
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        for (const [cid, sInfo] of Object.entries(sData.services || {})) {
+          const supPill = document.querySelector(`[data-sup-pill="${CSS.escape(cid)}"]`);
+          const resetBtn = document.querySelector(`[data-reset-breaker="${CSS.escape(cid)}"]`);
+
+          if (supPill) {
+            const st = sInfo.state || (sInfo.running ? "RUNNING" : "STOPPED");
+            const pidStr = sInfo.pid ? ` (PID ${sInfo.pid})` : "";
+            const backoffStr = sInfo.nextAllowedRestartIn > 0 ? ` · Cooldown ${sInfo.nextAllowedRestartIn}s` : "";
+            supPill.textContent = `Process: ${st}${pidStr}${backoffStr}`;
+            supPill.className = `supervisor-pill state-${st.toLowerCase()}`;
+          }
+
+          if (resetBtn) {
+            const isTripped = Boolean(sInfo.circuitBreakerTripped);
+            resetBtn.style.display = isTripped ? "inline-flex" : "none";
+            resetBtn.onclick = async (e) => {
+              e.stopPropagation();
+              resetBtn.disabled = true;
+              resetBtn.textContent = "Resetting…";
+              try {
+                await fetch(`/api/recovery/reset?id=${encodeURIComponent(cid)}`, { method: "POST" });
+                await fetch(`/api/services/start?id=${encodeURIComponent(cid)}`, { method: "POST" });
+                showToast(`Circuit breaker reset for ${cid}. Process restarted.`, "success", 3000);
+                setTimeout(pollHealth, 600);
+              } catch {
+                showToast(`Failed to reset circuit breaker for ${cid}`, "error", 3000);
+              } finally {
+                resetBtn.disabled = false;
+                resetBtn.textContent = "Reset Circuit Breaker";
+              }
+            };
+          }
+        }
+      }
+    } catch {}
   } catch {
     // Non-blocking error recovery
   }
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function initPlayback() {
+  const camSelect = document.querySelector("#playback-cam-select");
+  const dateSelect = document.querySelector("#playback-date-select");
+  const refreshBtn = document.querySelector("#playback-refresh-btn");
+  const video = document.querySelector("#playback-video");
+  const placeholder = document.querySelector("#playback-empty-placeholder");
+  const currentTitle = document.querySelector("#current-rec-title");
+  const downloadBtn = document.querySelector("#current-rec-download");
+  const deleteBtn = document.querySelector("#current-rec-delete");
+  const segmentsList = document.querySelector("#segments-list");
+  const timelineCount = document.querySelector("#timeline-count");
+  const manualBtns = document.querySelector("#manual-record-buttons");
+  const storagePill = document.querySelector("#storage-indicator-pill");
+  const storageText = document.querySelector("#storage-text");
+
+  let activeRecordings = new Set();
+  let currentSelectedId = null;
+
+  // Set today's date
+  if (dateSelect) {
+    const today = new Date().toISOString().split("T")[0];
+    dateSelect.value = today;
+  }
+
+  // Populate camera select
+  if (camSelect) {
+    camSelect.innerHTML = `<option value="">All cameras</option>` +
+      cameras.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("");
+  }
+
+  // Render manual recording buttons
+  const renderManualButtons = () => {
+    if (!manualBtns) return;
+    manualBtns.innerHTML = cameras.map(c => {
+      const isRec = activeRecordings.has(c.id);
+      return `<button class="button button-small rec-toggle-btn ${isRec ? 'is-recording' : ''}" data-rec-cam="${escapeHtml(c.id)}" type="button">
+        ${isRec ? 'Stop' : 'Rec'} ${escapeHtml(c.name.split('·')[0].trim())}
+      </button>`;
+    }).join("");
+
+    manualBtns.querySelectorAll("[data-rec-cam]").forEach(btn => {
+      btn.onclick = async () => {
+        const cid = btn.dataset.recCam;
+        const isRec = activeRecordings.has(cid);
+        const action = isRec ? "stop" : "start";
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/recordings/${action}?cameraId=${encodeURIComponent(cid)}`, { method: "POST" });
+          const data = await res.json();
+          if (data.success) {
+            if (isRec) activeRecordings.delete(cid);
+            else activeRecordings.add(cid);
+            showToast(`${isRec ? 'Stopped' : 'Started'} recording for ${cid}`, "success", 2500);
+          } else {
+            showToast(data.message || "Failed to toggle recording", "error", 3500);
+          }
+        } catch {
+          showToast("Could not communicate with recording server", "error", 3500);
+        } finally {
+          btn.disabled = false;
+          renderManualButtons();
+          loadRecordings();
+        }
+      };
+    });
+  };
+
+  const loadStorageStatus = async () => {
+    try {
+      const res = await fetch("/api/recordings/storage", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.activeRecordingCameras) {
+        activeRecordings = new Set(data.activeRecordingCameras);
+        renderManualButtons();
+      }
+      if (storagePill && storageText && data.disk) {
+        if (data.diskWarning) {
+          storagePill.className = "storage-indicator-pill warn";
+          storageText.textContent = `Disk Warning: ${data.disk.freeGb} GB free (Min ${data.minDiskFreeGb} GB)`;
+        } else {
+          storagePill.className = "storage-indicator-pill";
+          storageText.textContent = `Storage: ${data.recordingsStorageGb} GB / ${data.maxStorageGb} GB max · Free: ${data.disk.freeGb} GB`;
+        }
+      }
+    } catch {}
+  };
+
+  const loadRecordings = async () => {
+    if (!segmentsList) return;
+    const cid = camSelect ? camSelect.value : "";
+    const dateVal = dateSelect ? dateSelect.value : "";
+    const params = new URLSearchParams();
+    if (cid) params.set("cameraId", cid);
+    if (dateVal) params.set("date", dateVal);
+
+    try {
+      segmentsList.innerHTML = `<div class="segments-loading">Loading segments…</div>`;
+      const res = await fetch(`/api/recordings?${params.toString()}`, { cache: "no-store" });
+      if (!res.ok) {
+        segmentsList.innerHTML = `<div class="segments-empty">Failed to load recordings</div>`;
+        return;
+      }
+      const data = await res.json();
+      const recs = data.recordings || [];
+
+      if (timelineCount) {
+        timelineCount.textContent = `${recs.length} clips`;
+      }
+
+      if (recs.length === 0) {
+        segmentsList.innerHTML = `<div class="segments-empty">No recordings found for the selected filter.</div>`;
+        return;
+      }
+
+      segmentsList.innerHTML = recs.map(r => {
+        const isActive = r.id === currentSelectedId;
+        const dur = r.durationSeconds ? `${Math.round(r.durationSeconds)}s` : "—";
+        const size = formatBytes(r.fileSizeBytes);
+        const dateStr = r.startTime ? new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(r.startTime)) : "";
+        const badgeClass = r.mode === "motion" ? "motion" : "continuous";
+        const badgeText = r.mode === "motion" ? "Motion" : "Segment";
+
+        return `<div class="segment-item ${isActive ? 'active' : ''}" data-segment-id="${escapeHtml(r.id)}">
+          <div class="segment-meta">
+            <span class="segment-name">${escapeHtml(r.fileName)}</span>
+            <div class="segment-sub">
+              <span>${escapeHtml(r.cameraId)}</span>
+              <span>·</span>
+              <span>${dateStr}</span>
+              <span>·</span>
+              <span>${dur} (${size})</span>
+            </div>
+          </div>
+          <span class="segment-badge ${badgeClass}">${badgeText}</span>
+        </div>`;
+      }).join("");
+
+      segmentsList.querySelectorAll("[data-segment-id]").forEach(item => {
+        item.onclick = () => {
+          const segId = item.dataset.segmentId;
+          const rec = recs.find(x => x.id === segId);
+          if (rec) playSegment(rec);
+        };
+      });
+    } catch {
+      segmentsList.innerHTML = `<div class="segments-empty">Could not connect to recording server</div>`;
+    }
+  };
+
+  const playSegment = (rec) => {
+    currentSelectedId = rec.id;
+    document.querySelectorAll(".segment-item").forEach(el => {
+      el.classList.toggle("active", el.dataset.segmentId === rec.id);
+    });
+
+    if (currentTitle) {
+      currentTitle.textContent = `${rec.fileName} (${formatBytes(rec.fileSizeBytes)})`;
+    }
+
+    if (downloadBtn) {
+      downloadBtn.href = `/api/recordings/download?id=${encodeURIComponent(rec.id)}`;
+      downloadBtn.style.display = "inline-flex";
+    }
+
+    if (deleteBtn) {
+      deleteBtn.style.display = "inline-flex";
+      deleteBtn.onclick = async () => {
+        if (!confirm(`Delete recording '${rec.fileName}'?`)) return;
+        deleteBtn.disabled = true;
+        try {
+          const res = await fetch(`/api/recordings?id=${encodeURIComponent(rec.id)}`, { method: "DELETE" });
+          const d = await res.json();
+          if (d.success) {
+            showToast("Recording deleted", "success", 2500);
+            if (video) {
+              video.pause();
+              video.removeAttribute("src");
+              video.load();
+            }
+            if (placeholder) placeholder.classList.remove("hidden");
+            if (currentTitle) currentTitle.textContent = "No segment selected";
+            downloadBtn.style.display = "none";
+            deleteBtn.style.display = "none";
+            currentSelectedId = null;
+            loadRecordings();
+            loadStorageStatus();
+          } else {
+            showToast(d.message || "Failed to delete recording", "error", 3500);
+          }
+        } catch {
+          showToast("Error deleting recording", "error", 3500);
+        } finally {
+          deleteBtn.disabled = false;
+        }
+      };
+    }
+
+    if (video) {
+      video.src = `/api/recordings/stream?id=${encodeURIComponent(rec.id)}`;
+      if (placeholder) placeholder.classList.add("hidden");
+      video.play().catch(() => {});
+    }
+  };
+
+  if (camSelect) camSelect.onchange = loadRecordings;
+  if (dateSelect) dateSelect.onchange = loadRecordings;
+  if (refreshBtn) {
+    refreshBtn.onclick = () => {
+      loadRecordings();
+      loadStorageStatus();
+    };
+  }
+
+  renderManualButtons();
+  loadStorageStatus();
+  loadRecordings();
+  setInterval(loadStorageStatus, 10000);
 }
 
 // Initial boot
 initNav();
 initSetupGuide();
 initServiceControls();
+initPlayback();
 render();
 restoreLayoutPreference();
 

@@ -5,3 +5,6 @@ Thumbs.db
 *.log
 __pycache__/
 *.pyc
+recordings/**/*.mp4
+recordings/*.mp4
+recordings/recordings_index.json

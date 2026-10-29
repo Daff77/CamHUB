@@ -39,6 +39,15 @@
           </span>
           <span class="nav-label">Analytics</span>
         </a>
+        <a class="nav-link" href="#playback">
+          <span class="nav-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polygon points="10 8 16 12 10 16 10 8" fill="currentColor"></polygon>
+            </svg>
+          </span>
+          <span class="nav-label">Playback</span>
+        </a>
         <a class="nav-link" href="#setup">
           <span class="nav-icon">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -102,6 +111,75 @@
 
         <div class="analytics-cards" id="analytics-cards">
           <!-- Dynamically populated per camera -->
+        </div>
+      </section>
+
+      <!-- Local Recording & Playback Section -->
+      <section class="playback-panel" id="playback">
+        <div class="playback-header">
+          <div>
+            <h2 class="playback-title">Local recording & playback</h2>
+            <p class="playback-description">Zero-transcode segmented MP4 recording, timeline scrubber, and storage management.</p>
+          </div>
+          <div class="storage-indicator-pill" id="storage-indicator-pill">
+            <span class="storage-dot" id="storage-dot"></span>
+            <span class="storage-text" id="storage-text">Storage: Checking…</span>
+          </div>
+        </div>
+
+        <!-- Controls Toolbar -->
+        <div class="playback-toolbar">
+          <div class="playback-filters">
+            <div class="filter-item">
+              <label for="playback-cam-select">Camera</label>
+              <select id="playback-cam-select" class="select-ctrl">
+                <option value="">All cameras</option>
+              </select>
+            </div>
+            <div class="filter-item">
+              <label for="playback-date-select">Date</label>
+              <input type="date" id="playback-date-select" class="date-ctrl" />
+            </div>
+            <button class="button button-small" id="playback-refresh-btn" type="button">Refresh</button>
+          </div>
+
+          <div class="manual-record-group">
+            <span class="rec-label">Manual record:</span>
+            <div id="manual-record-buttons" class="manual-rec-btns"></div>
+          </div>
+        </div>
+
+        <!-- Player & Timeline Grid -->
+        <div class="playback-grid">
+          <!-- Video Player Window -->
+          <div class="playback-player-card">
+            <div class="player-wrapper">
+              <video id="playback-video" controls preload="metadata" playsinline class="playback-video">
+                Your browser does not support HTML5 video.
+              </video>
+              <div id="playback-empty-placeholder" class="playback-placeholder">
+                <p>Select a recorded segment from the timeline to start playback</p>
+              </div>
+            </div>
+            <div class="player-info" id="playback-current-info">
+              <span class="current-rec-title" id="current-rec-title">No segment selected</span>
+              <div class="current-rec-actions">
+                <a id="current-rec-download" class="button button-small" href="#" download style="display:none;">Download MP4</a>
+                <button id="current-rec-delete" class="button button-small button-warn" type="button" style="display:none;">Delete</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Segments Timeline / List -->
+          <div class="playback-timeline-card">
+            <div class="timeline-head">
+              <span class="timeline-title">Recorded Segments</span>
+              <span class="timeline-count" id="timeline-count">0 clips</span>
+            </div>
+            <div class="segments-list" id="segments-list">
+              <div class="segments-loading">Loading recording index…</div>
+            </div>
+          </div>
         </div>
       </section>
 

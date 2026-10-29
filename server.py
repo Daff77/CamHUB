@@ -14,6 +14,8 @@ from urllib.parse import urlparse, parse_qs
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 from health_monitor import CameraHealthMonitor, sanitize_sensitive_data
+from auto_recovery import AutoRecoveryManager, kill_process_tree, kill_port_owner
+from recording_manager import RecordingManager, sanitize_path
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "services_config.json")
@@ -151,8 +153,9 @@ class ProcessManager:
         time.sleep(1.0)
         return self.start_all()
 
-MANAGER = ProcessManager()
 HEALTH_MONITOR = CameraHealthMonitor(load_config)
+MANAGER = AutoRecoveryManager(load_config, health_monitor=HEALTH_MONITOR)
+RECORDING_MANAGER = RecordingManager(load_config, base_dir=BASE_DIR)
 
 class CamHubHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -165,9 +168,67 @@ class CamHubHandler(SimpleHTTPRequestHandler):
 
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "*")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+
+    def send_file_with_range(self, file_path, content_type="video/mp4", as_download=False):
+        """Supports HTTP 206 Partial Content for video seeking/scrubbing and downloads."""
+        if not os.path.exists(file_path):
+            self.send_json(404, {"error": "Recording file not found on disk"})
+            return
+
+        file_size = os.path.getsize(file_path)
+        range_header = self.headers.get("Range")
+        filename = os.path.basename(file_path)
+        disposition = f'attachment; filename="{filename}"' if as_download else "inline"
+
+        if not range_header or as_download:
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(file_size))
+            self.send_header("Content-Disposition", disposition)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_cors_headers()
+            self.end_headers()
+            with open(file_path, "rb") as f:
+                shutil.copyfileobj(f, self.wfile, length=65536)
+            return
+
+        try:
+            bytes_range = range_header.strip().split("=")[1]
+            start_str, end_str = bytes_range.split("-")
+            start = int(start_str) if start_str else 0
+            end = int(end_str) if end_str else file_size - 1
+            if end >= file_size:
+                end = file_size - 1
+            length = end - start + 1
+        except Exception:
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{file_size}")
+            self.end_headers()
+            return
+
+        self.send_response(206)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+        self.send_header("Content-Length", str(length))
+        self.send_header("Content-Disposition", disposition)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_cors_headers()
+        self.end_headers()
+
+        with open(file_path, "rb") as f:
+            f.seek(start)
+            remaining = length
+            chunk_size = 65536
+            while remaining > 0:
+                read_size = min(chunk_size, remaining)
+                chunk = f.read(read_size)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
 
     def send_json(self, status_code, data):
         body = json.dumps(data).encode("utf-8")
@@ -213,6 +274,11 @@ class CamHubHandler(SimpleHTTPRequestHandler):
                 self.send_json(404, {"error": f"Camera '{cid}' not found in health monitor"})
             return
 
+        if url.path == "/api/recovery/status":
+            data = MANAGER.get_status()
+            self.send_json(200, data)
+            return
+
         if url.path == "/api/services/status":
             data = MANAGER.get_status()
             # Enrich service status with smart health monitor data
@@ -225,23 +291,99 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             self.send_json(200, data)
             return
 
+        # Recordings list & metadata
+        if url.path == "/api/recordings":
+            cam_id = qs.get("cameraId", [None])[0]
+            date_str = qs.get("date", [None])[0]
+            limit_str = qs.get("limit", ["100"])[0]
+            limit = int(limit_str) if limit_str.isdigit() else 100
+            items = RECORDING_MANAGER.list_recordings(camera_id=cam_id, date_str=date_str, limit=limit)
+            self.send_json(200, {"recordings": items, "count": len(items)})
+            return
+
+        if url.path == "/api/recordings/storage":
+            stats = RECORDING_MANAGER.get_storage_status()
+            self.send_json(200, stats)
+            return
+
+        # Stream recording with HTTP 206 Partial Content
+        if url.path == "/api/recordings/stream":
+            seg_id = qs.get("id", [None])[0]
+            if not seg_id:
+                self.send_json(400, {"error": "Missing 'id' query parameter"})
+                return
+            item = RECORDING_MANAGER.get_recording_item(seg_id)
+            if not item:
+                self.send_json(404, {"error": "Recording not found"})
+                return
+            try:
+                full_path = sanitize_path(BASE_DIR, os.path.join(BASE_DIR, item["filePath"]))
+                self.send_file_with_range(full_path, content_type="video/mp4", as_download=False)
+            except Exception as e:
+                self.send_json(403, {"error": str(e)})
+            return
+
+        # Download recording attachment
+        if url.path == "/api/recordings/download":
+            seg_id = qs.get("id", [None])[0]
+            if not seg_id:
+                self.send_json(400, {"error": "Missing 'id' query parameter"})
+                return
+            item = RECORDING_MANAGER.get_recording_item(seg_id)
+            if not item:
+                self.send_json(404, {"error": "Recording not found"})
+                return
+            try:
+                full_path = sanitize_path(BASE_DIR, os.path.join(BASE_DIR, item["filePath"]))
+                self.send_file_with_range(full_path, content_type="video/mp4", as_download=True)
+            except Exception as e:
+                self.send_json(403, {"error": str(e)})
+            return
+
         super().do_GET()
 
     def do_POST(self):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
-        cid = qs.get("id", [None])[0]
+        cid = qs.get("id", [None])[0] or qs.get("cameraId", [None])[0]
+
+        # Recording controls
+        if url.path == "/api/recordings/start":
+            if not cid:
+                self.send_json(400, {"error": "Missing 'cameraId' or 'id' parameter"})
+                return
+            ok, msg = RECORDING_MANAGER.start_recording(cid, mode="manual")
+            self.send_json(200 if ok else 400, {"success": ok, "message": msg, "storage": RECORDING_MANAGER.get_storage_status()})
+            return
+
+        if url.path == "/api/recordings/stop":
+            if not cid:
+                self.send_json(400, {"error": "Missing 'cameraId' or 'id' parameter"})
+                return
+            ok, msg = RECORDING_MANAGER.stop_recording(cid)
+            self.send_json(200 if ok else 400, {"success": ok, "message": msg, "storage": RECORDING_MANAGER.get_storage_status()})
+            return
+
+        if url.path == "/api/recordings/trigger-motion":
+            if not cid:
+                self.send_json(400, {"error": "Missing 'cameraId' or 'id' parameter"})
+                return
+            dur_str = qs.get("duration", ["30"])[0]
+            dur = int(dur_str) if dur_str.isdigit() else 30
+            ok, msg = RECORDING_MANAGER.trigger_motion_recording(cid, duration=dur)
+            self.send_json(200 if ok else 400, {"success": ok, "message": msg, "storage": RECORDING_MANAGER.get_storage_status()})
+            return
 
         if url.path == "/api/services/start-all":
             results = MANAGER.start_all()
-            time.sleep(0.5)
+            time.sleep(0.4)
             status = MANAGER.get_status()
             self.send_json(200, {"success": True, "results": results, "status": status})
             return
 
         if url.path == "/api/services/stop-all":
             results = MANAGER.stop_all()
-            time.sleep(0.5)
+            time.sleep(0.4)
             status = MANAGER.get_status()
             self.send_json(200, {"success": True, "results": results, "status": status})
             return
@@ -253,27 +395,58 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             self.send_json(200, {"success": True, "results": results, "status": status})
             return
 
-        if url.path == "/api/services/start" and cid:
+        if url.path == "/api/services/start":
+            if not cid:
+                self.send_json(400, {"error": "Missing 'id' query parameter"})
+                return
             ok, msg = MANAGER.start_camera(cid)
-            time.sleep(0.5)
+            time.sleep(0.4)
             status = MANAGER.get_status()
-            self.send_json(200, {"success": ok, "message": msg, "status": status})
+            self.send_json(200 if ok else 400, {"success": ok, "message": msg, "status": status})
             return
 
-        if url.path == "/api/services/stop" and cid:
+        if url.path == "/api/services/stop":
+            if not cid:
+                self.send_json(400, {"error": "Missing 'id' query parameter"})
+                return
             ok, msg = MANAGER.stop_camera(cid)
-            time.sleep(0.5)
+            time.sleep(0.4)
             status = MANAGER.get_status()
-            self.send_json(200, {"success": ok, "message": msg, "status": status})
+            self.send_json(200 if ok else 400, {"success": ok, "message": msg, "status": status})
             return
 
-        if url.path == "/api/services/restart" and cid:
-            MANAGER.stop_camera(cid)
-            time.sleep(0.8)
-            ok, msg = MANAGER.start_camera(cid)
+        if url.path == "/api/services/restart":
+            if not cid:
+                self.send_json(400, {"error": "Missing 'id' query parameter"})
+                return
+            ok, msg = MANAGER.restart_camera(cid)
             time.sleep(0.5)
             status = MANAGER.get_status()
-            self.send_json(200, {"success": ok, "message": msg, "status": status})
+            self.send_json(200 if ok else 400, {"success": ok, "message": msg, "status": status})
+            return
+
+        if url.path == "/api/recovery/reset":
+            if not cid:
+                self.send_json(400, {"error": "Missing 'id' query parameter"})
+                return
+            ok, msg = MANAGER.reset_camera(cid)
+            status = MANAGER.get_status()
+            self.send_json(200 if ok else 404, {"success": ok, "message": msg, "status": status})
+            return
+
+        self.send_json(404, {"error": "Endpoint not found"})
+
+    def do_DELETE(self):
+        url = urlparse(self.path)
+        qs = parse_qs(url.query)
+        seg_id = qs.get("id", [None])[0]
+
+        if url.path == "/api/recordings":
+            if not seg_id:
+                self.send_json(400, {"error": "Missing 'id' query parameter"})
+                return
+            ok, msg = RECORDING_MANAGER.delete_recording(seg_id)
+            self.send_json(200 if ok else 404, {"success": ok, "message": msg})
             return
 
         self.send_json(404, {"error": "Endpoint not found"})
@@ -289,14 +462,21 @@ def main():
     print(f"[CAMHUB] Dashboard web server running on http://127.0.0.1:{args.port}", flush=True)
     print(f"[CAMHUB] Service Manager API ready at http://127.0.0.1:{args.port}/api/services/status", flush=True)
     print(f"[CAMHUB] Health Monitor API ready at http://127.0.0.1:{args.port}/api/health", flush=True)
+    print(f"[CAMHUB] Auto-Recovery API ready at http://127.0.0.1:{args.port}/api/recovery/status", flush=True)
+    print(f"[CAMHUB] Recording & Playback API ready at http://127.0.0.1:{args.port}/api/recordings", flush=True)
 
     HEALTH_MONITOR.start()
+    MANAGER.start()
+    RECORDING_MANAGER.start()
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("[CAMHUB] Shutting down...", flush=True)
     finally:
+        RECORDING_MANAGER.stop()
+        MANAGER.shutdown_all()
+        MANAGER.stop()
         HEALTH_MONITOR.stop()
         server.server_close()
 

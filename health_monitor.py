@@ -517,3 +517,4 @@ class CameraHealthMonitor:
             "summary": summary,
             "cameras": cameras_map
         }
+

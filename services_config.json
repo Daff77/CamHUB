@@ -10,6 +10,26 @@
     "recoveryStabilitySeconds": 6.0,
     "consecutiveFailuresForOffline": 2
   },
+  "autoRecovery": {
+    "enabled": true,
+    "maxRestartAttempts": 5,
+    "windowSeconds": 300,
+    "initialBackoffSeconds": 2.0,
+    "maxBackoffSeconds": 30.0,
+    "backoffMultiplier": 2.0,
+    "unhealthyThresholdSeconds": 25.0,
+    "stableDurationToResetAttempts": 30.0
+  },
+  "recording": {
+    "enabled": true,
+    "storagePath": "recordings",
+    "segmentDurationSeconds": 60,
+    "retentionDays": 7,
+    "maxStorageGb": 20.0,
+    "minDiskFreeGb": 5.0,
+    "preferredSource": "rtsp",
+    "autoRecordCameras": []
+  },
   "cameras": [
     {
       "id": "v380-1",
