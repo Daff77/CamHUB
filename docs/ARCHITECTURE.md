@@ -13,7 +13,7 @@ CamHUB/
 │   ├── __init__.py               # Core package exports and service facades
 │   ├── auto_recovery.py          # Process supervision, crash recovery, circuit breaker
 │   ├── health_monitor.py         # Multi-signal health check, zombie & freeze detection
-│   ├── motion_detector.py        # OpenCV motion analysis worker & snapshot manager
+│   ├── motion_detector.py        # OpenCV / PIL motion analysis worker & snapshot manager
 │   ├── recording_manager.py      # Local segmentation, disk quota & retention manager
 │   └── okam_adapter.py           # Multi-threaded RTSP-to-MJPEG protocol adapter
 │
@@ -23,11 +23,19 @@ CamHUB/
 │   └── styles.css                # Responsive stylesheet & dark/light theme tokens
 │
 ├── config/                       # Application configuration
-│   └── services_config.json      # Camera profiles, network ports, thresholds & cmds
+│   ├── services_config.json      # Camera profiles, network ports, thresholds & cmds
+│   └── ngrok.yml                 # Ngrok v2/v3 tunnel definition
 │
 ├── docs/                         # Technical documentation & architecture
 │   ├── ARCHITECTURE.md           # This architecture and directory layout guide
-│   └── DESIGN.md                 # Design decisions & requirements specification
+│   ├── DESIGN.md                 # Design decisions & requirements specification
+│   └── NGROK_SETUP.md            # Ngrok remote HTTPS configuration & setup guide
+│
+├── scripts/                      # Operational automation & launcher scripts
+│   ├── start_ngrok.ps1           # PowerShell tunnel launcher with auto-service check
+│   ├── start_ngrok.bat           # Windows batch launcher for Ngrok tunnel
+│   ├── start_server.bat          # 1-click CamHUB host server startup
+│   └── run_tests.bat             # 1-click automated unit test execution
 │
 ├── tests/                        # Automated unit test suite (32 unit tests)
 │   ├── __init__.py               # Test discovery environment setup
@@ -46,10 +54,15 @@ CamHUB/
 │   ├── recordings_index.json     # Recording metadata index
 │   └── .gitkeep
 │
-├── server.py                     # Primary host application, HTTP static server & REST API
-├── okam_adapter.py               # Root CLI wrapper for backward compatibility
+├── .vscode/                      # IDE environment configuration
+│   └── settings.json             # Pylance analysis extraPaths
+│
+├── .gitignore                    # Git exclusions
+├── pyproject.toml                # Project metadata & pyright configuration
+├── requirements.txt              # Production Python package dependencies
 ├── README.md                     # Project overview and quickstart guide
-└── .gitignore                    # Git exclusions
+├── server.py                     # Primary host application, HTTP static server & REST API
+└── start_ngrok.bat               # Root convenience shortcut to scripts/start_ngrok.bat
 ```
 
 ---
@@ -70,13 +83,18 @@ CamHUB/
   - Live sparkline FPS graphing and pipeline bottleneck diagnostics.
   - Camera multi-select filter with real-time health indicator badges.
   - Recording playback scrubber with HTTP 206 range seeking.
+  - Automatic HTTPS / Ngrok reverse proxy detection.
 - **`styles.css`**: Hardware-accelerated CSS with CSS custom properties for dark & light themes.
 
 ### 3. `config/` (Configuration)
 - **`services_config.json`**: Centralized configuration defining camera parameters, launch commands, health thresholds, auto-recovery limits, recording retention, and motion sensitivity.
+- **`ngrok.yml`**: Tunnel profile configured with `host_header: rewrite` and `inspect: false`.
 
-### 4. `server.py` (Host Server)
+### 4. `scripts/` (Automation)
+- Windows batch and PowerShell scripts providing one-click startup for server, test suite, and Ngrok tunnel.
+
+### 5. `server.py` (Host Server)
 - Serves frontend assets from `web/` with strict anti-caching headers (`Cache-Control: no-cache, no-store, must-revalidate`).
 - Provides unified REST APIs (`/api/services`, `/api/health`, `/api/recovery`, `/api/recordings`, `/api/events`).
+- Built-in single-tunnel reverse proxy (`/proxy/stream/<id>`, `/proxy/snapshot/<id>`, `/proxy/metrics/<id>`) bypassing browser Mixed Content restrictions when accessed via HTTPS/Ngrok.
 - Supports video streaming with HTTP 206 Partial Content.
-

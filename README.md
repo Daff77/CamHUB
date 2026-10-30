@@ -21,7 +21,7 @@ A local-first, privacy-focused dashboard for viewing mixed-brand IP cameras via 
 ### 3. O-Kam Pro / VStarcam — Kamera 3
 - **Device IP:** `192.168.100.6`
 - **Native RTSP Port:** `10554` (Lens 1) & `10555` (Lens 2)
-- **Local Adapter:** `okam_adapter.py`
+- **Local Adapter:** `core/okam_adapter.py`
 - **Decoder HTTP Port:** `8082`
 - **Live Stream (MJPEG):** `http://192.168.100.11:8082/stream.mjpg`
 - **Snapshot Endpoint:** `http://192.168.100.11:8082/snapshot`
@@ -29,7 +29,7 @@ A local-first, privacy-focused dashboard for viewing mixed-brand IP cameras via 
 
 ---
 
-## 🚀 How to Run CamHub
+## 🚀 How to Run CamHUB
 
 ### Step 1: Ensure Local Decoders are Running
 
@@ -92,7 +92,7 @@ Remove-Variable pass2, secure2, user2 -ErrorAction SilentlyContinue
 cd "C:\DaffaP\Project df\CamHUB"
 
 # Jalankan adapter RTSP-to-MJPEG untuk O-Kam Pro
-python okam_adapter.py --port 8082 --rtsp "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0"
+python core/okam_adapter.py --port 8082 --rtsp "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0"
 ```
 
 ### Step 2: Serve the Dashboard & Service Manager
@@ -135,10 +135,10 @@ CamHUB comes with built-in reverse proxy endpoints (`/proxy/stream/<camera_id>`,
 
 ### Quick Start:
 ```powershell
-# Jalankan tunnel otomatis
-.\start_ngrok.ps1
+# Jalankan tunnel otomatis (PowerShell)
+.\scripts\start_ngrok.ps1
 ```
-*(Atau klik ganda `start_ngrok.bat` di Windows Explorer)*.
+*(Atau cukup klik ganda `start_ngrok.bat` di root direktori project)*.
 
 Buka URL HTTPS yang diberikan Ngrok (contoh: `https://xxxx.ngrok-free.app`) di smartphone atau laptop dari luar rumah. Panduan lengkap tersedia di [`docs/NGROK_SETUP.md`](docs/NGROK_SETUP.md).
 

@@ -16,6 +16,11 @@ param(
 
 $ErrorActionPreference = "Continue"
 
+$projectRoot = Split-Path $PSScriptRoot -Parent
+if (-not (Test-Path (Join-Path $projectRoot "server.py"))) {
+  $projectRoot = $PSScriptRoot
+}
+
 Write-Host ""
 Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host "            CamHUB Ngrok Tunnel Launcher          " -ForegroundColor Cyan
@@ -48,7 +53,7 @@ $tcp = Test-NetConnection -ComputerName 127.0.0.1 -Port $Port -InformationLevel 
 if (-not $tcp) {
   Write-Host "[INFO] CamHUB server is not detected on port $Port." -ForegroundColor Yellow
   Write-Host "[INFO] Starting CamHUB host server in background..." -ForegroundColor Gray
-  Start-Process python -ArgumentList "-u server.py --port $Port" -WindowStyle Minimized
+  Start-Process python -ArgumentList "-u server.py --port $Port" -WorkingDirectory $projectRoot -WindowStyle Minimized
   Start-Sleep -Seconds 2
 } else {
   Write-Host "[OK] CamHUB server is active on http://127.0.0.1:$Port" -ForegroundColor Green
@@ -66,7 +71,7 @@ Write-Host "Press Ctrl + C anytime in this window to stop." -ForegroundColor Dar
 Write-Host ""
 
 # 4. Launch ngrok
-$configPath = Join-Path $PSScriptRoot "config\ngrok.yml"
+$configPath = Join-Path $projectRoot "config\ngrok.yml"
 if (Test-Path $configPath) {
   & ngrok start --config $configPath camhub
 } else {

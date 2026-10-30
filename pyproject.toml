@@ -1,0 +1,14 @@
+[project]
+name = "camhub"
+version = "2.3.0"
+description = "Unified multi-brand IP camera monitoring, telemetry, auto-recovery, and recording system"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow>=9.0.0",
+    "numpy>=1.20.0",
+]
+
+[tool.pyright]
+include = [".", "core", "tests"]
+extraPaths = ["./core", "."]

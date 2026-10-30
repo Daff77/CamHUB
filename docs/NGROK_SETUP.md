@@ -47,9 +47,9 @@ Pilih salah satu cara di bawah ini:
 #### Cara A: Menggunakan Script Otomatis (Direkomendasikan)
 Cukup jalankan script PowerShell:
 ```powershell
-.\start_ngrok.ps1
+.\scripts\start_ngrok.ps1
 ```
-Atau klik ganda file **`start_ngrok.bat`** di Windows Explorer. Script ini akan otomatis mendeteksi server CamHUB dan membuka tunnel port 3000.
+Atau klik ganda file **`start_ngrok.bat`** di root direktori project. Script ini akan otomatis mendeteksi server CamHUB dan membuka tunnel port 3000.
 
 #### Cara B: Menggunakan File Konfigurasi `ngrok.yml`
 ```powershell
@@ -87,8 +87,9 @@ Dengan opsi ini, setiap pengguna yang membuka link Ngrok wajib memasukkan userna
 ---
 
 ## 🛠️ File Terkait
-- [`start_ngrok.ps1`](file:///c:/DaffaP/Project%20df/CamHUB/start_ngrok.ps1) — Script launcher otomatis
-- [`start_ngrok.bat`](file:///c:/DaffaP/Project%20df/CamHUB/start_ngrok.bat) — Batch file shortcut Windows
+- [`scripts/start_ngrok.ps1`](file:///c:/DaffaP/Project%20df/CamHUB/scripts/start_ngrok.ps1) — Script launcher otomatis
+- [`scripts/start_ngrok.bat`](file:///c:/DaffaP/Project%20df/CamHUB/scripts/start_ngrok.bat) & [`start_ngrok.bat`](file:///c:/DaffaP/Project%20df/CamHUB/start_ngrok.bat) — Shortcut Windows batch file
 - [`config/ngrok.yml`](file:///c:/DaffaP/Project%20df/CamHUB/config/ngrok.yml) — File konfigurasi ngrok v2/v3
 - [`server.py`](file:///c:/DaffaP/Project%20df/CamHUB/server.py) — Endpoint reverse proxy `/proxy/stream/<id>`
 - [`web/app.js`](file:///c:/DaffaP/Project%20df/CamHUB/web/app.js) — Deteksi HTTPS/Ngrok otomatis
+

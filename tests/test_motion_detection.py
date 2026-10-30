@@ -8,10 +8,10 @@ import os
 import sys
 import io
 
-# Ensure core directory is in sys.path
-CORE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "core"))
-if CORE_DIR not in sys.path:
-    sys.path.insert(0, CORE_DIR)
+# Ensure root directory is in sys.path
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 import time
 import shutil
 import tempfile
@@ -19,20 +19,12 @@ import unittest
 from datetime import datetime
 from PIL import Image, ImageDraw
 
-try:
-    from core.motion_detector import (
-        CameraMotionTracker,
-        MotionDetectorService,
-        sanitize_path,
-        DEFAULT_MOTION_CONFIG
-    )
-except ImportError:
-    from motion_detector import (
-        CameraMotionTracker,
-        MotionDetectorService,
-        sanitize_path,
-        DEFAULT_MOTION_CONFIG
-    )
+from core.motion_detector import (
+    CameraMotionTracker,
+    MotionDetectorService,
+    sanitize_path,
+    DEFAULT_MOTION_CONFIG
+)
 
 def create_synthetic_frame(width=320, height=180, base_color=80, box=None) -> bytes:
     """Generates synthetic JPEG bytes with optional highlighted moving box."""

@@ -10,27 +10,17 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-# Ensure core and root directories are in sys.path
+# Ensure root directory is in sys.path
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-CORE_DIR = os.path.join(ROOT_DIR, "core")
-for p in (ROOT_DIR, CORE_DIR):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
-try:
-    from core.auto_recovery import (
-        SupervisorState,
-        CameraSupervisor,
-        AutoRecoveryManager,
-        DEFAULT_SUPERVISOR_CONFIG
-    )
-except ImportError:
-    from auto_recovery import (
-        SupervisorState,
-        CameraSupervisor,
-        AutoRecoveryManager,
-        DEFAULT_SUPERVISOR_CONFIG
-    )
+from core.auto_recovery import (
+    SupervisorState,
+    CameraSupervisor,
+    AutoRecoveryManager,
+    DEFAULT_SUPERVISOR_CONFIG
+)
 
 class TestAutoRecovery(unittest.TestCase):
 
