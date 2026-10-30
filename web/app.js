@@ -2284,7 +2284,7 @@ function initEventsTimeline() {
         return `
         <div class="event-card" data-event-id="${escapeHtml(evt.id)}">
           <div class="event-thumb-wrap" data-open-event="${escapeHtml(evt.id)}">
-            <img class="event-thumb-img" src="/api/events/snapshot?id=${encodeURIComponent(evt.id)}" alt="Snapshot" loading="lazy" />
+            <img class="event-thumb-img" src="/api/events/snapshot?id=${encodeURIComponent(evt.id)}&ngrok-skip-browser-warning=1" alt="Snapshot" loading="lazy" />
             <div class="event-bbox-overlay" style="left: ${leftPct}%; top: ${topPct}%; width: ${widthPct}%; height: ${heightPct}%;"></div>
             <span class="event-score-pill">Score: ${evt.score}%</span>
           </div>
@@ -2354,7 +2354,7 @@ function initEventsTimeline() {
   const openEventModal = (evt) => {
     currentSelectedEvent = evt;
     if (modalTitle) modalTitle.textContent = `${evt.cameraName || evt.cameraId} · ${evt.isoTime}`;
-    if (modalImg) modalImg.src = `/api/events/snapshot?id=${encodeURIComponent(evt.id)}`;
+    if (modalImg) modalImg.src = `/api/events/snapshot?id=${encodeURIComponent(evt.id)}&ngrok-skip-browser-warning=1`;
 
     if (modalBbox) {
       const b = evt.boundingBox;

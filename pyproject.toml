@@ -12,3 +12,4 @@ dependencies = [
 [tool.pyright]
 include = [".", "core", "tests"]
 extraPaths = ["./core", "."]
+

@@ -7,3 +7,4 @@ if %ERRORLEVEL% NEQ 0 (
   echo [ERROR] Ngrok exited with error code %ERRORLEVEL%.
   pause
 )
+

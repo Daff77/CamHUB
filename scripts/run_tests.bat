@@ -8,3 +8,4 @@ echo.
 python -m unittest discover -s tests -v
 echo.
 pause
+
