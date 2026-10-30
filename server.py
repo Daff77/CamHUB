@@ -224,7 +224,7 @@ class CamHubHandler(SimpleHTTPRequestHandler):
 
     def log_message(self, format, *args):
         # Silence routine static asset logs
-        msg = args[0] if args else ""
+        msg = str(args[0]) if args else ""
         if any(api in msg for api in ("/api/", "/proxy/")):
             print(f"[API] {msg}", flush=True)
             DIAGNOSTICS_SERVICE.log_event(msg, level="API")
@@ -233,14 +233,9 @@ class CamHubHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("ngrok-skip-browser-warning", "1")
 
     def end_headers(self):
-        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        self.send_header("Pragma", "no-cache")
-        self.send_header("Expires", "0")
-        self.send_header("ngrok-skip-browser-warning", "1")
         super().end_headers()
 
     def send_file_with_range(self, file_path, content_type="video/mp4", as_download=False):
@@ -309,6 +304,9 @@ class CamHubHandler(SimpleHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.send_cors_headers()
         self.end_headers()
         try:

@@ -14,6 +14,24 @@ if (typeof window !== "undefined" && window.fetch) {
 
 const defaultHost = (typeof window !== "undefined" && window.location && window.location.hostname) ? window.location.hostname : "127.0.0.1";
 
+let activeRecordings = new Set();
+
+function updateAllRecordingButtons() {
+  document.querySelectorAll("[data-tile-rec]").forEach((btn) => {
+    const cid = btn.dataset.tileRec;
+    const isRec = activeRecordings.has(cid);
+    btn.classList.toggle("is-recording", isRec);
+    const textEl = btn.querySelector(".tile-rec-text");
+    if (textEl) textEl.textContent = isRec ? "Recording" : "Record";
+  });
+  document.querySelectorAll(".rec-toggle-btn").forEach((btn) => {
+    const cid = btn.getAttribute("data-rec-cam");
+    const isRec = activeRecordings.has(cid);
+    btn.classList.toggle("is-recording", isRec);
+    btn.textContent = `${isRec ? '■ Stop' : '● Rec'} ${cid}`;
+  });
+}
+
 const DEFAULT_CAMERAS = [
   {
     id: "v380-1",
@@ -453,6 +471,10 @@ function render() {
                   <button class="button button-small" data-zoom-reset-btn="${escapeHtml(camera.id)}" type="button" title="Reset zoom (1.0x)"><span data-zoom-action-val="${escapeHtml(camera.id)}">1.0x</span></button>
                   <button class="button button-small" data-zoom-out-btn="${escapeHtml(camera.id)}" type="button" title="Zoom out">－</button>
                 </div>
+                <button class="button button-small tile-rec-btn ${activeRecordings.has(camera.id) ? 'is-recording' : ''}" data-tile-rec="${escapeHtml(camera.id)}" type="button" title="Toggle local recording">
+                  <span class="tile-rec-dot"></span>
+                  <span class="tile-rec-text">${activeRecordings.has(camera.id) ? 'Recording' : 'Record'}</span>
+                </button>
                 <button class="button button-small" data-refresh="${escapeHtml(camera.id)}" type="button" title="Reload feed">Reload</button>
                 <button class="button button-small" data-configure="${escapeHtml(camera.id)}" type="button" title="Configure camera">Configure</button>
                 <button class="button button-small button-focus" data-focus="${escapeHtml(camera.id)}" type="button" title="Expand to full row">Focus</button>
@@ -1163,6 +1185,33 @@ function attachZoomEvents() {
         wrap.classList.remove("is-panning");
       }
       lastTouchDist = null;
+    };
+  });
+
+  // Tile Record Toggle Buttons
+  document.querySelectorAll("[data-tile-rec]").forEach((btn) => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const cid = btn.dataset.tileRec;
+      const isRec = activeRecordings.has(cid);
+      const action = isRec ? "stop" : "start";
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/recordings/${action}?cameraId=${encodeURIComponent(cid)}`, { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+          if (isRec) activeRecordings.delete(cid);
+          else activeRecordings.add(cid);
+          showToast(`${isRec ? 'Stopped' : 'Started'} recording for ${cid}`, "success", 2500);
+          updateAllRecordingButtons();
+        } else {
+          showToast(data.message || "Failed to toggle recording", "error", 4000);
+        }
+      } catch (err) {
+        showToast("Recording request failed", "error", 3500);
+      } finally {
+        btn.disabled = false;
+      }
     };
   });
 }
@@ -1992,7 +2041,6 @@ function initPlayback() {
   const storagePill = document.querySelector("#storage-indicator-pill");
   const storageText = document.querySelector("#storage-text");
 
-  let activeRecordings = new Set();
   let currentSelectedId = null;
 
   // Set today's date
@@ -2038,6 +2086,7 @@ function initPlayback() {
         } finally {
           btn.disabled = false;
           renderManualButtons();
+          updateAllRecordingButtons();
           loadRecordings();
         }
       };
@@ -2055,6 +2104,7 @@ function initPlayback() {
         if (recData.activeRecordingCameras) {
           activeRecordings = new Set(recData.activeRecordingCameras);
           renderManualButtons();
+          updateAllRecordingButtons();
         }
       }
       if (storRes.ok && storagePill && storageText) {
@@ -2362,7 +2412,10 @@ function initEventsTimeline() {
         return `
         <div class="event-card" data-event-id="${escapeHtml(evt.id)}">
           <div class="event-thumb-wrap" data-open-event="${escapeHtml(evt.id)}">
-            <img class="event-thumb-img" src="/api/events/snapshot?id=${encodeURIComponent(evt.id)}&ngrok-skip-browser-warning=1" alt="Snapshot" loading="lazy" />
+            <img class="event-thumb-img" src="/api/events/snapshot?id=${encodeURIComponent(evt.id)}&ngrok-skip-browser-warning=1" alt="Snapshot" loading="lazy" onerror="this.onerror=null; this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
+            <div class="event-thumb-fallback" style="display:none;">
+              <span>📷 Snapshot unavailable</span>
+            </div>
             <div class="event-bbox-overlay" style="left: ${leftPct}%; top: ${topPct}%; width: ${widthPct}%; height: ${heightPct}%;"></div>
             ${objPill}
             <span class="event-score-pill">Score: ${evt.score}%</span>

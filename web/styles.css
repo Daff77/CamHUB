@@ -1973,6 +1973,9 @@ input:focus {
   background-color: var(--video);
   overflow: hidden;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .event-thumb-img {
@@ -1982,13 +1985,24 @@ input:focus {
   display: block;
 }
 
+.event-thumb-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
 .event-bbox-overlay {
   position: absolute;
   border: 2px solid #e9b44c;
-  background-color: rgba(233, 180, 76, 0.22);
+  background-color: rgba(233, 180, 76, 0.08);
   pointer-events: none;
-  border-radius: 2px;
-  box-shadow: 0 0 6px rgba(233, 180, 76, 0.4);
+  border-radius: 3px;
+  box-shadow: 0 0 6px rgba(233, 180, 76, 0.35);
 }
 
 .event-score-pill {
@@ -2842,6 +2856,40 @@ input:focus {
   top: 12px;
   right: 12px;
   bottom: auto;
+}
+
+/* Tile Recording Button */
+.tile-rec-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.tile-rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #ef4444;
+  display: inline-block;
+}
+
+.tile-rec-btn.is-recording {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+  border-color: #ef4444 !important;
+  color: #fca5a5 !important;
+}
+
+.tile-rec-btn.is-recording .tile-rec-dot {
+  background-color: #ef4444;
+  box-shadow: 0 0 6px #ef4444;
+  animation: pulse-rec 1s infinite alternate;
+}
+
+@keyframes pulse-rec {
+  0% { opacity: 0.4; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1.15); }
 }
 
 /* ==========================================================================

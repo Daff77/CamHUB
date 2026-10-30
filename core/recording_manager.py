@@ -79,27 +79,45 @@ class RecordingSession:
         os.makedirs(date_folder, exist_ok=True)
 
         prefix = "motion" if self.mode == "motion" else "rec"
-        # Segment pattern: e.g. v380-1_rec_20261029_201500_seg%03d.mp4
-        pattern = os.path.join(date_folder, f"{self.camera_id}_{prefix}_%Y%m%d_%H%M%S_seg%03d.mp4")
+        start_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Segment pattern with Python-formatted timestamp and printf %03d counter
+        pattern = os.path.join(date_folder, f"{self.camera_id}_{prefix}_{start_ts}_seg%03d.mp4")
 
         is_rtsp = self.stream_url.lower().startswith("rtsp://")
 
-        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error"]
+        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning"]
         if is_rtsp:
-            cmd.extend(["-rtsp_transport", "tcp"])
+            cmd.extend([
+                "-rtsp_transport", "tcp",
+                "-timeout", "5000000"  # 5s socket timeout
+            ])
+        else:
+            cmd.extend([
+                "-timeout", "5000000"
+            ])
         cmd.extend(["-i", self.stream_url])
 
         if self.duration_limit > 0:
             cmd.extend(["-t", str(self.duration_limit)])
 
-        # Zero-transcode copy into MP4 segment format
+        # Video stream handling:
+        # If RTSP (H.264), zero-transcode copy into MP4.
+        # If HTTP MJPEG, encode to H.264 so standard web browsers can play the MP4!
+        if is_rtsp:
+            cmd.extend(["-c:v", "copy"])
+        else:
+            cmd.extend([
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-tune", "zerolatency",
+                "-pix_fmt", "yuv420p"
+            ])
+
         cmd.extend([
-            "-c:v", "copy",
             "-an",
             "-f", "segment",
             "-segment_time", str(self.segment_duration),
             "-reset_timestamps", "1",
-            "-strftime", "1",
             "-segment_format", "mp4",
             "-movflags", "+faststart",
             pattern
@@ -108,12 +126,27 @@ class RecordingSession:
         try:
             self.process = subprocess.Popen(
                 cmd,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
             )
             self.pid = self.process.pid
             self.running = True
+
+            # Brief check to ensure FFmpeg didn't fail immediately on startup
+            time.sleep(0.3)
+            ret = self.process.poll()
+            if ret is not None:
+                err_msg = ""
+                try:
+                    err_msg = self.process.stderr.read().decode("utf-8", errors="ignore").strip()
+                except:
+                    pass
+                self.running = False
+                self.process = None
+                return False, f"FFmpeg failed to start (exit code {ret}): {err_msg[:200]}"
+
             return True, f"Started recording for {self.camera_id} (PID {self.pid})"
         except Exception as e:
             return False, str(e)
@@ -122,10 +155,21 @@ class RecordingSession:
         self.running = False
         if self.process:
             try:
-                if sys.platform == "win32":
-                    subprocess.run(f"taskkill /F /T /PID {self.process.pid}", shell=True, capture_output=True)
-                else:
-                    self.process.terminate()
+                # 1. Graceful exit: send 'q' to FFmpeg stdin so it flushes the MP4 moov trailer
+                if self.process.stdin:
+                    try:
+                        self.process.stdin.write(b"q\n")
+                        self.process.stdin.flush()
+                        self.process.wait(timeout=2.0)
+                    except:
+                        pass
+
+                # 2. Forceful fallback if still running
+                if self.process and self.process.poll() is None:
+                    if sys.platform == "win32":
+                        subprocess.run(f"taskkill /F /T /PID {self.process.pid}", shell=True, capture_output=True)
+                    else:
+                        self.process.terminate()
             except:
                 pass
             self.process = None
@@ -274,8 +318,13 @@ class RecordingManager:
 
         # RTSP endpoints
         if pref == "rtsp":
+            # Priority 1: If camera defines a local restream port (e.g. 8554, 8555)
+            rtsp_port = cam.get("rtspPort")
+            if rtsp_port:
+                return f"rtsp://127.0.0.1:{rtsp_port}/live/ch0"
+
+            # Priority 2: Direct RTSP in camera adapter command
             if cam.get("type") == "okam":
-                # Camera 3 direct RTSP
                 rtsp_cmd = cam.get("cmd", "")
                 if "--rtsp" in rtsp_cmd:
                     try:
@@ -284,16 +333,13 @@ class RecordingManager:
                     except:
                         pass
             elif cam.get("fastRtsCmd"):
-                # Camera 2 direct RTSP
                 try:
                     cmd_str = cam["fastRtsCmd"]
-                    idx = cmd_str.index("--rtsp")
-                    return cmd_str[idx + 6:].strip().strip('"').strip("'")
+                    if "--rtsp" in cmd_str:
+                        idx = cmd_str.index("--rtsp")
+                        return cmd_str[idx + 6:].strip().strip('"').strip("'")
                 except:
                     pass
-            elif cam.get("rtspPort"):
-                # V380Decoder restream port (e.g. 8554, 8555)
-                return f"rtsp://127.0.0.1:{cam['rtspPort']}/live/ch0"
 
         # Fallback to local MJPEG stream
         port = cam.get("port", 8080)
