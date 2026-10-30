@@ -43,6 +43,32 @@
     "retentionDays": 7,
     "maxStorageMb": 1000.0
   },
+  "aiDetection": {
+    "enabled": true,
+    "provider": "auto",
+    "modelPath": "models/yolov5n.onnx",
+    "confidenceThreshold": 0.40,
+    "nmsThreshold": 0.45,
+    "maxInferenceFps": 2.0,
+    "targetClasses": ["person", "car", "motorcycle", "animal"],
+    "cameras": {
+      "v380-1": {
+        "enabled": true,
+        "confidenceThreshold": 0.35,
+        "targetClasses": ["person", "animal"]
+      },
+      "v380-2": {
+        "enabled": true,
+        "confidenceThreshold": 0.40,
+        "targetClasses": ["person", "car", "motorcycle"]
+      },
+      "okam-3": {
+        "enabled": true,
+        "confidenceThreshold": 0.40,
+        "targetClasses": ["person", "car", "motorcycle", "animal"]
+      }
+    }
+  },
   "cameras": [
     {
       "id": "v380-1",

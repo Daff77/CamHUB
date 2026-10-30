@@ -274,6 +274,16 @@
                 <option value="30">&gt; 30%</option>
               </select>
             </div>
+            <div class="filter-item">
+              <label for="events-class-select">Object</label>
+              <select id="events-class-select" class="select-ctrl">
+                <option value="">All objects</option>
+                <option value="person">👤 Person</option>
+                <option value="car">🚗 Vehicle</option>
+                <option value="motorcycle">🏍️ Motorcycle</option>
+                <option value="animal">🐾 Animal</option>
+              </select>
+            </div>
             <button class="button button-small" id="events-refresh-btn" type="button">Refresh</button>
           </div>
 
@@ -281,6 +291,8 @@
             <span class="events-meta-item" id="events-fps-stat">FPS: 0.0</span>
             <span class="events-meta-divider">·</span>
             <span class="events-meta-item" id="events-storage-stat">Storage: 0 MB</span>
+            <span class="events-meta-divider">·</span>
+            <span class="events-meta-item events-ai-badge" id="events-ai-stat" title="CamHUB Edge AI Engine. Click to benchmark GPU vs CPU.">⚡ AI: DirectML</span>
           </div>
         </div>
 
@@ -374,12 +386,14 @@
       <div class="event-modal-image-wrapper">
         <img id="event-modal-img" src="" alt="Event snapshot" class="event-modal-img" />
         <div id="event-modal-bbox" class="event-modal-bbox" style="display:none;"></div>
+        <div id="event-modal-bboxes-container" class="event-modal-bboxes-container"></div>
       </div>
       <div class="event-modal-meta" id="event-modal-meta">
         <!-- Event stats injected here -->
       </div>
     </div>
     <div class="dialog-actions">
+      <button class="button button-accent" id="event-modal-enrich-btn" type="button">⚡ Re-analyze with AI</button>
       <a id="event-modal-jump-playback" class="button button-primary" href="#playback">Jump to Playback</a>
       <button class="button button-warn" id="event-modal-delete-btn" type="button">Delete event</button>
       <button class="button" id="close-event-dialog-action" type="button">Close</button>

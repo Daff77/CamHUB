@@ -2201,22 +2201,26 @@ function initEventsTimeline() {
   const camSelect = document.querySelector("#events-cam-select");
   const dateSelect = document.querySelector("#events-date-select");
   const scoreSelect = document.querySelector("#events-score-select");
+  const classSelect = document.querySelector("#events-class-select");
   const refreshBtn = document.querySelector("#events-refresh-btn");
   const cardsGrid = document.querySelector("#events-cards-grid");
   const countLabel = document.querySelector("#events-list-count");
   const navCount = document.querySelector("#nav-events-count");
   const fpsStat = document.querySelector("#events-fps-stat");
   const storageStat = document.querySelector("#events-storage-stat");
+  const aiStat = document.querySelector("#events-ai-stat");
   const statusPill = document.querySelector("#events-status-pill");
 
   // Modal elements
   const modal = document.querySelector("#event-dialog");
   const modalImg = document.querySelector("#event-modal-img");
   const modalBbox = document.querySelector("#event-modal-bbox");
+  const modalBboxesContainer = document.querySelector("#event-modal-bboxes-container");
   const modalMeta = document.querySelector("#event-modal-meta");
   const modalTitle = document.querySelector("#event-modal-title");
   const modalJumpBtn = document.querySelector("#event-modal-jump-playback");
   const modalDelBtn = document.querySelector("#event-modal-delete-btn");
+  const modalEnrichBtn = document.querySelector("#event-modal-enrich-btn");
   const closeBtn = document.querySelector("#close-event-dialog-btn");
   const closeAction = document.querySelector("#close-event-dialog-action");
 
@@ -2232,6 +2236,27 @@ function initEventsTimeline() {
   if (closeBtn) closeBtn.onclick = () => modal.close();
   if (closeAction) closeAction.onclick = () => modal.close();
 
+  // Benchmark click handler on AI stat badge
+  if (aiStat) {
+    aiStat.onclick = async () => {
+      showToast("Running hardware AI benchmark (DirectML GPU vs CPU)...", "info", 3500);
+      try {
+        const bRes = await fetch("/api/ai/benchmark?runs=3", { method: "POST" });
+        const bData = await bRes.json();
+        if (bData.status === "success") {
+          const dml = bData.results["DirectML (GPU)"];
+          const cpu = bData.results["CPU"];
+          const msg = `⚡ GPU: ${dml?.avgLatencyMs || "N/A"}ms (${dml?.fpsCapacity || 0} FPS) | CPU: ${cpu?.avgLatencyMs || "N/A"}ms (${cpu?.fpsCapacity || 0} FPS)`;
+          showToast(msg, "success", 7000);
+        } else {
+          showToast(bData.error || "Benchmark failed", "warn", 4000);
+        }
+      } catch {
+        showToast("Benchmark request failed", "error", 3000);
+      }
+    };
+  }
+
   const loadStats = async () => {
     try {
       const res = await fetch("/api/events/stats", { cache: "no-store" });
@@ -2243,6 +2268,13 @@ function initEventsTimeline() {
       if (statusPill) {
         statusPill.title = `Total events: ${data.totalEvents}, today: ${data.eventsToday}`;
       }
+      if (aiStat && data.ai) {
+        const ai = data.ai;
+        const prov = ai.activeProvider || "DirectML";
+        const lat = ai.lastLatencyMs ? `${ai.lastLatencyMs}ms` : "Active";
+        aiStat.textContent = `⚡ AI: ${prov} (${lat})`;
+        aiStat.title = `Model: ${ai.model || "yolov5n"} | Inferences: ${ai.totalInferences || 0} | Dropped: ${ai.droppedFrames || 0}\nClick to run hardware benchmark (GPU vs CPU).`;
+      }
     } catch {}
   };
 
@@ -2251,11 +2283,13 @@ function initEventsTimeline() {
     const cid = camSelect ? camSelect.value : "";
     const dt = dateSelect ? dateSelect.value : "";
     const minScore = scoreSelect ? scoreSelect.value : "";
+    const objClass = classSelect ? classSelect.value : "";
 
     const params = new URLSearchParams();
     if (cid) params.set("cameraId", cid);
     if (dt) params.set("date", dt);
     if (minScore) params.set("minScore", minScore);
+    if (objClass) params.set("objectClass", objClass);
     params.set("limit", "60");
 
     try {
@@ -2281,11 +2315,31 @@ function initEventsTimeline() {
         const widthPct = (bbox.width * 100).toFixed(1);
         const heightPct = (bbox.height * 100).toFixed(1);
 
+        // Object badge pill
+        let objPill = "";
+        if (evt.primaryClass) {
+          const iconMap = {
+            person: "👤",
+            car: "🚗",
+            motorcycle: "🏍️",
+            animal: "🐾",
+            cat: "🐱",
+            dog: "🐶",
+            bird: "🐦",
+            clock: "🕒"
+          };
+          const icon = iconMap[evt.primaryClass.toLowerCase()] || iconMap[evt.primaryCategory] || "🎯";
+          const confPct = Math.round((evt.primaryConfidence || 0) * 100);
+          const catClass = evt.primaryCategory || evt.primaryClass;
+          objPill = `<span class="event-obj-pill ${catClass}">${icon} ${escapeHtml(evt.primaryClass)} ${confPct}%</span>`;
+        }
+
         return `
         <div class="event-card" data-event-id="${escapeHtml(evt.id)}">
           <div class="event-thumb-wrap" data-open-event="${escapeHtml(evt.id)}">
             <img class="event-thumb-img" src="/api/events/snapshot?id=${encodeURIComponent(evt.id)}&ngrok-skip-browser-warning=1" alt="Snapshot" loading="lazy" />
             <div class="event-bbox-overlay" style="left: ${leftPct}%; top: ${topPct}%; width: ${widthPct}%; height: ${heightPct}%;"></div>
+            ${objPill}
             <span class="event-score-pill">Score: ${evt.score}%</span>
           </div>
           <div class="event-card-body">
@@ -2356,24 +2410,52 @@ function initEventsTimeline() {
     if (modalTitle) modalTitle.textContent = `${evt.cameraName || evt.cameraId} · ${evt.isoTime}`;
     if (modalImg) modalImg.src = `/api/events/snapshot?id=${encodeURIComponent(evt.id)}&ngrok-skip-browser-warning=1`;
 
-    if (modalBbox) {
-      const b = evt.boundingBox;
-      if (b && b.width > 0 && b.height > 0) {
-        modalBbox.style.display = "block";
-        modalBbox.style.left = `${(b.x * 100).toFixed(1)}%`;
-        modalBbox.style.top = `${(b.y * 100).toFixed(1)}%`;
-        modalBbox.style.width = `${(b.width * 100).toFixed(1)}%`;
-        modalBbox.style.height = `${(b.height * 100).toFixed(1)}%`;
-      } else {
-        modalBbox.style.display = "none";
+    // Multi-bounding box rendering
+    if (modalBboxesContainer) {
+      modalBboxesContainer.innerHTML = "";
+      if (evt.detectedObjects && evt.detectedObjects.length > 0) {
+        modalBboxesContainer.innerHTML = evt.detectedObjects.map(d => {
+          const bx = d.box || {};
+          const l = (bx.x * 100).toFixed(1);
+          const t = (bx.y * 100).toFixed(1);
+          const w = (bx.width * 100).toFixed(1);
+          const h = (bx.height * 100).toFixed(1);
+          const cat = d.category || d.class || "other";
+          const conf = Math.round((d.confidence || 0) * 100);
+          return `
+            <div class="event-modal-detected-box ${cat}" style="left:${l}%; top:${t}%; width:${w}%; height:${h}%;">
+              <span class="event-bbox-tag">${escapeHtml(d.class)} ${conf}%</span>
+            </div>
+          `;
+        }).join("");
+        if (modalBbox) modalBbox.style.display = "none";
+      } else if (modalBbox) {
+        const b = evt.boundingBox;
+        if (b && b.width > 0 && b.height > 0) {
+          modalBbox.style.display = "block";
+          modalBbox.style.left = `${(b.x * 100).toFixed(1)}%`;
+          modalBbox.style.top = `${(b.y * 100).toFixed(1)}%`;
+          modalBbox.style.width = `${(b.width * 100).toFixed(1)}%`;
+          modalBbox.style.height = `${(b.height * 100).toFixed(1)}%`;
+        } else {
+          modalBbox.style.display = "none";
+        }
       }
     }
 
     if (modalMeta) {
+      const objectsSummary = (evt.detectedObjects && evt.detectedObjects.length > 0)
+        ? evt.detectedObjects.map(d => `${d.class} (${Math.round(d.confidence * 100)}%)`).join(", ")
+        : (evt.primaryClass ? `${evt.primaryClass} (${Math.round((evt.primaryConfidence || 0) * 100)}%)` : "No objects classified");
+
       modalMeta.innerHTML = `
         <div class="event-meta-cell">
           <span class="event-meta-cell-label">Camera</span>
           <span class="event-meta-cell-value">${escapeHtml(evt.cameraName || evt.cameraId)}</span>
+        </div>
+        <div class="event-meta-cell">
+          <span class="event-meta-cell-label">AI Detections</span>
+          <span class="event-meta-cell-value" style="color: #38bdf8;">${escapeHtml(objectsSummary)}</span>
         </div>
         <div class="event-meta-cell">
           <span class="event-meta-cell-label">Motion Score</span>
@@ -2392,6 +2474,29 @@ function initEventsTimeline() {
           <span class="event-meta-cell-value">${formatBytes(evt.fileSizeBytes)}</span>
         </div>
       `;
+    }
+
+    if (modalEnrichBtn) {
+      modalEnrichBtn.onclick = async () => {
+        modalEnrichBtn.disabled = true;
+        modalEnrichBtn.textContent = "Analyzing...";
+        try {
+          const enRes = await fetch(`/api/ai/enrich?id=${encodeURIComponent(evt.id)}`, { method: "POST" });
+          const enData = await enRes.json();
+          if (enData && enData.id) {
+            showToast(`AI Analysis complete! Found ${enData.detectedObjects?.length || 0} object(s)`, "success", 3000);
+            openEventModal(enData);
+            loadEvents();
+          } else {
+            showToast("AI analysis complete: no targets detected", "info", 3000);
+          }
+        } catch {
+          showToast("AI analysis request failed", "error", 3000);
+        } finally {
+          modalEnrichBtn.disabled = false;
+          modalEnrichBtn.textContent = "⚡ Re-analyze with AI";
+        }
+      };
     }
 
     if (modalJumpBtn) {
@@ -2446,6 +2551,7 @@ function initEventsTimeline() {
   if (camSelect) camSelect.onchange = loadEvents;
   if (dateSelect) dateSelect.onchange = loadEvents;
   if (scoreSelect) scoreSelect.onchange = loadEvents;
+  if (classSelect) classSelect.onchange = loadEvents;
   if (refreshBtn) {
     refreshBtn.onclick = () => {
       loadEvents();

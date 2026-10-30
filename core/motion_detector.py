@@ -13,6 +13,7 @@ import glob
 import shutil
 import threading
 import uuid
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 from urllib.request import Request, urlopen
 import numpy as np
@@ -217,6 +218,86 @@ class MotionDetectorService:
         self.last_fps_calc_time = time.time()
         self.frame_counter = 0
 
+        # Local AI Object Detection Engine (Decoupled background worker)
+        self.ai_detector = None
+        self.ai_worker = None
+        self._init_ai()
+
+    def _init_ai(self):
+        """Initialize decoupled AI object detector with DirectML/CPU fallback."""
+        try:
+            from core.ai_detector import LocalObjectDetector, AIObjectDetectorWorker
+            full_cfg = self.config_provider()
+            ai_cfg = full_cfg.get("aiDetection", {})
+            if ai_cfg.get("enabled", True):
+                provider = ai_cfg.get("provider", "auto")
+                model_path = ai_cfg.get("modelPath")
+                if model_path and not os.path.isabs(model_path):
+                    model_path = os.path.join(self.base_dir, model_path)
+                conf = ai_cfg.get("confidenceThreshold", 0.40)
+                nms = ai_cfg.get("nmsThreshold", 0.45)
+                targets = ai_cfg.get("targetClasses", ["person", "car", "motorcycle", "animal"])
+                max_fps = ai_cfg.get("maxInferenceFps", 2.0)
+
+                self.ai_detector = LocalObjectDetector(
+                    model_path=model_path,
+                    provider=provider,
+                    confidence_threshold=conf,
+                    nms_threshold=nms,
+                    target_classes=targets
+                )
+                self.ai_worker = AIObjectDetectorWorker(self.ai_detector, max_fps=max_fps)
+                self.ai_worker.start()
+                print(f"[MOTION] Local AI Object Detection active with provider: {self.ai_detector.active_provider}", flush=True)
+        except Exception as e:
+            print(f"[MOTION] AI initialization warning: {e}", file=sys.stderr)
+
+    def _get_camera_ai_config(self, camera_id: str) -> dict:
+        """Resolve per-camera AI overrides from config."""
+        full_cfg = self.config_provider()
+        ai_cfg = full_cfg.get("aiDetection", {})
+        cam_overrides = ai_cfg.get("cameras", {}).get(camera_id, {})
+
+        # Also check camera object directly in "cameras" list
+        cams = full_cfg.get("cameras", [])
+        cam_obj = next((c for c in cams if c.get("id") == camera_id), {})
+        inline_overrides = cam_obj.get("aiDetection", {})
+
+        merged = {
+            "enabled": ai_cfg.get("enabled", True),
+            "confidenceThreshold": ai_cfg.get("confidenceThreshold", 0.40),
+            "targetClasses": ai_cfg.get("targetClasses", ["person", "car", "motorcycle", "animal"]),
+            "roi": cam_obj.get("roi") or cam_overrides.get("roi")
+        }
+        merged.update(cam_overrides)
+        merged.update(inline_overrides)
+        return merged
+
+    def _on_ai_detection(self, detections: list, metadata: dict):
+        """Asynchronous callback executed by AIWorkerThread when inference completes."""
+        evt_id = metadata.get("event_id")
+        if not evt_id:
+            return
+
+        with self.lock:
+            if evt_id in self.index:
+                evt = self.index[evt_id]
+                evt["detectedObjects"] = detections
+                if detections:
+                    # Pick highest confidence detection or prioritize person/car
+                    sorted_dets = sorted(detections, key=lambda d: d.get("confidence", 0.0), reverse=True)
+                    evt["primaryClass"] = sorted_dets[0]["class"]
+                    evt["primaryCategory"] = sorted_dets[0]["category"]
+                    evt["primaryConfidence"] = sorted_dets[0]["confidence"]
+                    # If high confidence, refine bounding box with the primary object's bounding box
+                    if sorted_dets[0]["confidence"] >= 0.40:
+                        evt["boundingBox"] = sorted_dets[0]["box"]
+                else:
+                    evt["primaryClass"] = None
+                    evt["primaryCategory"] = None
+                    evt["primaryConfidence"] = None
+        self.save_index()
+
     def start(self):
         with self.lock:
             if self.running:
@@ -230,25 +311,45 @@ class MotionDetectorService:
     def stop(self):
         with self.lock:
             self.running = False
+        if self.ai_worker:
+            self.ai_worker.stop()
         self.save_index()
 
     def load_index(self):
         if os.path.exists(self.index_file):
             try:
                 with open(self.index_file, "r", encoding="utf-8") as f:
-                    self.index = json.load(f)
+                    content = f.read().strip()
+                    if content:
+                        self.index = json.loads(content)
             except Exception as e:
                 print(f"[MOTION] Error reading event index: {e}", file=sys.stderr)
-                self.index = {}
         else:
-            self.index = {}
+            if not self.index:
+                self.index = {}
 
     def save_index(self):
-        try:
-            with open(self.index_file, "w", encoding="utf-8") as f:
-                json.dump(self.index, f, indent=2)
-        except Exception as e:
-            print(f"[MOTION] Error saving event index: {e}", file=sys.stderr)
+        with self.lock:
+            try:
+                tmp_file = f"{self.index_file}.tmp.{os.getpid()}"
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    json.dump(self.index, f, indent=2)
+                for _ in range(3):
+                    try:
+                        os.replace(tmp_file, self.index_file)
+                        break
+                    except OSError:
+                        time.sleep(0.05)
+                else:
+                    with open(self.index_file, "w", encoding="utf-8") as f:
+                        json.dump(self.index, f, indent=2)
+                    if os.path.exists(tmp_file):
+                        try:
+                            os.remove(tmp_file)
+                        except:
+                            pass
+            except Exception as e:
+                print(f"[MOTION] Error saving event index: {e}", file=sys.stderr)
 
     def _sync_trackers(self):
         cfg = self.config_provider()
@@ -324,6 +425,10 @@ class MotionDetectorService:
             "boundingBox": event_data["boundingBox"],
             "snapshotPath": rel_path,
             "fileSizeBytes": size,
+            "detectedObjects": [],
+            "primaryClass": None,
+            "primaryCategory": None,
+            "primaryConfidence": None,
             "status": "completed"
         }
 
@@ -331,6 +436,19 @@ class MotionDetectorService:
             self.index[evt_id] = event_record
         self.save_index()
         print(f"[MOTION] Event captured: {evt_id} ({event_data['cameraName']}, score: {event_data['score']}%)", flush=True)
+
+        # Dispatch non-blocking to decoupled AI Object Detection Worker
+        if self.ai_worker and self.ai_worker.running:
+            cam_ai = self._get_camera_ai_config(cid)
+            if cam_ai.get("enabled", True):
+                self.ai_worker.submit_frame(snapshot_bytes, {
+                    "event_id": evt_id,
+                    "cameraId": cid,
+                    "confidenceThreshold": cam_ai.get("confidenceThreshold"),
+                    "targetClasses": cam_ai.get("targetClasses"),
+                    "roi": cam_ai.get("roi"),
+                    "callback": self._on_ai_detection
+                })
 
     def _run_loop(self):
         while self.running:
@@ -431,7 +549,40 @@ class MotionDetectorService:
         self.save_index()
         return True, f"Deleted event '{event_id}'"
 
-    def list_events(self, camera_id: str = None, date_str: str = None, min_score: float = None, limit: int = 100) -> list:
+    def enrich_event_with_ai(self, event_id: str) -> Optional[dict]:
+        """Run on-demand AI detection on an existing event's snapshot and update index."""
+        evt = self.get_event(event_id)
+        if not evt:
+            return None
+        rel_path = evt.get("snapshotPath")
+        if not rel_path:
+            return None
+        full_path = sanitize_path(self.base_dir, os.path.join(self.base_dir, rel_path))
+        if not os.path.exists(full_path):
+            return None
+
+        if not self.ai_detector:
+            return evt
+
+        cam_ai = self._get_camera_ai_config(evt.get("cameraId", ""))
+        dets = self.ai_detector.detect(
+            full_path,
+            conf_threshold=cam_ai.get("confidenceThreshold"),
+            target_classes=cam_ai.get("targetClasses"),
+            roi=cam_ai.get("roi")
+        )
+        self._on_ai_detection(dets, {"event_id": event_id})
+        return self.get_event(event_id)
+
+    def list_events(
+        self,
+        camera_id: str = None,
+        date_str: str = None,
+        min_score: float = None,
+        limit: int = 100,
+        object_class: str = None,
+        category: str = None
+    ) -> list:
         self.load_index()
         with self.lock:
             items = list(self.index.values())
@@ -442,6 +593,12 @@ class MotionDetectorService:
             items = [i for i in items if i.get("date") == date_str]
         if min_score is not None:
             items = [i for i in items if i.get("score", 0) >= min_score]
+        if object_class:
+            obj_lower = object_class.lower()
+            items = [i for i in items if (i.get("primaryClass") or "").lower() == obj_lower or any(d.get("class", "").lower() == obj_lower for d in i.get("detectedObjects", []))]
+        if category:
+            cat_lower = category.lower()
+            items = [i for i in items if (i.get("primaryCategory") or "").lower() == cat_lower or any(d.get("category", "").lower() == cat_lower for d in i.get("detectedObjects", []))]
 
         items.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
         return items[:limit]
@@ -468,6 +625,15 @@ class MotionDetectorService:
         today_count = sum(1 for i in items if i.get("date") == today_str)
         total_size_mb = round(sum(i.get("fileSizeBytes", 0) for i in items) / (1024 * 1024), 2)
 
+        ai_metrics = self.ai_worker.get_metrics() if self.ai_worker else {
+            "activeProvider": "disabled",
+            "isMock": False,
+            "totalInferences": 0,
+            "droppedFrames": 0,
+            "lastLatencyMs": 0.0,
+            "inferenceFps": 0.0
+        }
+
         return {
             "analyticsFps": self.analytics_fps,
             "totalEvents": len(items),
@@ -475,5 +641,6 @@ class MotionDetectorService:
             "storageMb": total_size_mb,
             "maxStorageMb": self.config.get("maxStorageMb", 1000.0),
             "retentionDays": self.config.get("retentionDays", 7),
+            "ai": ai_metrics,
             "trackers": trackers_info
         }

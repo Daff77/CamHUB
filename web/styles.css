@@ -1995,6 +1995,100 @@ input:focus {
   border-radius: 4px;
 }
 
+.event-obj-pill {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background-color: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(4px);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f8fafc;
+  z-index: 2;
+}
+
+.event-obj-pill.person {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.6);
+  background-color: rgba(20, 83, 45, 0.85);
+}
+
+.event-obj-pill.car, .event-obj-pill.motorcycle {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.6);
+  background-color: rgba(12, 74, 110, 0.85);
+}
+
+.event-obj-pill.animal {
+  color: #c084fc;
+  border-color: rgba(192, 132, 252, 0.6);
+  background-color: rgba(88, 28, 135, 0.85);
+}
+
+.events-ai-badge {
+  cursor: pointer;
+  background: rgba(30, 144, 255, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.events-ai-badge:hover {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: #38bdf8;
+}
+
+.event-modal-bboxes-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.event-modal-detected-box {
+  position: absolute;
+  border: 2px solid #4ade80;
+  background-color: rgba(74, 222, 128, 0.22);
+  border-radius: 3px;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
+  pointer-events: none;
+}
+
+.event-modal-detected-box.car, .event-modal-detected-box.motorcycle {
+  border-color: #38bdf8;
+  background-color: rgba(56, 189, 248, 0.22);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
+.event-modal-detected-box.animal {
+  border-color: #c084fc;
+  background-color: rgba(192, 132, 252, 0.22);
+  box-shadow: 0 0 8px rgba(192, 132, 252, 0.4);
+}
+
+.event-bbox-tag {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: -2px;
+  background-color: rgba(15, 23, 42, 0.9);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  border: 1px solid inherit;
+}
+
 .event-card-body {
   padding: 10px 12px;
   display: flex;

@@ -550,15 +550,42 @@ class CamHubHandler(SimpleHTTPRequestHandler):
                 self.send_json(403, {"error": str(e)})
             return
 
+        # AI Status & Telemetry
+        if url.path == "/api/ai/status":
+            stats = MOTION_SERVICE.get_stats()
+            cfg = load_config()
+            ai_cfg = cfg.get("aiDetection", {})
+            detector_info = {
+                "enabled": ai_cfg.get("enabled", True),
+                "configuredProvider": ai_cfg.get("provider", "auto"),
+                "modelPath": ai_cfg.get("modelPath", "models/yolov5n.onnx"),
+                "confidenceThreshold": ai_cfg.get("confidenceThreshold", 0.40),
+                "targetClasses": ai_cfg.get("targetClasses", ["person", "car", "motorcycle", "animal"]),
+                "worker": stats.get("ai", {}),
+                "cameras": ai_cfg.get("cameras", {})
+            }
+            self.send_json(200, detector_info)
+            return
+
         # Motion Detection & Events
         if url.path == "/api/events":
-            cam_id = qs.get("cameraId", [None])[0]
+            cam_id = qs.get("cameraId", [None])[0] or qs.get("id", [None])[0]
             date_str = qs.get("date", [None])[0]
             score_str = qs.get("minScore", [None])[0]
             limit_str = qs.get("limit", ["100"])[0]
+            obj_class = qs.get("objectClass", [None])[0] or qs.get("class", [None])[0]
+            category = qs.get("category", [None])[0]
             min_score = float(score_str) if score_str else None
             limit = int(limit_str) if limit_str.isdigit() else 100
-            events = MOTION_SERVICE.list_events(camera_id=cam_id, date_str=date_str, min_score=min_score, limit=limit)
+
+            events = MOTION_SERVICE.list_events(
+                camera_id=cam_id,
+                date_str=date_str,
+                min_score=min_score,
+                limit=limit,
+                object_class=obj_class,
+                category=category
+            )
             self.send_json(200, {"events": events, "count": len(events)})
             return
 
@@ -581,28 +608,30 @@ class CamHubHandler(SimpleHTTPRequestHandler):
 
         if url.path == "/api/events/snapshot":
             evt_id = qs.get("id", [None])[0]
-            if not evt_id:
-                self.send_json(400, {"error": "Missing 'id' parameter"})
+            raw_path = qs.get("path", [None])[0]
+            full_path = None
+            if evt_id:
+                evt = MOTION_SERVICE.get_event(evt_id)
+                if evt and "snapshotPath" in evt:
+                    full_path = sanitize_path(BASE_DIR, os.path.join(BASE_DIR, evt["snapshotPath"]))
+            elif raw_path:
+                full_path = sanitize_path(BASE_DIR, os.path.join(BASE_DIR, raw_path))
+
+            if not full_path or not os.path.exists(full_path):
+                self.send_json(404, {"error": "Snapshot image file not found on disk"})
                 return
-            evt = MOTION_SERVICE.get_event(evt_id)
-            if not evt:
-                self.send_json(404, {"error": "Event not found"})
-                return
+
             try:
-                full_path = sanitize_path(BASE_DIR, os.path.join(BASE_DIR, evt["snapshotPath"]))
-                if os.path.exists(full_path):
-                    self.send_response(200)
-                    self.send_header("Content-Type", "image/jpeg")
-                    self.send_header("Content-Length", str(os.path.getsize(full_path)))
-                    self.send_header("Cache-Control", "public, max-age=86400")
-                    self.send_cors_headers()
-                    self.end_headers()
-                    with open(full_path, "rb") as f:
-                        shutil.copyfileobj(f, self.wfile, length=65536)
-                    return
-                else:
-                    self.send_json(404, {"error": "Snapshot image file not found on disk"})
-                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(os.path.getsize(full_path)))
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.send_header("ngrok-skip-browser-warning", "1")
+                self.send_cors_headers()
+                self.end_headers()
+                with open(full_path, "rb") as f:
+                    shutil.copyfileobj(f, self.wfile, length=65536)
+                return
             except Exception as e:
                 self.send_json(403, {"error": str(e)})
                 return
@@ -699,6 +728,68 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             ok, msg = MANAGER.reset_camera(cid)
             status = MANAGER.get_status()
             self.send_json(200 if ok else 404, {"success": ok, "message": msg, "status": status})
+            return
+
+        # AI Detection & Benchmark endpoints
+        if url.path == "/api/ai/benchmark":
+            if not MOTION_SERVICE.ai_detector:
+                self.send_json(503, {"error": "AI Object Detector is not initialized"})
+                return
+            runs_str = qs.get("runs", ["3"])[0]
+            runs = int(runs_str) if runs_str.isdigit() else 3
+            result = MOTION_SERVICE.ai_detector.benchmark(runs=runs)
+            self.send_json(200, result)
+            return
+
+        if url.path == "/api/ai/enrich":
+            evt_id = qs.get("id", [None])[0]
+            if not evt_id:
+                self.send_json(400, {"error": "Missing 'id' parameter"})
+                return
+            enriched = MOTION_SERVICE.enrich_event_with_ai(evt_id)
+            if enriched:
+                self.send_json(200, enriched)
+            else:
+                self.send_json(404, {"error": f"Failed to enrich event '{evt_id}'"})
+            return
+
+        if url.path == "/api/ai/detect":
+            if not cid:
+                self.send_json(400, {"error": "Missing 'id' or 'cameraId' parameter"})
+                return
+            cfg = load_config()
+            cam = next((c for c in cfg.get("cameras", []) if c.get("id") == cid), None)
+            if not cam:
+                self.send_json(404, {"error": f"Camera '{cid}' not found"})
+                return
+            port = cam.get("port")
+            if not port or not is_port_open(port):
+                self.send_json(503, {"error": f"Camera decoder on port {port} is offline"})
+                return
+
+            try:
+                req = Request(f"http://127.0.0.1:{port}/snapshot")
+                with urlopen(req, timeout=2.0) as resp:
+                    snap_data = resp.read()
+
+                t0 = time.perf_counter()
+                cam_ai = MOTION_SERVICE._get_camera_ai_config(cid)
+                detections = MOTION_SERVICE.ai_detector.detect(
+                    snap_data,
+                    conf_threshold=cam_ai.get("confidenceThreshold"),
+                    target_classes=cam_ai.get("targetClasses"),
+                    roi=cam_ai.get("roi")
+                )
+                latency = round((time.perf_counter() - t0) * 1000.0, 2)
+                self.send_json(200, {
+                    "cameraId": cid,
+                    "detections": detections,
+                    "count": len(detections),
+                    "latencyMs": latency,
+                    "provider": MOTION_SERVICE.ai_detector.active_provider
+                })
+            except Exception as e:
+                self.send_json(500, {"error": f"Detection failed: {e}"})
             return
 
         self.send_json(404, {"error": "Endpoint not found"})

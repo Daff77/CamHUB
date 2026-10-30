@@ -41,7 +41,20 @@ from .okam_adapter import (
     run_server as run_okam_adapter
 )
 
+from .ai_detector import (
+    LocalObjectDetector,
+    AIObjectDetectorWorker,
+    COCO_CLASSES,
+    CATEGORY_MAP,
+    DEFAULT_MODEL_PATH
+)
+
 __all__ = [
+    "LocalObjectDetector",
+    "AIObjectDetectorWorker",
+    "COCO_CLASSES",
+    "CATEGORY_MAP",
+    "DEFAULT_MODEL_PATH",
     "CameraHealthMonitor",
     "CameraHealthTracker",
     "CameraHealthState",
