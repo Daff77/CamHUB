@@ -178,3 +178,4 @@ Pengujian dilakukan dengan 9 test case komprehensif di [`tests/test_storage_mana
 - Pengujian proteksi file yang sedang direkam atau diputar (*playback lock lease*).
 - Pengujian rekonsiliasi entri hantu dan file fisik tanpa metadata.
 - **Hasil**: 51/51 unit test di seluruh proyek lulus (**100% pass rate**).
+
