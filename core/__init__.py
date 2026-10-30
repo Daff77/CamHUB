@@ -49,7 +49,18 @@ from .ai_detector import (
     DEFAULT_MODEL_PATH
 )
 
+from .storage_manager import (
+    CamHubStorageManager,
+    PlaybackLockManager,
+    get_disk_usage_stats,
+    DEFAULT_STORAGE_CONFIG
+)
+
 __all__ = [
+    "CamHubStorageManager",
+    "PlaybackLockManager",
+    "get_disk_usage_stats",
+    "DEFAULT_STORAGE_CONFIG",
     "LocalObjectDetector",
     "AIObjectDetectorWorker",
     "COCO_CLASSES",

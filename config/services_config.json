@@ -30,6 +30,29 @@
     "preferredSource": "rtsp",
     "autoRecordCameras": []
   },
+  "storageManagement": {
+    "enabled": true,
+    "checkIntervalSeconds": 60.0,
+    "warningThresholdPercent": 80.0,
+    "criticalThresholdPercent": 90.0,
+    "emergencyThresholdPercent": 95.0,
+    "minDiskFreeGb": 5.0,
+    "retention": {
+      "recordings": {
+        "maxAgeDays": 7,
+        "maxStorageGb": 20.0,
+        "protectActiveRecordings": true,
+        "protectActivePlayback": true
+      },
+      "events": {
+        "maxAgeDays": 7,
+        "maxStorageMb": 1000.0
+      },
+      "tempFiles": {
+        "maxAgeHours": 2.0
+      }
+    }
+  },
   "motionDetection": {
     "enabled": true,
     "samplingIntervalSeconds": 0.5,

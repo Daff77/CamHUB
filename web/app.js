@@ -2046,24 +2046,49 @@ function initPlayback() {
 
   const loadStorageStatus = async () => {
     try {
-      const res = await fetch("/api/recordings/storage", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.activeRecordingCameras) {
-        activeRecordings = new Set(data.activeRecordingCameras);
-        renderManualButtons();
-      }
-      if (storagePill && storageText && data.disk) {
-        if (data.diskWarning) {
-          storagePill.className = "storage-indicator-pill warn";
-          storageText.textContent = `Disk Warning: ${data.disk.freeGb} GB free (Min ${data.minDiskFreeGb} GB)`;
-        } else {
-          storagePill.className = "storage-indicator-pill";
-          storageText.textContent = `Storage: ${data.recordingsStorageGb} GB / ${data.maxStorageGb} GB max · Free: ${data.disk.freeGb} GB`;
+      const [recRes, storRes] = await Promise.all([
+        fetch("/api/recordings/storage", { cache: "no-store" }),
+        fetch("/api/storage/status", { cache: "no-store" })
+      ]);
+      if (recRes.ok) {
+        const recData = await recRes.json();
+        if (recData.activeRecordingCameras) {
+          activeRecordings = new Set(recData.activeRecordingCameras);
+          renderManualButtons();
         }
+      }
+      if (storRes.ok && storagePill && storageText) {
+        const storData = await storRes.json();
+        const disk = storData.disk || {};
+        const alerts = storData.alerts || {};
+        const forecast = storData.forecasting || {};
+        const camhub = storData.camhub || {};
+
+        let pillClass = "storage-indicator-pill";
+        if (alerts.level === "EMERGENCY") pillClass = "storage-indicator-pill error";
+        else if (alerts.level === "CRITICAL" || alerts.level === "WARNING") pillClass = "storage-indicator-pill warn";
+        storagePill.className = pillClass;
+
+        storageText.textContent = `Disk: ${disk.usedPercent || 0}% (${disk.freeGb || 0} GB free) · CamHUB: ${camhub.totalMb || 0} MB · Est: ${forecast.estimatedDaysRemaining || "N/A"}d`;
+        storagePill.title = `${alerts.message || ""}\nGrowth rate: ${forecast.growthRateMbPerHour || 0} MB/hr (${forecast.growthRateGbPerDay || 0} GB/day)\nClick to view detailed Storage Manager report.`;
       }
     } catch {}
   };
+
+  if (storagePill) {
+    storagePill.style.cursor = "pointer";
+    storagePill.onclick = async () => {
+      try {
+        const rRes = await fetch("/api/storage/report");
+        const rData = await rRes.json();
+        if (rData && rData.report) {
+          alert(rData.report);
+        }
+      } catch {
+        showToast("Error retrieving storage report", "error", 3000);
+      }
+    };
+  }
 
   const loadRecordings = async () => {
     if (!segmentsList) return;

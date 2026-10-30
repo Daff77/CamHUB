@@ -11,6 +11,7 @@ import shutil
 import socket
 import argparse
 import subprocess
+from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
@@ -30,6 +31,7 @@ from core.health_monitor import CameraHealthMonitor, sanitize_sensitive_data
 from core.auto_recovery import AutoRecoveryManager, kill_process_tree, kill_port_owner
 from core.recording_manager import RecordingManager, sanitize_path
 from core.motion_detector import MotionDetectorService
+from core.storage_manager import CamHubStorageManager
 
 # Config file discovery: config/services_config.json first, fallback to root
 CONFIG_FILE = os.path.join(CONFIG_DIR, "services_config.json")
@@ -173,6 +175,8 @@ HEALTH_MONITOR = CameraHealthMonitor(load_config)
 MANAGER = AutoRecoveryManager(load_config, health_monitor=HEALTH_MONITOR)
 RECORDING_MANAGER = RecordingManager(load_config, base_dir=BASE_DIR)
 MOTION_SERVICE = MotionDetectorService(load_config, base_dir=BASE_DIR)
+STORAGE_MANAGER = CamHubStorageManager(load_config, base_dir=BASE_DIR)
+STORAGE_MANAGER.start()
 
 STATIC_DIR = WEB_DIR if os.path.isdir(WEB_DIR) else BASE_DIR
 
@@ -215,6 +219,9 @@ class CamHubHandler(SimpleHTTPRequestHandler):
         if not os.path.exists(file_path):
             self.send_json(404, {"error": "Recording file not found on disk"})
             return
+
+        # Protect file from retention purge while actively playing or downloading
+        STORAGE_MANAGER.playback_locks.acquire(file_path, lease_seconds=180.0)
 
         file_size = os.path.getsize(file_path)
         range_header = self.headers.get("Range")
@@ -516,6 +523,29 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             self.send_json(200, stats)
             return
 
+        # Central Storage Management Endpoints
+        if url.path == "/api/storage/status":
+            overview = STORAGE_MANAGER.get_storage_overview()
+            self.send_json(200, overview)
+            return
+
+        if url.path == "/api/storage/report":
+            overview = STORAGE_MANAGER.get_storage_overview()
+            gen_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            report_text = (
+                f"=== CamHUB Unified Storage Report ===\n"
+                f"Generated: {gen_time}\n"
+                f"Host Disk: {overview['disk']['totalGb']} GB total | {overview['disk']['usedGb']} GB used ({overview['disk']['usedPercent']}%) | {overview['disk']['freeGb']} GB free\n"
+                f"Alert Status: [{overview['alerts']['level']}] {overview['alerts']['message']}\n"
+                f"CamHUB Total: {overview['camhub']['totalMb']} MB ({overview['camhub']['totalGb']} GB)\n"
+                f" - Recordings: {overview['recordings']['fileCount']} MP4 files ({overview['recordings']['totalMb']} MB)\n"
+                f" - Events: {overview['events']['fileCount']} JPEG snapshots ({overview['events']['totalMb']} MB)\n"
+                f" - Temp/Corrupt: {overview['tempAndCorrupt']['tempFilesCount']} temp files, {overview['tempAndCorrupt']['corruptedFilesCount']} corrupted files\n"
+                f"Forecasting: {overview['forecasting']['estimatedDaysRemaining']} days remaining ({overview['forecasting']['growthRateMbPerHour']} MB/hr burn rate)\n"
+            )
+            self.send_json(200, {"report": report_text, "overview": overview})
+            return
+
         # Stream recording with HTTP 206 Partial Content
         if url.path == "/api/recordings/stream":
             seg_id = qs.get("id", [None])[0]
@@ -792,6 +822,23 @@ class CamHubHandler(SimpleHTTPRequestHandler):
                 self.send_json(500, {"error": f"Detection failed: {e}"})
             return
 
+        # Central Storage Management Clean & Reindex
+        if url.path == "/api/storage/cleanup":
+            dry_run_str = qs.get("dryRun", ["true"])[0].lower()
+            dry_run = dry_run_str in ("true", "1", "yes")
+            active_files = [
+                os.path.join(s.storage_dir, s.camera_id, s.current_day)
+                for s in RECORDING_MANAGER.active_sessions.values()
+            ]
+            result = STORAGE_MANAGER.evaluate_retention(dry_run=dry_run, active_recording_files=active_files)
+            self.send_json(200, result)
+            return
+
+        if url.path == "/api/storage/reindex":
+            result = STORAGE_MANAGER.reconcile_and_repair_index()
+            self.send_json(200, {"success": True, "reconciled": result})
+            return
+
         self.send_json(404, {"error": "Endpoint not found"})
 
     def do_DELETE(self):
@@ -831,17 +878,20 @@ def main():
     print(f"[CAMHUB] Auto-Recovery API ready at http://127.0.0.1:{args.port}/api/recovery/status", flush=True)
     print(f"[CAMHUB] Recording & Playback API ready at http://127.0.0.1:{args.port}/api/recordings", flush=True)
     print(f"[CAMHUB] Motion Detection API ready at http://127.0.0.1:{args.port}/api/events", flush=True)
+    print(f"[CAMHUB] Storage Manager API ready at http://127.0.0.1:{args.port}/api/storage/status", flush=True)
 
     HEALTH_MONITOR.start()
     MANAGER.start()
     RECORDING_MANAGER.start()
     MOTION_SERVICE.start()
+    STORAGE_MANAGER.start()
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("[CAMHUB] Shutting down...", flush=True)
     finally:
+        STORAGE_MANAGER.stop()
         MOTION_SERVICE.stop()
         RECORDING_MANAGER.stop()
         MANAGER.shutdown_all()

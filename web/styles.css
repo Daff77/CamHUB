@@ -1573,13 +1573,23 @@ input:focus {
 }
 
 .storage-indicator-pill.warn .storage-dot {
-  background-color: #eb5757;
-  box-shadow: 0 0 6px rgba(235, 87, 87, 0.4);
+  background-color: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
 }
 
 .storage-indicator-pill.warn {
-  border-color: rgba(235, 87, 87, 0.3);
-  color: #eb5757;
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #f59e0b;
+}
+
+.storage-indicator-pill.error .storage-dot {
+  background-color: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.storage-indicator-pill.error {
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ef4444;
 }
 
 .playback-toolbar {
