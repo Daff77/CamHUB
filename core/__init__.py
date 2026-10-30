@@ -63,7 +63,18 @@ from .notification_center import (
     mask_token
 )
 
+from .diagnostics_service import (
+    CamHubDiagnosticsService,
+    sanitize_value,
+    sanitize_string,
+    test_tcp_port
+)
+
 __all__ = [
+    "CamHubDiagnosticsService",
+    "sanitize_value",
+    "sanitize_string",
+    "test_tcp_port",
     "NotificationCenter",
     "DEFAULT_NOTIF_CONFIG",
     "sanitize_text",

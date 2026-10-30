@@ -12,4 +12,6 @@ events/**/*.jpg
 events/*.jpg
 events/events_index.json
 notifications/notifications.json
+diagnostics/*.zip
+diagnostics/*.tmp
 

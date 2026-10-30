@@ -125,6 +125,19 @@
             <span id="run-all-text">Run all cameras</span>
           </button>
           <button class="button" id="refresh-all" type="button">Refresh feeds</button>
+          <button class="button button-secondary" id="diagnostics-btn" type="button" title="System Diagnostics & Troubleshooting Bundle">
+            <svg class="btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+            </svg>
+            <span>Diagnostics</span>
+          </button>
+          <button class="button button-icon notif-bell-btn" id="notif-bell-btn" type="button" title="Notification Center">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span class="notif-badge" id="notif-badge" style="display: none;">0</span>
+          </button>
         </div>
       </header>
 
@@ -397,6 +410,121 @@
       <a id="event-modal-jump-playback" class="button button-primary" href="#playback">Jump to Playback</a>
       <button class="button button-warn" id="event-modal-delete-btn" type="button">Delete event</button>
       <button class="button" id="close-event-dialog-action" type="button">Close</button>
+    </div>
+  </dialog>
+
+  <!-- Diagnostics & System Troubleshooting Modal -->
+  <dialog id="diagnostics-dialog" class="diagnostics-dialog">
+    <div class="dialog-head">
+      <div class="dialog-title-group">
+        <h2>System Diagnostics & Troubleshooting</h2>
+        <span class="diag-status-badge" id="diag-status-badge">Checking...</span>
+      </div>
+      <button class="icon-button" aria-label="Close" type="button" id="close-diag-dialog-btn">✕</button>
+    </div>
+    <div class="diag-modal-body">
+      <!-- Quick Status Cards Grid -->
+      <div class="diag-cards-grid">
+        <div class="diag-card">
+          <div class="diag-card-title">Software Environment</div>
+          <div class="diag-card-content" id="diag-software-content">
+            <div class="diag-item"><span class="diag-lbl">CamHUB:</span> <span class="diag-val" id="diag-app-ver">-</span></div>
+            <div class="diag-item"><span class="diag-lbl">Python:</span> <span class="diag-val" id="diag-python-ver">-</span></div>
+            <div class="diag-item"><span class="diag-lbl">FFmpeg:</span> <span class="diag-val" id="diag-ffmpeg-ver">-</span></div>
+            <div class="diag-item"><span class="diag-lbl">.NET:</span> <span class="diag-val" id="diag-dotnet-ver">-</span></div>
+          </div>
+        </div>
+
+        <div class="diag-card">
+          <div class="diag-card-title">Host Resources</div>
+          <div class="diag-card-content" id="diag-resources-content">
+            <div class="diag-item"><span class="diag-lbl">OS:</span> <span class="diag-val" id="diag-os-val">-</span></div>
+            <div class="diag-item"><span class="diag-lbl">Disk:</span> <span class="diag-val" id="diag-disk-val">-</span></div>
+            <div class="diag-item"><span class="diag-lbl">PID:</span> <span class="diag-val" id="diag-pid-val">-</span></div>
+          </div>
+        </div>
+
+        <div class="diag-card diag-card-wide">
+          <div class="diag-card-title">TCP Port Health Matrix</div>
+          <div class="diag-ports-grid" id="diag-ports-grid">
+            <!-- Dynamic port badges -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Action & Generation Container -->
+      <div class="diag-action-box">
+        <div class="diag-action-left">
+          <button class="button button-accent button-large" id="generate-bundle-btn" type="button">
+            <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Generate Diagnostic Bundle (ZIP)</span>
+          </button>
+          <span class="diag-hint">Redacts all credentials, limits logs, and includes full manifest.</span>
+        </div>
+        <div class="diag-progress-wrap" id="diag-progress-wrap" style="display: none;">
+          <div class="diag-spinner"></div>
+          <span id="diag-progress-text">Generating ZIP bundle...</span>
+        </div>
+      </div>
+
+      <!-- Generated Result Box -->
+      <div class="diag-result-card" id="diag-result-card" style="display: none;">
+        <div class="diag-result-head">
+          <span class="diag-result-badge">✓ Bundle Ready</span>
+          <span class="diag-result-filename" id="diag-result-filename">camhub_diagnostics_...zip</span>
+        </div>
+        <div class="diag-result-details" id="diag-result-details">
+          <!-- Size, sha256, duration -->
+        </div>
+        <div class="diag-result-actions">
+          <a class="button button-primary" id="diag-download-link" href="#" download>⬇️ Download Diagnostic Report (ZIP)</a>
+        </div>
+      </div>
+
+      <!-- Previous Bundles Section -->
+      <div class="diag-history-section">
+        <h3 class="diag-section-title">Available Diagnostic Reports on Host</h3>
+        <div class="diag-history-list" id="diag-history-list">
+          <p class="diag-empty-text">No previous bundles generated.</p>
+        </div>
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button class="button" id="close-diag-dialog-action" type="button">Close</button>
+    </div>
+  </dialog>
+
+  <!-- Notification Center Modal -->
+  <dialog id="notif-dialog" class="notif-dialog">
+    <div class="dialog-head">
+      <div class="dialog-title-group">
+        <h2>Notification Center</h2>
+        <span class="notif-unread-count-pill" id="notif-modal-count-pill">0 unread</span>
+      </div>
+      <div class="notif-head-actions">
+        <button class="button button-small" id="notif-ack-all-btn" type="button">Mark all read</button>
+        <button class="button button-small" id="notif-clear-all-btn" type="button">Clear all</button>
+        <button class="icon-button" aria-label="Close" type="button" id="close-notif-dialog-btn">✕</button>
+      </div>
+    </div>
+    <div class="notif-modal-body">
+      <div class="notif-filter-tabs">
+        <button class="notif-tab active" data-sev="all">All</button>
+        <button class="notif-tab" data-sev="critical">Critical</button>
+        <button class="notif-tab" data-sev="warning">Warning</button>
+        <button class="notif-tab" data-sev="info">Info</button>
+      </div>
+      <div class="notif-list" id="notif-list">
+        <!-- Injected dynamically -->
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button class="button button-secondary" id="notif-simulate-btn" type="button">⚡ Simulate test notification</button>
+      <button class="button" id="close-notif-dialog-action" type="button">Close</button>
     </div>
   </dialog>
 

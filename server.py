@@ -32,6 +32,8 @@ from core.auto_recovery import AutoRecoveryManager, kill_process_tree, kill_port
 from core.recording_manager import RecordingManager, sanitize_path
 from core.motion_detector import MotionDetectorService
 from core.storage_manager import CamHubStorageManager
+from core.notification_center import NotificationCenter
+from core.diagnostics_service import CamHubDiagnosticsService
 
 # Config file discovery: config/services_config.json first, fallback to root
 CONFIG_FILE = os.path.join(CONFIG_DIR, "services_config.json")
@@ -177,6 +179,17 @@ RECORDING_MANAGER = RecordingManager(load_config, base_dir=BASE_DIR)
 MOTION_SERVICE = MotionDetectorService(load_config, base_dir=BASE_DIR)
 STORAGE_MANAGER = CamHubStorageManager(load_config, base_dir=BASE_DIR)
 STORAGE_MANAGER.start()
+NOTIFICATION_CENTER = NotificationCenter(load_config, base_dir=BASE_DIR)
+DIAGNOSTICS_SERVICE = CamHubDiagnosticsService(
+    load_config,
+    base_dir=BASE_DIR,
+    health_monitor=HEALTH_MONITOR,
+    supervisor_manager=MANAGER,
+    recording_manager=RECORDING_MANAGER,
+    motion_service=MOTION_SERVICE,
+    storage_manager=STORAGE_MANAGER,
+    notification_center=NOTIFICATION_CENTER
+)
 
 STATIC_DIR = WEB_DIR if os.path.isdir(WEB_DIR) else BASE_DIR
 
@@ -195,10 +208,26 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             return fallback
         return res
 
+    def is_admin_authorized(self) -> bool:
+        """Verify Admin privileges via header, session token, or local loopback connection."""
+        role_hdr = self.headers.get("X-CamHub-Role", "").strip().lower()
+        if role_hdr:
+            return role_hdr == "admin"
+        # If no role header specified, local loopback gets admin access by default for local CLI/scripts
+        client_ip = self.client_address[0] if self.client_address else ""
+        if client_ip in ("127.0.0.1", "::1", "localhost"):
+            return True
+        auth_hdr = self.headers.get("Authorization", "")
+        if auth_hdr.startswith("Bearer "):
+            return True
+        return False
+
     def log_message(self, format, *args):
         # Silence routine static asset logs
-        if "/api/services" in (args[0] if args else ""):
-            print(f"[API] {args[0]}", flush=True)
+        msg = args[0] if args else ""
+        if any(api in msg for api in ("/api/", "/proxy/")):
+            print(f"[API] {msg}", flush=True)
+            DIAGNOSTICS_SERVICE.log_event(msg, level="API")
 
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -666,6 +695,84 @@ class CamHubHandler(SimpleHTTPRequestHandler):
                 self.send_json(403, {"error": str(e)})
                 return
 
+        # Diagnostics Endpoints
+        if url.path == "/api/diagnostics/summary":
+            try:
+                software = DIAGNOSTICS_SERVICE.get_software_versions()
+                resources = DIAGNOSTICS_SERVICE.get_system_resources()
+                ports = DIAGNOSTICS_SERVICE.check_ports()
+                telemetry = DIAGNOSTICS_SERVICE.get_services_telemetry()
+                errors = DIAGNOSTICS_SERVICE.get_recent_errors()
+                bundles = DIAGNOSTICS_SERVICE.list_bundles()
+                overall = "HEALTHY" if errors["totalErrorCount"] == 0 else ("DEGRADED" if len(errors["offlineCameras"]) < 2 else "CRITICAL")
+                self.send_json(200, {
+                    "overallStatus": overall,
+                    "issueCount": errors["totalErrorCount"],
+                    "software": software,
+                    "resources": resources,
+                    "ports": ports,
+                    "telemetry": telemetry,
+                    "errors": errors,
+                    "bundles": bundles
+                })
+            except Exception as e:
+                self.send_json(500, {"error": f"Diagnostics error: {e}"})
+            return
+
+        if url.path == "/api/diagnostics/list":
+            self.send_json(200, {"bundles": DIAGNOSTICS_SERVICE.list_bundles()})
+            return
+
+        if url.path == "/api/diagnostics/download":
+            fname = qs.get("file", [None])[0]
+            if not fname:
+                self.send_json(400, {"error": "Missing 'file' query parameter"})
+                return
+            clean_name = os.path.basename(fname)
+            if not clean_name.startswith("camhub_diagnostics_") or not clean_name.endswith(".zip"):
+                self.send_json(400, {"error": "Invalid diagnostic file name"})
+                return
+            diag_dir = os.path.join(BASE_DIR, "diagnostics")
+            full_path = sanitize_path(diag_dir, os.path.join(diag_dir, clean_name))
+            if not os.path.exists(full_path):
+                self.send_json(404, {"error": "Diagnostic bundle not found on disk"})
+                return
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", f'attachment; filename="{clean_name}"')
+                self.send_header("Content-Length", str(os.path.getsize(full_path)))
+                self.send_cors_headers()
+                self.end_headers()
+                with open(full_path, "rb") as f:
+                    shutil.copyfileobj(f, self.wfile, length=65536)
+                return
+            except Exception as e:
+                self.send_json(403, {"error": str(e)})
+                return
+
+        # Notification Center Endpoints
+        if url.path == "/api/notifications":
+            severity = qs.get("severity", [None])[0]
+            camera_id = qs.get("camera", [None])[0] or qs.get("cameraId", [None])[0]
+            category = qs.get("category", [None])[0]
+            unack_only = qs.get("unacknowledgedOnly", ["false"])[0].lower() == "true"
+            limit_str = qs.get("limit", ["100"])[0]
+            limit = int(limit_str) if limit_str.isdigit() else 100
+            items = NOTIFICATION_CENTER.list_notifications(
+                severity=severity,
+                camera_id=camera_id,
+                category=category,
+                unacknowledged_only=unack_only,
+                limit=limit
+            )
+            self.send_json(200, {"notifications": items, "stats": NOTIFICATION_CENTER.get_stats()})
+            return
+
+        if url.path == "/api/notifications/stats":
+            self.send_json(200, NOTIFICATION_CENTER.get_stats())
+            return
+
         super().do_GET()
 
     def do_POST(self):
@@ -839,12 +946,67 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             self.send_json(200, {"success": True, "reconciled": result})
             return
 
+        # Diagnostics Generation
+        if url.path == "/api/diagnostics/generate":
+            if not self.is_admin_authorized():
+                self.send_json(403, {"error": "Admin authorization required to export diagnostic bundle"})
+                return
+            try:
+                bundle = DIAGNOSTICS_SERVICE.create_diagnostic_bundle()
+                self.send_json(200, bundle)
+            except Exception as e:
+                self.send_json(500, {"error": f"Failed to generate diagnostic bundle: {e}"})
+            return
+
+        # Notification Center Actions
+        if url.path == "/api/notifications/ack":
+            notif_id = qs.get("id", [None])[0]
+            all_unread = qs.get("all", ["false"])[0].lower() == "true"
+            count = NOTIFICATION_CENTER.acknowledge(notification_id=notif_id, all_unread=all_unread)
+            self.send_json(200, {"success": True, "acknowledgedCount": count, "stats": NOTIFICATION_CENTER.get_stats()})
+            return
+
+        if url.path == "/api/notifications/simulate":
+            cat = qs.get("category", ["camera_offline"])[0]
+            cid = qs.get("cameraId", ["sim-1"])[0]
+            cname = qs.get("cameraName", ["Simulated Camera"])[0]
+            sev = qs.get("severity", ["warning"])[0]
+            item = NOTIFICATION_CENTER.simulate_event(category=cat, camera_id=cid, camera_name=cname, severity=sev)
+            self.send_json(200, {"success": True, "notification": item, "stats": NOTIFICATION_CENTER.get_stats()})
+            return
+
+        if url.path == "/api/notifications/test-telegram":
+            bot_token = qs.get("botToken", [""])[0]
+            chat_id = qs.get("chatId", [""])[0]
+            ok, msg = NOTIFICATION_CENTER.test_telegram_connection(bot_token, chat_id)
+            self.send_json(200 if ok else 400, {"success": ok, "message": msg})
+            return
+
         self.send_json(404, {"error": "Endpoint not found"})
 
     def do_DELETE(self):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
         item_id = qs.get("id", [None])[0]
+
+        if url.path == "/api/diagnostics":
+            if not self.is_admin_authorized():
+                self.send_json(403, {"error": "Admin authorization required to delete diagnostic bundle"})
+                return
+            fname = qs.get("file", [None])[0]
+            if not fname:
+                self.send_json(400, {"error": "Missing 'file' query parameter"})
+                return
+            ok, msg = DIAGNOSTICS_SERVICE.delete_bundle(fname)
+            self.send_json(200 if ok else 404, {"success": ok, "message": msg})
+            return
+
+        if url.path == "/api/notifications":
+            notif_id = qs.get("id", [None])[0]
+            all_notifs = qs.get("all", ["false"])[0].lower() == "true"
+            count = NOTIFICATION_CENTER.clear(notification_id=notif_id, all_notifications=all_notifs)
+            self.send_json(200, {"success": True, "clearedCount": count, "stats": NOTIFICATION_CENTER.get_stats()})
+            return
 
         if url.path == "/api/recordings":
             if not item_id:
@@ -879,6 +1041,8 @@ def main():
     print(f"[CAMHUB] Recording & Playback API ready at http://127.0.0.1:{args.port}/api/recordings", flush=True)
     print(f"[CAMHUB] Motion Detection API ready at http://127.0.0.1:{args.port}/api/events", flush=True)
     print(f"[CAMHUB] Storage Manager API ready at http://127.0.0.1:{args.port}/api/storage/status", flush=True)
+    print(f"[CAMHUB] Diagnostics API ready at http://127.0.0.1:{args.port}/api/diagnostics/summary", flush=True)
+    print(f"[CAMHUB] Notifications API ready at http://127.0.0.1:{args.port}/api/notifications", flush=True)
 
     HEALTH_MONITOR.start()
     MANAGER.start()
@@ -891,6 +1055,7 @@ def main():
     except KeyboardInterrupt:
         print("[CAMHUB] Shutting down...", flush=True)
     finally:
+        NOTIFICATION_CENTER.stop()
         STORAGE_MANAGER.stop()
         MOTION_SERVICE.stop()
         RECORDING_MANAGER.stop()

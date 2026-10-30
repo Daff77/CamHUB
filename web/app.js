@@ -2590,6 +2590,368 @@ function initEventsTimeline() {
   setInterval(loadEvents, 10000);
 }
 
+// ============================================================================
+// AGENT 10 — Diagnostics & Export Report
+// ============================================================================
+function initDiagnosticsModal() {
+  const diagBtn = document.getElementById("diagnostics-btn");
+  const modal = document.getElementById("diagnostics-dialog");
+  const closeBtn = document.getElementById("close-diag-dialog-btn");
+  const closeAction = document.getElementById("close-diag-dialog-action");
+  const generateBtn = document.getElementById("generate-bundle-btn");
+  const progressWrap = document.getElementById("diag-progress-wrap");
+  const progressText = document.getElementById("diag-progress-text");
+  const resultCard = document.getElementById("diag-result-card");
+  const resultFilename = document.getElementById("diag-result-filename");
+  const resultDetails = document.getElementById("diag-result-details");
+  const downloadLink = document.getElementById("diag-download-link");
+  const historyList = document.getElementById("diag-history-list");
+  const statusBadge = document.getElementById("diag-status-badge");
+
+  if (!diagBtn || !modal) return;
+
+  const closeModal = () => modal.close();
+  if (closeBtn) closeBtn.onclick = closeModal;
+  if (closeAction) closeAction.onclick = closeModal;
+
+  const renderPortsGrid = (ports) => {
+    const grid = document.getElementById("diag-ports-grid");
+    if (!grid) return;
+    grid.innerHTML = "";
+
+    // Dashboard port
+    const dash = ports.dashboard || {};
+    const dashOpen = dash.status === "OPEN";
+    const dashEl = document.createElement("div");
+    dashEl.className = "port-chip";
+    dashEl.innerHTML = `
+      <span class="port-chip-title">Dashboard (3000)</span>
+      <span class="port-status-pill ${dashOpen ? 'open' : 'closed'}">${dash.status || 'CHECKING'} (${dash.latencyMs || 0}ms)</span>
+    `;
+    grid.appendChild(dashEl);
+
+    // Camera ports
+    const cams = ports.cameras || {};
+    Object.keys(cams).forEach(cid => {
+      const c = cams[cid];
+      if (c.http && c.http.port) {
+        const hOpen = c.http.status === "OPEN";
+        const hEl = document.createElement("div");
+        hEl.className = "port-chip";
+        hEl.innerHTML = `
+          <span class="port-chip-title">${escapeHtml(c.name)} HTTP (${c.http.port})</span>
+          <span class="port-status-pill ${hOpen ? 'open' : 'closed'}">${c.http.status}</span>
+        `;
+        grid.appendChild(hEl);
+      }
+      if (c.rtsp && c.rtsp.port) {
+        const rOpen = c.rtsp.status === "OPEN";
+        const rEl = document.createElement("div");
+        rEl.className = "port-chip";
+        rEl.innerHTML = `
+          <span class="port-chip-title">${escapeHtml(c.name)} RTSP (${c.rtsp.port})</span>
+          <span class="port-status-pill ${rOpen ? 'open' : 'closed'}">${c.rtsp.status}</span>
+        `;
+        grid.appendChild(rEl);
+      }
+    });
+  };
+
+  const renderBundlesHistory = (bundles) => {
+    if (!historyList) return;
+    if (!bundles || bundles.length === 0) {
+      historyList.innerHTML = `<p class="diag-empty-text">No previous diagnostic bundles generated.</p>`;
+      return;
+    }
+    historyList.innerHTML = bundles.map(b => `
+      <div class="diag-history-item">
+        <div>
+          <span class="diag-history-name">${escapeHtml(b.filename)}</span>
+          <span class="diag-history-meta">${escapeHtml(b.sizeFormatted || '')} · ${escapeHtml(b.createdAt || '')}</span>
+        </div>
+        <div class="diag-history-actions">
+          <a class="button button-small" href="${escapeHtml(b.downloadUrl)}" download>Download</a>
+          <button class="button button-small button-warn delete-bundle-btn" data-filename="${escapeHtml(b.filename)}">Delete</button>
+        </div>
+      </div>
+    `).join("");
+
+    historyList.querySelectorAll(".delete-bundle-btn").forEach(btn => {
+      btn.onclick = async (e) => {
+        const fname = e.currentTarget.getAttribute("data-filename");
+        if (confirm(`Delete diagnostic bundle ${fname}?`)) {
+          try {
+            const delRes = await fetch(`/api/diagnostics?file=${encodeURIComponent(fname)}`, {
+              method: "DELETE",
+              headers: { "X-CamHub-Role": "admin" }
+            });
+            const delData = await delRes.json();
+            if (delData.success) {
+              showToast("Diagnostic bundle deleted", "info", 2500);
+              loadDiagnosticsSummary();
+            } else {
+              showToast(`Delete failed: ${delData.error || delData.message}`, "error", 3000);
+            }
+          } catch (err) {
+            showToast("Delete request failed", "error", 3000);
+          }
+        }
+      };
+    });
+  };
+
+  const loadDiagnosticsSummary = async () => {
+    try {
+      if (statusBadge) {
+        statusBadge.className = "diag-status-badge";
+        statusBadge.textContent = "Checking...";
+      }
+      const res = await fetch("/api/diagnostics/summary", {
+        headers: { "X-CamHub-Role": "admin" }
+      });
+      const data = await res.json();
+      if (!data) return;
+
+      // Status badge
+      if (statusBadge) {
+        const overall = (data.overallStatus || "UNKNOWN").toLowerCase();
+        statusBadge.className = `diag-status-badge ${overall}`;
+        statusBadge.textContent = `${data.overallStatus} (${data.issueCount || 0} issues)`;
+      }
+
+      // Software
+      const sw = data.software || {};
+      const appEl = document.getElementById("diag-app-ver");
+      const pyEl = document.getElementById("diag-python-ver");
+      const ffEl = document.getElementById("diag-ffmpeg-ver");
+      const dotEl = document.getElementById("diag-dotnet-ver");
+      if (appEl) appEl.textContent = sw.app || "CamHUB 1.0.0";
+      if (pyEl) pyEl.textContent = sw.python ? sw.python.version : "-";
+      if (ffEl) ffEl.textContent = sw.ffmpeg && sw.ffmpeg.installed ? sw.ffmpeg.version.split(" ")[2] || "Installed" : "Not found";
+      if (dotEl) dotEl.textContent = sw.dotnet && sw.dotnet.installed ? sw.dotnet.version : "Not found";
+
+      // Resources
+      const rc = data.resources || {};
+      const osEl = document.getElementById("diag-os-val");
+      const diskEl = document.getElementById("diag-disk-val");
+      const pidEl = document.getElementById("diag-pid-val");
+      if (osEl) osEl.textContent = `${rc.os?.system || 'Host'} (${rc.os?.cpuCount || 1} CPU cores)`;
+      if (diskEl) diskEl.textContent = rc.disk?.freeGb ? `${rc.disk.freeGb} GB free of ${rc.disk.totalGb} GB (${rc.disk.usedPercent}%)` : "-";
+      if (pidEl) pidEl.textContent = rc.process?.pid || "-";
+
+      // Ports
+      if (data.ports) renderPortsGrid(data.ports);
+
+      // Previous bundles
+      renderBundlesHistory(data.bundles);
+    } catch (err) {
+      console.error("Failed to load diagnostics summary:", err);
+      showToast("Failed to fetch diagnostics telemetry", "error", 3000);
+    }
+  };
+
+  diagBtn.onclick = () => {
+    modal.showModal();
+    loadDiagnosticsSummary();
+  };
+
+  if (generateBtn) {
+    generateBtn.onclick = async () => {
+      generateBtn.disabled = true;
+      if (progressWrap) progressWrap.style.display = "flex";
+      if (progressText) progressText.textContent = "Gathering telemetry & sanitizing credentials...";
+      if (resultCard) resultCard.style.display = "none";
+
+      try {
+        const res = await fetch("/api/diagnostics/generate", {
+          method: "POST",
+          headers: { "X-CamHub-Role": "admin" }
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Diagnostic bundle created in ${data.durationMs}ms!`, "success", 4000);
+          if (resultCard) resultCard.style.display = "flex";
+          if (resultFilename) resultFilename.textContent = data.filename;
+          if (resultDetails) {
+            resultDetails.innerHTML = `
+              Size: ${formatBytes(data.sizeBytes)} · Files: ${data.manifest?.totalFiles || 8} · SHA256: ${data.sha256?.substring(0, 16)}...
+            `;
+          }
+          if (downloadLink) {
+            downloadLink.href = data.downloadUrl;
+            downloadLink.setAttribute("download", data.filename);
+          }
+          loadDiagnosticsSummary();
+        } else {
+          showToast(`Export failed: ${data.error || 'Unknown error'}`, "error", 4000);
+        }
+      } catch (err) {
+        showToast("Diagnostics generation request failed", "error", 4000);
+      } finally {
+        generateBtn.disabled = false;
+        if (progressWrap) progressWrap.style.display = "none";
+      }
+    };
+  }
+}
+
+// ============================================================================
+// AGENT 9 — Notification Center
+// ============================================================================
+function initNotificationCenter() {
+  const bellBtn = document.getElementById("notif-bell-btn");
+  const badge = document.getElementById("notif-badge");
+  const modal = document.getElementById("notif-dialog");
+  const closeBtn = document.getElementById("close-notif-dialog-btn");
+  const closeAction = document.getElementById("close-notif-dialog-action");
+  const ackAllBtn = document.getElementById("notif-ack-all-btn");
+  const clearAllBtn = document.getElementById("notif-clear-all-btn");
+  const simulateBtn = document.getElementById("notif-simulate-btn");
+  const countPill = document.getElementById("notif-modal-count-pill");
+  const notifList = document.getElementById("notif-list");
+  const tabs = document.querySelectorAll(".notif-tab");
+
+  let currentSeverity = "all";
+
+  if (!bellBtn || !modal) return;
+
+  const closeModal = () => modal.close();
+  if (closeBtn) closeBtn.onclick = closeModal;
+  if (closeAction) closeAction.onclick = closeModal;
+
+  const pollStats = async () => {
+    try {
+      const res = await fetch("/api/notifications/stats");
+      const stats = await res.json();
+      if (!stats) return;
+      const unread = stats.unreadCount || 0;
+      if (badge) {
+        if (unread > 0) {
+          badge.textContent = unread > 99 ? "99+" : unread;
+          badge.style.display = "inline-block";
+        } else {
+          badge.style.display = "none";
+        }
+      }
+      if (countPill) countPill.textContent = `${unread} unread`;
+    } catch {
+      // Ignore background fetch error
+    }
+  };
+
+  const loadNotifications = async () => {
+    if (!notifList) return;
+    try {
+      let url = "/api/notifications?limit=50";
+      if (currentSeverity && currentSeverity !== "all") {
+        url += `&severity=${encodeURIComponent(currentSeverity)}`;
+      }
+      const res = await fetch(url);
+      const data = await res.json();
+      const items = data.notifications || [];
+
+      if (items.length === 0) {
+        notifList.innerHTML = `<p class="diag-empty-text">No notifications found.</p>`;
+        return;
+      }
+
+      notifList.innerHTML = items.map(n => {
+        const isUnread = !n.acknowledged;
+        const countBadge = n.count > 1 ? `<span class="notif-repeat-badge">Repeated ${n.count}x</span>` : "";
+        return `
+          <div class="notif-item ${isUnread ? 'unread' : ''} ${escapeHtml(n.severity || 'info')}" data-id="${escapeHtml(n.id)}">
+            <div class="notif-content">
+              <div class="notif-header-line">
+                <span class="notif-title">${escapeHtml(n.title || 'Notification')}</span>
+                ${countBadge}
+              </div>
+              <div class="notif-message">${escapeHtml(n.message || '')}</div>
+              <div class="notif-meta-line">
+                <span>${escapeHtml(n.cameraName || n.cameraId || 'System')}</span>
+                <span>${escapeHtml(n.isoTime || '')}</span>
+              </div>
+            </div>
+            <div class="notif-actions">
+              ${isUnread ? `<button class="button button-small notif-ack-btn" data-id="${escapeHtml(n.id)}" title="Acknowledge">✓</button>` : ''}
+              <button class="button button-small notif-del-btn" data-id="${escapeHtml(n.id)}" title="Delete">✕</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      notifList.querySelectorAll(".notif-ack-btn").forEach(btn => {
+        btn.onclick = async (e) => {
+          const id = e.currentTarget.getAttribute("data-id");
+          await fetch(`/api/notifications/ack?id=${encodeURIComponent(id)}`, { method: "POST" });
+          loadNotifications();
+          pollStats();
+        };
+      });
+
+      notifList.querySelectorAll(".notif-del-btn").forEach(btn => {
+        btn.onclick = async (e) => {
+          const id = e.currentTarget.getAttribute("data-id");
+          await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+          loadNotifications();
+          pollStats();
+        };
+      });
+    } catch (err) {
+      console.error("Failed to load notifications:", err);
+    }
+  };
+
+  tabs.forEach(tab => {
+    tab.onclick = () => {
+      tabs.forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      currentSeverity = tab.getAttribute("data-sev");
+      loadNotifications();
+    };
+  });
+
+  bellBtn.onclick = () => {
+    modal.showModal();
+    loadNotifications();
+    pollStats();
+  };
+
+  if (ackAllBtn) {
+    ackAllBtn.onclick = async () => {
+      await fetch("/api/notifications/ack?all=true", { method: "POST" });
+      showToast("All notifications acknowledged", "info", 2500);
+      loadNotifications();
+      pollStats();
+    };
+  }
+
+  if (clearAllBtn) {
+    clearAllBtn.onclick = async () => {
+      if (confirm("Clear all notifications?")) {
+        await fetch("/api/notifications?all=true", { method: "DELETE" });
+        showToast("All notifications cleared", "info", 2500);
+        loadNotifications();
+        pollStats();
+      }
+    };
+  }
+
+  if (simulateBtn) {
+    simulateBtn.onclick = async () => {
+      const simRes = await fetch("/api/notifications/simulate", { method: "POST" });
+      const simData = await simRes.json();
+      if (simData.success) {
+        showToast("Test notification simulated", "info", 2500);
+        loadNotifications();
+        pollStats();
+      }
+    };
+  }
+
+  pollStats();
+  setInterval(pollStats, 10000);
+}
+
 // Initial boot
 initNav();
 initSetupGuide();
@@ -2598,6 +2960,8 @@ initPlayback();
 initPlaybackZoom();
 initEventsTimeline();
 initCameraFilter();
+initDiagnosticsModal();
+initNotificationCenter();
 render();
 restoreLayoutPreference();
 
