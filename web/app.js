@@ -375,129 +375,149 @@ function startStream(id) {
 function render() {
   const timeStr = getFormattedTime();
 
-  const visibleCameras = cameras.filter((camera) =>isCameraSelected(camera.id));
+  const visibleCameras = cameras.filter((camera) => isCameraSelected(camera.id));
 
   if (visibleCameras.length === 0) {
     grid.innerHTML = `
- <div class="no-cameras-selected">
+      <div class="no-cameras-selected">
         <div class="no-cam-icon">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M2 7.5A1.5 1.5 0 0 1 3.5 6h9A1.5 1.5 0 0 1 14 7.5v9A1.5 1.5 0 0 1 12.5 18h-9A1.5 1.5 0 0 1 2 16.5z"></path>
             <path d="M14 10.5 22 6v12l-8-4.5"></path>
           </svg>
         </div>
- <h3 class="no-cam-title">No cameras selected</h3>
- <p class="no-cam-desc">All camera feeds are currently hidden. Choose one or more cameras using the selection bar above to display them.</p>
- <button class="button button-accent button-small" id="empty-state-show-all" type="button">Show all cameras</button>
- </div>`;
+        <h3 class="no-cam-title">No cameras selected</h3>
+        <p class="no-cam-desc">All camera feeds are currently hidden. Choose one or more cameras using the selection bar above to display them.</p>
+        <button class="button button-accent button-small" id="empty-state-show-all" type="button">Show all cameras</button>
+      </div>`;
     const emptyBtn = document.getElementById("empty-state-show-all");
     if (emptyBtn) {
-      emptyBtn.onclick = () =>selectAllCameras(true);
+      emptyBtn.onclick = () => selectAllCameras(true);
     }
   } else {
-    grid.innerHTML = visibleCameras.map((camera) =>{
+    grid.innerHTML = visibleCameras.map((camera, idx) => {
       const isUnconfigured = !camera.url;
       const stateObj = connectionStates.get(camera.id);
       const status = stateObj?.status || (camera.url ? "connecting" : "unconfigured");
       const statusClass = status;
-      const statusWord = status === "online" ? "Live" : status === "connecting" ? "Connecting" : status === "offline" ? "Offline" : "Not configured";
       const placeholderMsg = stateObj?.message || (status === "connecting" ? "Connecting to camera stream…" : status === "offline" ? "Stream unavailable. Verify local decoder is active." : "Protocol adapter not configured.");
 
       // Read current health status
       const h = cameraHealthData.get(camera.id);
       const healthStatus = (h?.status || "UNKNOWN").toLowerCase();
-      const healthUpper = h?.status || "UNKNOWN";
+      const healthUpper = h?.status || (status === "online" ? "HEALTHY" : "DEGRADED");
+      const camTag = `CAM ${String(idx + 1).padStart(2, "0")}`;
 
       return `
- <article class="camera-card ${isUnconfigured ? 'is-unconfigured' : ''}" data-camera="${escapeHtml(camera.id)}">
- <div class="video-container" data-video-wrap="${escapeHtml(camera.id)}">
- <div class="tile-scrim">
- <div class="tile-status-bar">
- <div class="tile-title-group">
- <span class="status-dot ${statusClass}" data-dot="${escapeHtml(camera.id)}"></span>
- <h3 class="tile-title">${escapeHtml(camera.name)}</h3>
-                  <span class="status-text" data-status-text="${escapeHtml(camera.id)}">${statusWord}</span>
-                </div>
- <div class="tile-micro-group">
- <span class="ratio-badge" data-ratio="${escapeHtml(camera.id)}" style="display:none;"></span>
- <span class="tile-micro" data-micro="${escapeHtml(camera.id)}">${timeStr}</span>
- </div>
- </div>
- </div>
+        <article class="camera-card ${isUnconfigured ? 'is-unconfigured' : ''}" data-camera="${escapeHtml(camera.id)}">
+          <div class="video-container" data-video-wrap="${escapeHtml(camera.id)}">
+            <div class="tile-scrim">
+              <span class="tile-tag">${camTag}</span>
+              <span class="tile-timestamp" data-micro="${escapeHtml(camera.id)}">${timeStr}</span>
+            </div>
 
- <!-- Zoom & Pan Indicator Badge -->
- <div class="zoom-pan-hint" data-zoom-hint="${escapeHtml(camera.id)}" style="display:none;">
- <span data-zoom-hint-text="${escapeHtml(camera.id)}">1.0x, Drag to pan</span>
- <button type="button" class="zoom-hint-reset" data-zoom-reset="${escapeHtml(camera.id)}" title="Reset to 1.0x">✕</button>
- </div>
+            <!-- Zoom & Pan Indicator Badge -->
+            <div class="zoom-pan-hint" data-zoom-hint="${escapeHtml(camera.id)}" style="display:none;">
+              <span data-zoom-hint-text="${escapeHtml(camera.id)}">1.0x, Drag to pan</span>
+              <button type="button" class="zoom-hint-reset" data-zoom-reset="${escapeHtml(camera.id)}" title="Reset to 1.0x"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+            </div>
 
- <!-- Floating CCTV Zoom Bar -->
- <div class="tile-zoom-bar" data-zoom-bar="${escapeHtml(camera.id)}">
- <button class="tile-zoom-btn" data-zoom-in="${escapeHtml(camera.id)}" type="button" title="Zoom in (+)">
- <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
- </button>
- <button class="tile-zoom-btn zoom-level-badge" data-zoom-reset="${escapeHtml(camera.id)}" type="button" title="Click to reset zoom (1.0x)">
- <span data-zoom-val="${escapeHtml(camera.id)}">1.0x</span>
- </button>
- <button class="tile-zoom-btn" data-zoom-out="${escapeHtml(camera.id)}" type="button" title="Zoom out (-)">
- <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
- </button>
- <button class="tile-zoom-btn" data-zoom-fullscreen="${escapeHtml(camera.id)}" type="button" title="Toggle fullscreen">
- <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
- </button>
- </div>
+            <!-- Floating CCTV Zoom Bar -->
+            <div class="tile-zoom-bar" data-zoom-bar="${escapeHtml(camera.id)}">
+              <button class="tile-zoom-btn" data-zoom-in="${escapeHtml(camera.id)}" type="button" title="Zoom in (+)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
+              <button class="tile-zoom-btn zoom-level-badge" data-zoom-reset="${escapeHtml(camera.id)}" type="button" title="Click to reset zoom (1.0x)">
+                <span data-zoom-val="${escapeHtml(camera.id)}">1.0x</span>
+              </button>
+              <button class="tile-zoom-btn" data-zoom-out="${escapeHtml(camera.id)}" type="button" title="Zoom out (-)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
+              <button class="tile-zoom-btn" data-zoom-fullscreen="${escapeHtml(camera.id)}" type="button" title="Toggle fullscreen">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+              </button>
+            </div>
 
- <img
+            <img
               class="camera-feed ${status === 'online' ? '' : 'is-hidden'}"
               data-feed="${escapeHtml(camera.id)}"
               alt="Live feed: ${escapeHtml(camera.name)}"
             />
 
- <div class="feed-placeholder ${status === 'online' ? 'is-hidden' : ''}" data-placeholder="${escapeHtml(camera.id)}">
- <div class="placeholder-content">
- <p class="placeholder-message" data-placeholder-message="${escapeHtml(camera.id)}">${escapeHtml(placeholderMsg)}</p>
+            <div class="feed-placeholder ${status === 'online' ? 'is-hidden' : ''}" data-placeholder="${escapeHtml(camera.id)}">
+              <div class="placeholder-content">
+                <div class="placeholder-badge">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  <span>No Signal</span>
+                </div>
+                <p class="placeholder-message" data-placeholder-message="${escapeHtml(camera.id)}">${escapeHtml(placeholderMsg)}</p>
                 ${isUnconfigured
-                  ? `<button class="button button-accent button-small" data-placeholder-config="${escapeHtml(camera.id)}" type="button">Set up protocol</button>`
-                  : `<button class="button button-small" data-retry-btn="${escapeHtml(camera.id)}" type="button" style="${status === 'offline' ? 'display:inline-flex;' : 'display:none;'}">Retry connection</button>`
+                  ? `<button class="button button-accent button-small" style="margin-top:8px;" data-placeholder-config="${escapeHtml(camera.id)}" type="button">Set up protocol</button>`
+                  : `<button class="button button-small" data-retry-btn="${escapeHtml(camera.id)}" type="button" style="margin-top:8px; ${status === 'offline' ? 'display:inline-flex;' : 'display:none;'}">Retry connection</button>`
                 }
- </div>
- </div>
- </div>
+              </div>
+            </div>
+          </div>
 
- <div class="tile-footer">
- <div class="tile-footer-top">
- <div class="tile-details">
- <span class="details-text" title="${escapeHtml(camera.location)}">${escapeHtml(camera.location)}</span>
- </div>
-              <div class="tile-actions">
-                <button class="button button-small tile-rec-btn ${activeRecordings.has(camera.id) ? 'is-recording' : ''}" data-tile-rec="${escapeHtml(camera.id)}" type="button" title="Toggle local recording">
- <span class="tile-rec-dot"></span>
- <span class="tile-rec-text">${activeRecordings.has(camera.id) ? 'Recording' : 'Record'}</span>
- </button>
- <button class="button button-small" data-refresh="${escapeHtml(camera.id)}" type="button" title="Reload feed">Reload</button>
- <button class="button button-small" data-configure="${escapeHtml(camera.id)}" type="button" title="Configure camera">Configure</button>
- <button class="button button-small button-focus" data-focus="${escapeHtml(camera.id)}" type="button" title="Expand to full row">Focus</button>
- </div>
- </div>
- <div class="tile-telemetry" data-tile-telemetry="${escapeHtml(camera.id)}">
- <span class="telemetry-item">FPS: <span class="telemetry-val live" data-telemetry-fps="${escapeHtml(camera.id)}">-</span></span>
- <span> </span>
- <span class="telemetry-item">Latency: <span class="telemetry-val accent" data-telemetry-lat="${escapeHtml(camera.id)}">-</span></span>
- <span> </span>
- <span class="telemetry-item">Ratio: <span class="telemetry-val" data-telemetry-res="${escapeHtml(camera.id)}">-</span></span>
- <span> </span>
- <span class="telemetry-item">Clients: <span class="telemetry-val" data-telemetry-clients="${escapeHtml(camera.id)}">-</span></span>
- </div>
- </div>
- </article>`;
+          <div class="tile-footer">
+            <div class="tile-footer-top">
+              <div class="tile-identity">
+                <span class="status-dot ${statusClass}" data-dot="${escapeHtml(camera.id)}"></span>
+                <h3 class="tile-cam-name">${escapeHtml(camera.name)}</h3>
+              </div>
+              <span class="badge-status ${healthStatus}" data-status-badge="${escapeHtml(camera.id)}">${healthUpper}</span>
+            </div>
+
+            <div class="tile-location-sub" title="${escapeHtml(camera.location)}">
+              ${escapeHtml(camera.hint || "LAN")} · 1920×1080
+            </div>
+
+            <div class="tile-footer-meta">
+              <span class="tile-meta-item">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                <span>FPS:</span>
+                <strong class="tile-meta-val font-mono" data-telemetry-fps="${escapeHtml(camera.id)}">0.0 / 15</strong>
+              </span>
+              <span class="tile-meta-item">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                <span>Latency:</span>
+                <strong class="tile-meta-val font-mono" data-telemetry-lat="${escapeHtml(camera.id)}">0 ms</strong>
+              </span>
+              <span class="tile-meta-item">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                <span>Subs:</span>
+                <strong class="tile-meta-val font-mono" data-telemetry-clients="${escapeHtml(camera.id)}">1 Web</strong>
+              </span>
+            </div>
+
+            <div class="tile-footer-actions">
+              <button class="button button-small tile-rec-btn ${activeRecordings.has(camera.id) ? 'is-recording' : ''}" data-tile-rec="${escapeHtml(camera.id)}" type="button" title="Toggle local recording">
+                <span class="tile-rec-dot"></span>
+                <span class="tile-rec-text">${activeRecordings.has(camera.id) ? 'Recording' : 'Record'}</span>
+              </button>
+              <button class="button button-small button-icon" data-refresh="${escapeHtml(camera.id)}" type="button" title="Reload feed">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+              </button>
+              <button class="button button-small button-icon" data-configure="${escapeHtml(camera.id)}" type="button" title="Configure camera">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+              </button>
+              <button class="button button-small" data-inspect-pipeline="${escapeHtml(camera.id)}" type="button" title="Inspect camera pipeline">
+                <span>Pipeline</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+              <button class="button button-small button-focus" data-focus="${escapeHtml(camera.id)}" type="button" title="Expand to full row">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+              </button>
+            </div>
+          </div>
+        </article>`;
     }).join("");
   }
 
-  renderAnalyticsCards();
   updateSummary();
   attachEvents();
 
-  cameras.forEach((camera) =>{
+  cameras.forEach((camera) => {
     if (isCameraSelected(camera.id)) {
       startStream(camera.id);
     } else {
@@ -735,9 +755,9 @@ async function pollMetrics() {
       const latEl = document.querySelector(`[data-telemetry-lat="${CSS.escape(camera.id)}"]`);
       const clientsEl = document.querySelector(`[data-telemetry-clients="${CSS.escape(camera.id)}"]`);
       const latMs = data.latency?.decodeLatencyMs ?? data.xcodeLatencyMs ?? 0;
-      if (fpsEl) fpsEl.textContent = `${primaryFps.toFixed(1)} fps`;
+      if (fpsEl) fpsEl.textContent = `${primaryFps.toFixed(1)} / 15`;
       if (latEl) latEl.textContent = `${Math.round(latMs)} ms`;
-      if (clientsEl) clientsEl.textContent = `${data.activeRtspSessions ?? 0} RTSP, ${data.activeMjpegClients ?? 0} Web`;
+      if (clientsEl) clientsEl.textContent = `${data.activeRtspSessions ?? 0} RTSP · ${data.activeMjpegClients ?? 0} Web`;
 
       // Update Pipeline stages
       const stages = data.stages || {};
@@ -829,6 +849,483 @@ async function pollMetrics() {
       }
     }
   }));
+
+  // Aggregate Fleet Telemetry
+  let totalFps = 0;
+  let totalLat = 0;
+  let latCount = 0;
+  let totalRtsp = 0;
+  let totalWeb = 0;
+  const camFpsMap = {};
+
+  cameras.forEach((cam) => {
+    const d = metricsData.get(cam.id);
+    const fps = d?.stages?.sourceFps ?? d?.sourceFps ?? 0;
+    camFpsMap[cam.id] = fps;
+    totalFps += fps;
+
+    const lat = d?.latency?.decodeLatencyMs ?? d?.xcodeLatencyMs ?? 0;
+    if (lat > 0) {
+      totalLat += lat;
+      latCount++;
+    }
+
+    totalRtsp += (d?.activeRtspSessions ?? 0);
+    totalWeb += (d?.activeMjpegClients ?? 0);
+  });
+
+  const totalInMbps = totalFps > 0 ? (totalFps * 0.18).toFixed(1) : "0.0";
+  const totalOutMbps = (totalWeb * 1.8 + totalRtsp * 2.2).toFixed(1);
+  const avgLat = latCount > 0 ? Math.round(totalLat / latCount) : 0;
+
+  const bwEl = document.getElementById("metric-bandwidth");
+  const aggFpsEl = document.getElementById("metric-agg-fps");
+  const avgLatEl = document.getElementById("metric-avg-latency");
+  const subsEl = document.getElementById("metric-subscribers");
+
+  if (bwEl) bwEl.textContent = `${totalInMbps} Mbps / ${totalOutMbps} Mbps`;
+  if (aggFpsEl) aggFpsEl.textContent = `${totalFps.toFixed(1)} fps`;
+  if (avgLatEl) avgLatEl.textContent = `${avgLat} ms`;
+  if (subsEl) subsEl.textContent = `${totalRtsp} RTSP · ${totalWeb} Web`;
+
+  updateFpsHistory(camFpsMap);
+  updatePipelineInspector();
+}
+
+// ==========================================================================
+// Real-time Canvas FPS Line Chart
+// ==========================================================================
+
+let fpsTimeWindow = "1m";
+const MAX_FPS_HISTORY = 40;
+let fpsHistory = [];
+
+function initFpsChart() {
+  const canvas = document.getElementById("fps-canvas");
+  if (!canvas) return;
+
+  document.querySelectorAll("#fps-time-toggles .time-toggle-btn").forEach((btn) => {
+    btn.onclick = () => {
+      document.querySelectorAll("#fps-time-toggles .time-toggle-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      fpsTimeWindow = btn.dataset.window;
+      drawFpsChart();
+    };
+  });
+
+  window.addEventListener("resize", drawFpsChart);
+  drawFpsChart();
+}
+
+function updateFpsHistory(camFpsMap) {
+  const now = new Date();
+  fpsHistory.push({
+    time: now,
+    cam1: camFpsMap["v380-1"] ?? 0,
+    cam2: camFpsMap["v380-2"] ?? 0,
+    cam3: camFpsMap["okam-3"] ?? 0
+  });
+
+  if (fpsHistory.length > MAX_FPS_HISTORY) {
+    fpsHistory.shift();
+  }
+
+  const l1 = document.getElementById("legend-fps-cam1");
+  const l2 = document.getElementById("legend-fps-cam2");
+  const l3 = document.getElementById("legend-fps-cam3");
+  if (l1) l1.textContent = `${(camFpsMap["v380-1"] ?? 0).toFixed(1)} fps`;
+  if (l2) l2.textContent = `${(camFpsMap["v380-2"] ?? 0).toFixed(1)} fps`;
+  if (l3) l3.textContent = `${(camFpsMap["okam-3"] ?? 0).toFixed(1)} fps`;
+
+  drawFpsChart();
+}
+
+function drawFpsChart() {
+  const canvas = document.getElementById("fps-canvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const width = rect.width || 600;
+  const height = 150;
+
+  if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+  }
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+
+  ctx.fillStyle = "#101319";
+  ctx.fillRect(0, 0, width, height);
+
+  const padLeft = 32;
+  const padRight = 16;
+  const padTop = 14;
+  const padBottom = 24;
+  const chartW = width - padLeft - padRight;
+  const chartH = height - padTop - padBottom;
+  const maxFps = 20;
+
+  // Grid lines
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+  ctx.font = "9.5px 'JetBrains Mono', Consolas, monospace";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+
+  const ticks = [0, 5, 10, 15, 20];
+  for (const tick of ticks) {
+    const y = padTop + chartH - (tick / maxFps) * chartH;
+    ctx.beginPath();
+    ctx.moveTo(padLeft, y);
+    ctx.lineTo(width - padRight, y);
+    ctx.stroke();
+    ctx.fillText(String(tick), padLeft - 6, y);
+  }
+
+  if (fpsHistory.length < 2) {
+    ctx.strokeStyle = "rgba(245, 158, 11, 0.3)";
+    ctx.beginPath();
+    ctx.moveTo(padLeft, padTop + chartH);
+    ctx.lineTo(width - padRight, padTop + chartH);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  const drawSeries = (key, color) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+
+    for (let i = 0; i < fpsHistory.length; i++) {
+      const pt = fpsHistory[i];
+      const val = Math.min(maxFps, Math.max(0, pt[key]));
+      const x = padLeft + (i / (fpsHistory.length - 1)) * chartW;
+      const y = padTop + chartH - (val / maxFps) * chartH;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    const last = fpsHistory[fpsHistory.length - 1];
+    const lastVal = Math.min(maxFps, Math.max(0, last[key]));
+    const lastX = padLeft + chartW;
+    const lastY = padTop + chartH - (lastVal / maxFps) * chartH;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, 3, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  drawSeries("cam1", "#f59e0b");
+  drawSeries("cam2", "#38bdf8");
+  drawSeries("cam3", "#e879f9");
+
+  // X-axis timestamps
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+  const step = Math.max(1, Math.floor(fpsHistory.length / 5));
+  for (let i = 0; i < fpsHistory.length; i += step) {
+    const pt = fpsHistory[i];
+    const x = padLeft + (i / (fpsHistory.length - 1)) * chartW;
+    const timeStr = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(pt.time);
+    ctx.fillText(timeStr, x, padTop + chartH + 7);
+  }
+
+  ctx.restore();
+}
+
+// ==========================================================================
+// Interactive Pipeline Inspector
+// ==========================================================================
+
+let inspectedCameraId = "v380-1";
+
+function initPipelineInspector() {
+  const sel = document.getElementById("pipeline-cam-selector");
+  if (!sel) return;
+
+  sel.innerHTML = cameras.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name.split(',')[0])}</option>`).join("");
+  sel.value = inspectedCameraId;
+
+  sel.onchange = () => {
+    setInspectedCamera(sel.value);
+  };
+}
+
+function setInspectedCamera(cid) {
+  if (!cid) return;
+  inspectedCameraId = cid;
+  const sel = document.getElementById("pipeline-cam-selector");
+  if (sel) sel.value = cid;
+
+  const cam = cameras.find((c) => c.id === cid);
+  const title = document.getElementById("pipeline-cam-title");
+  if (title && cam) {
+    title.textContent = `Pipeline — ${cam.name.split(',')[0]}`;
+  }
+
+  updatePipelineInspector();
+}
+
+function updatePipelineInspector() {
+  const cam = cameras.find((c) => c.id === inspectedCameraId);
+  if (!cam) return;
+
+  const data = metricsData.get(inspectedCameraId) || {};
+  const stages = data.stages || {};
+  const isOnline = connectionStates.get(inspectedCameraId)?.status === "online";
+
+  const srcFps = stages.sourceFps ?? data.sourceFps ?? 0;
+  const lanFps = stages.lanInFps ?? (isOnline ? srcFps : 0);
+  const decFps = stages.decoderOutFps ?? data.xcodeOutFps ?? 0;
+  const mjpegFps = stages.mjpegOutFps ?? data.mjpegFps ?? 0;
+  const browserFps = stages.browserRenderFps > 0 ? stages.browserRenderFps : (isOnline ? mjpegFps : 0);
+
+  const setNode = (id, fps) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = `${fps.toFixed(1)} fps`;
+    el.className = "node-fps " + (fps >= 10 ? "live" : fps > 0 ? "warn" : "bad");
+  };
+
+  setNode("pipe-fps-source", srcFps);
+  setNode("pipe-fps-lan", lanFps);
+  setNode("pipe-fps-decoder", decFps);
+  setNode("pipe-fps-mjpeg", mjpegFps);
+  setNode("pipe-fps-browser", browserFps);
+
+  const alertBox = document.getElementById("pipeline-alert-box");
+  const alertTitle = document.getElementById("pipeline-alert-title");
+  const alertDesc = document.getElementById("pipeline-alert-desc");
+  const diag = data.bottleneck || {};
+
+  if (alertBox && alertTitle && alertDesc) {
+    if (!isOnline || srcFps === 0) {
+      alertBox.className = "pipeline-alert-box alert-warn";
+      alertTitle.textContent = "Bottleneck Detected";
+      alertDesc.textContent = diag.description || "Tidak ada frame diterima dari sumber kamera.";
+    } else if (diag.severity === "critical" || diag.severity === "warning") {
+      alertBox.className = "pipeline-alert-box alert-warn";
+      alertTitle.textContent = "Bottleneck Detected";
+      alertDesc.textContent = diag.description || `Pipeline delayed at ${diag.dominantStage || 'decoder'}.`;
+    } else {
+      alertBox.className = "pipeline-alert-box alert-nominal";
+      alertTitle.textContent = "Pipeline Nominal";
+      alertDesc.textContent = "All ingest and decode stages performing smoothly within target FPS.";
+    }
+  }
+
+  const lastFrameEl = document.getElementById("pipe-last-frame");
+  const qDropEl = document.getElementById("pipe-queue-drop");
+  const decodeErrorsEl = document.getElementById("pipe-decode-errors");
+  const stageValEl = document.getElementById("pipe-stage-val");
+  const portPidEl = document.getElementById("pipe-port-pid");
+
+  if (lastFrameEl) lastFrameEl.textContent = isOnline ? "0.1s ago" : "--";
+  const hMetrics = data.health || {};
+  const totalDrops = (hMetrics.droppedDecoderIn || 0) + (hMetrics.droppedMjpegIn || 0);
+  if (qDropEl) qDropEl.textContent = `${hMetrics.queueDepth ?? 0} / ${totalDrops}`;
+  if (decodeErrorsEl) decodeErrorsEl.textContent = `${hMetrics.decodingErrors ?? 0} err`;
+  if (stageValEl) {
+    const stageName = diag.dominantStage || (isOnline ? "Nominal" : "CameraSource");
+    stageValEl.textContent = stageName;
+    stageValEl.className = "pipe-detail-val badge-stage " + (stageName === "Nominal" ? "nominal" : "");
+  }
+  if (portPidEl) {
+    const portMatch = cam.url ? cam.url.match(/:(\d+)/) : null;
+    const port = portMatch ? portMatch[1] : (cam.port || 8080);
+    const sInfo = serviceStatusData.get(cam.id);
+    const pid = sInfo?.pid ? `PID ${sInfo.pid}` : "PID --";
+    portPidEl.textContent = `Port ${port} · ${pid}`;
+  }
+}
+
+// ==========================================================================
+// Diagnostics Summary & Host Resource Meters
+// ==========================================================================
+
+function formatDurationDetailed(sec) {
+  if (!sec || isNaN(sec)) return "0s";
+  sec = Math.round(sec);
+  const hrs = Math.floor(sec / 3600);
+  const mins = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (hrs > 0) return `${hrs}h ${String(mins).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+  if (mins > 0) return `${mins}m ${String(s).padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
+async function pollDiagnosticsSummary() {
+  try {
+    const res = await fetch("/api/diagnostics/summary", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const uptimeEl = document.getElementById("uptime-val");
+    if (uptimeEl && typeof data.uptimeSeconds === "number") {
+      uptimeEl.textContent = `Uptime ${formatDurationDetailed(data.uptimeSeconds)}`;
+    }
+
+    const resrc = data.resources || {};
+    const cpu = resrc.cpu || {};
+    const mem = resrc.memory || {};
+
+    const cpuVal = document.getElementById("meter-cpu-val");
+    const cpuBar = document.getElementById("meter-cpu-bar");
+    if (cpuVal && cpuBar && typeof cpu.percent === "number") {
+      cpuVal.textContent = `${Math.round(cpu.percent)}%`;
+      cpuBar.style.width = `${Math.min(100, Math.max(2, cpu.percent))}%`;
+      cpuBar.className = "meter-fill " + (cpu.percent >= 85 ? "bar-danger" : cpu.percent >= 65 ? "bar-warn" : "bar-live");
+    }
+
+    const ramVal = document.getElementById("meter-ram-val");
+    const ramBar = document.getElementById("meter-ram-bar");
+    if (ramVal && ramBar && typeof mem.percent === "number") {
+      ramVal.textContent = `${mem.usedGb} / ${mem.totalGb} GB (${Math.round(mem.percent)}%)`;
+      ramBar.style.width = `${Math.min(100, Math.max(2, mem.percent))}%`;
+      ramBar.className = "meter-fill " + (mem.percent >= 85 ? "bar-danger" : mem.percent >= 65 ? "bar-warn" : "bar-live");
+    }
+
+    const gpuVal = document.getElementById("meter-gpu-val");
+    if (gpuVal) {
+      gpuVal.textContent = "DirectML";
+    }
+  } catch {}
+}
+
+// ==========================================================================
+// Recent Events & Storage Card Polling
+// ==========================================================================
+
+async function pollRecentEvents() {
+  const container = document.getElementById("recent-events-list");
+  const countBadge = document.getElementById("recent-events-count");
+  if (!container) return;
+
+  try {
+    const res = await fetch("/api/events?limit=4", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    const events = data.events || [];
+
+    if (events.length === 0) {
+      const nRes = await fetch("/api/notifications?limit=4", { cache: "no-store" });
+      if (nRes.ok) {
+        const nData = await nRes.json();
+        const notifs = nData.notifications || [];
+        if (notifs.length > 0) {
+          if (countBadge) countBadge.textContent = `${notifs.length} new`;
+          container.innerHTML = notifs.map((n) => {
+            const timeStr = n.timestamp ? new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(n.timestamp)) : "";
+            const sevClass = n.severity === "critical" ? "fail" : n.severity === "warning" ? "warn" : "pass";
+            return `
+              <div class="recent-event-item">
+                <span class="recent-event-dot ${sevClass}"></span>
+                <div class="recent-event-info">
+                  <span class="recent-event-title">${escapeHtml(n.cameraName || n.cameraId)}: ${escapeHtml(n.title)}</span>
+                </div>
+                <span class="recent-event-time font-mono">${timeStr}</span>
+              </div>`;
+          }).join("");
+          return;
+        }
+      }
+
+      if (countBadge) countBadge.textContent = "0 new";
+      container.innerHTML = `<div class="empty-list-notice">Listening for edge activity...</div>`;
+      return;
+    }
+
+    if (countBadge) countBadge.textContent = `${events.length} new`;
+    container.innerHTML = events.map((e) => {
+      const timeStr = e.timestamp ? new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(e.timestamp)) : "";
+      const scoreStr = e.score ? `${Math.round(e.score)}%` : "";
+      const label = e.aiEnriched && e.aiDetections?.length ? e.aiDetections[0].label : "Motion";
+      return `
+        <div class="recent-event-item">
+          <span class="recent-event-dot warn"></span>
+          <div class="recent-event-info">
+            <span class="recent-event-title">${escapeHtml(e.cameraName || e.cameraId)}: ${escapeHtml(label)} detected (${scoreStr})</span>
+          </div>
+          <span class="recent-event-time font-mono">${timeStr}</span>
+        </div>`;
+    }).join("");
+  } catch {}
+}
+
+async function pollStorageCard() {
+  try {
+    const res = await fetch("/api/storage/status", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    const disk = data.disk || {};
+    const forecast = data.forecasting || {};
+    const camhub = data.camhub || {};
+
+    const tag = document.getElementById("storage-percent-tag");
+    const bar = document.getElementById("storage-meter-fill");
+    const usedVal = document.getElementById("storage-used-val");
+    const freeVal = document.getElementById("storage-free-val");
+    const camhubVal = document.getElementById("storage-camhub-val");
+    const forecastVal = document.getElementById("storage-forecast-val");
+
+    if (tag) tag.textContent = `${disk.usedPercent || 0}% Used`;
+    if (bar) {
+      const pct = disk.usedPercent || 0;
+      bar.style.width = `${pct}%`;
+      bar.className = "storage-fill " + (pct >= 90 ? "bar-danger" : pct >= 75 ? "bar-warn" : "bar-live");
+    }
+    if (usedVal) usedVal.textContent = `${disk.usedGb || 0} GB`;
+    if (freeVal) freeVal.textContent = `${disk.freeGb || 0} GB`;
+    if (camhubVal) camhubVal.textContent = `${camhub.totalMb || 0} MB`;
+    if (forecastVal) forecastVal.textContent = forecast.formattedRemaining || `${forecast.estimatedDaysRemaining || ">30"} days`;
+  } catch {}
+}
+
+// ==========================================================================
+// Fleet Filter Chips
+// ==========================================================================
+
+let currentFleetFilter = "all";
+
+function initFleetFilters() {
+  document.querySelectorAll("#fleet-filter-chips .filter-chip").forEach((chip) => {
+    chip.onclick = () => {
+      document.querySelectorAll("#fleet-filter-chips .filter-chip").forEach((c) => c.classList.remove("active"));
+      chip.classList.add("active");
+      currentFleetFilter = chip.dataset.filter;
+      applyFleetFilter();
+    };
+  });
+}
+
+function applyFleetFilter() {
+  document.querySelectorAll(".camera-card").forEach((card) => {
+    const cid = card.dataset.camera;
+    const h = cameraHealthData.get(cid);
+    const status = (h?.status || "offline").toLowerCase();
+
+    let show = true;
+    if (currentFleetFilter === "healthy") {
+      show = status === "healthy";
+    } else if (currentFleetFilter === "degraded") {
+      show = status === "degraded";
+    } else if (currentFleetFilter === "offline") {
+      show = status === "offline" || status === "critical";
+    }
+    card.style.display = show ? "" : "none";
+  });
 }
 
 function attachEvents() {
@@ -888,6 +1385,23 @@ function attachEvents() {
         }
       }
     };
+  });
+
+  // Inspect pipeline buttons
+  document.querySelectorAll("[data-inspect-pipeline]").forEach((button) => {
+    button.onclick = (e) => {
+      e.stopPropagation();
+      setInspectedCamera(button.dataset.inspectPipeline);
+    };
+  });
+
+  // Camera card selection
+  document.querySelectorAll(".camera-card").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("button") || e.target.closest(".tile-zoom-bar") || e.target.closest("select")) return;
+      const cid = card.dataset.camera;
+      if (cid) setInspectedCamera(cid);
+    });
   });
 
   // Layout View Switcher (2col, auto, 1col)
@@ -1723,34 +2237,84 @@ function initSetupGuide() {
   }
 }
 
+function switchView(viewName) {
+  const views = ["overview", "playback", "events", "setup"];
+  if (!views.includes(viewName)) return;
+
+  // Toggle view active class
+  views.forEach((v) => {
+    const el = document.getElementById(v);
+    if (el) el.classList.toggle("active", v === viewName);
+  });
+
+  // Update sidebar nav link active class
+  document.querySelectorAll(".nav-link").forEach((l) => {
+    const navAttr = l.dataset.nav;
+    l.classList.toggle("active", navAttr === viewName);
+  });
+
+  // Update topbar title & subtitle
+  const titleEl = document.getElementById("page-title");
+  const subEl = document.getElementById("status-sentence");
+  if (viewName === "overview") {
+    if (titleEl) titleEl.textContent = "Monitoring";
+    if (subEl) subEl.textContent = "Real-time camera health, pipeline, and fleet telemetry.";
+  } else if (viewName === "playback") {
+    if (titleEl) titleEl.textContent = "Playback";
+    if (subEl) subEl.textContent = "Zero-transcode segmented MP4 recording, timeline scrubber, and storage.";
+  } else if (viewName === "events") {
+    if (titleEl) titleEl.textContent = "Events & AI";
+    if (subEl) subEl.textContent = "Edge motion detection, activity snapshots with bounding box localization.";
+  } else if (viewName === "setup") {
+    if (titleEl) titleEl.textContent = "Setup Guide";
+    if (subEl) subEl.textContent = "Architecture, RTSP streams, and local hardware configuration.";
+  }
+}
+
 function initNav() {
-  const navLinks = document.querySelectorAll(".nav-link");
-  navLinks.forEach((link) =>{
-    link.addEventListener("click", () =>{
-      navLinks.forEach((l) =>l.classList.remove("active"));
-      link.classList.add("active");
+  document.querySelectorAll(".nav-link").forEach((link) => {
+    link.addEventListener("click", (e) => {
+      const navTarget = link.dataset.nav;
+      if (navTarget === "diagnostics") {
+        e.preventDefault();
+        const dlg = document.getElementById("diagnostics-dialog");
+        if (dlg && typeof dlg.showModal === "function") dlg.showModal();
+        return;
+      }
+      if (navTarget === "notifications") {
+        e.preventDefault();
+        const dlg = document.getElementById("notif-dialog");
+        if (dlg && typeof dlg.showModal === "function") dlg.showModal();
+        return;
+      }
+      if (navTarget) {
+        e.preventDefault();
+        switchView(navTarget);
+        window.location.hash = navTarget;
+      }
     });
   });
 
-  const sections = [
-    { id: "overview", link: document.querySelector('.nav-link[href="#overview"]') },
-    { id: "analytics", link: document.querySelector('.nav-link[href="#analytics"]') },
-    { id: "playback", link: document.querySelector('.nav-link[href="#playback"]') },
-    { id: "events", link: document.querySelector('.nav-link[href="#events"]') },
-    { id: "setup", link: document.querySelector('.nav-link[href="#setup"]') }
-  ];
+  const viewAllEventsLink = document.getElementById("recent-events-view-all");
+  if (viewAllEventsLink) {
+    viewAllEventsLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      switchView("events");
+      window.location.hash = "events";
+    });
+  }
 
-  window.addEventListener("scroll", () =>{
-    const scrollPos = window.scrollY + 140;
-    for (let i = sections.length - 1; i >= 0; i--) {
-      const el = document.getElementById(sections[i].id);
-      if (el && scrollPos >= el.offsetTop) {
-        navLinks.forEach((l) =>l.classList.remove("active"));
-        if (sections[i].link) sections[i].link.classList.add("active");
-        break;
-      }
+  const handleHash = () => {
+    const hash = window.location.hash.replace("#", "");
+    if (["overview", "playback", "events", "setup"].includes(hash)) {
+      switchView(hash);
+    } else {
+      switchView("overview");
     }
-  }, { passive: true });
+  };
+
+  window.addEventListener("popstate", handleHash);
+  handleHash();
 }
 
 function showToast(message, type = "info", duration = 3500) {
@@ -1762,110 +2326,94 @@ function showToast(message, type = "info", duration = 3500) {
   toast.textContent = message;
   container.appendChild(toast);
 
-  setTimeout(() =>{
+  setTimeout(() => {
     toast.style.opacity = "0";
-    setTimeout(() =>toast.remove(), 250);
+    setTimeout(() => toast.remove(), 250);
   }, duration);
 }
 
 function initServiceControls() {
   const runBtn = document.getElementById("run-all-cameras");
-  const runText = document.getElementById("run-all-text");
-  if (!runBtn) return;
+  const restartBtn = document.getElementById("restart-all-cameras");
+  const refreshAllBtn = document.getElementById("refresh-all");
+  const diagBtn = document.getElementById("diagnostics-btn");
 
-  let allRunning = false;
-  let isProcessing = false;
+  if (runBtn) {
+    runBtn.addEventListener("click", async () => {
+      runBtn.disabled = true;
+      showToast("Launching all camera decoders and adapters...", "info", 2500);
 
-  const updateBtnState = (running) =>{
-    allRunning = running;
-    if (running) {
-      runBtn.classList.add("is-running");
-      runBtn.title = "Restart all camera processes";
-      if (runText) runText.textContent = "Restart all cameras";
-      const icon = runBtn.querySelector(".btn-icon");
-      if (icon) {
-        icon.innerHTML = `<polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>`;
-        icon.setAttribute("fill", "none");
-        icon.setAttribute("stroke", "currentColor");
-        icon.setAttribute("stroke-width", "2");
+      try {
+        const res = await fetch("/api/services/start-all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        });
+
+        if (res.ok) {
+          showToast("All camera services active (8080, 8081, 8082). Connecting feeds...", "success", 4000);
+          setTimeout(() => {
+            cameras.forEach((cam) => startStream(cam.id));
+            pollMetrics();
+            pollHealth();
+          }, 1200);
+        } else {
+          showToast("Failed to communicate with CamHub service manager", "error", 4000);
+        }
+      } catch (err) {
+        showToast("Could not reach service manager. Run server.py on port 3000.", "error", 4500);
+      } finally {
+        runBtn.disabled = false;
       }
-    } else {
-      runBtn.classList.remove("is-running");
-      runBtn.title = "Start all decoder and adapter services directly";
-      if (runText) runText.textContent = "Run all cameras";
-      const icon = runBtn.querySelector(".btn-icon");
-      if (icon) {
-        icon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3"></polygon>`;
-        icon.setAttribute("fill", "currentColor");
-        icon.removeAttribute("stroke");
+    });
+  }
+
+  if (restartBtn) {
+    restartBtn.addEventListener("click", async () => {
+      restartBtn.disabled = true;
+      showToast("Restarting all camera decoders...", "info", 2500);
+
+      try {
+        const res = await fetch("/api/services/restart-all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        });
+
+        if (res.ok) {
+          showToast("All camera services restarted. Reconnecting feeds...", "success", 3500);
+          setTimeout(() => {
+            cameras.forEach((cam) => startStream(cam.id));
+            pollMetrics();
+            pollHealth();
+          }, 1200);
+        } else {
+          showToast("Failed to restart camera services", "error", 4000);
+        }
+      } catch (err) {
+        showToast("Could not reach service manager", "error", 4000);
+      } finally {
+        restartBtn.disabled = false;
       }
-    }
-  };
+    });
+  }
 
-  const checkStatus = async () =>{
-    if (isProcessing) return;
-    try {
-      const res = await fetch("/api/services/status", { cache: "no-store" });
-      if (res.ok) {
-        const data = await res.json();
-        updateBtnState(Boolean(data.allRunning));
-      }
-    } catch {
-      // Host server might be plain http-server
-    }
-  };
+  if (refreshAllBtn) {
+    refreshAllBtn.onclick = () => {
+      showToast("Refreshed telemetry & feeds", "info", 1500);
+      cameras.forEach((cam) => startStream(cam.id));
+      pollHealth();
+      pollMetrics();
+      pollDiagnosticsSummary();
+      pollRecentEvents();
+      pollStorageCard();
+    };
+  }
 
-  runBtn.addEventListener("click", async () =>{
-    if (isProcessing) return;
-    isProcessing = true;
-    runBtn.classList.add("is-loading");
-    runBtn.disabled = true;
-
-    const action = allRunning ? "restart-all" : "start-all";
-    const actionText = allRunning ? "Restarting all cameras…" : "Starting all cameras…";
-    if (runText) runText.textContent = actionText;
-
-    const icon = runBtn.querySelector(".btn-icon");
-    if (icon) {
-      icon.classList.add("btn-spinner");
-      icon.innerHTML = `<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.25" fill="none"></circle><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"></path>`;
-    }
-
-    showToast(allRunning ? "Restarting camera services..." : "Launching camera decoders and adapters...", "info", 2500);
-
-    try {
-      const res = await fetch(`/api/services/${action}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" }
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        showToast("All camera services active (8080, 8081, 8082). Connecting feeds...", "success", 4000);
-        updateBtnState(Boolean(data.status?.allRunning ?? true));
-
-        // Allow 1.2s for sockets to bind, then restart client feeds
-        setTimeout(() =>{
-          cameras.forEach((cam) =>startStream(cam.id));
-          pollMetrics();
-        }, 1200);
-      } else {
-        showToast("Failed to communicate with CamHub service manager", "error", 4000);
-      }
-    } catch (err) {
-      showToast("Could not reach service manager. Run server.py on port 3000.", "error", 4500);
-    } finally {
-      isProcessing = false;
-      runBtn.classList.remove("is-loading");
-      runBtn.disabled = false;
-      if (icon) icon.classList.remove("btn-spinner");
-      await checkStatus();
-    }
-  });
-
-  // Initial check & periodic sync
-  checkStatus();
-  setInterval(checkStatus, 8000);
+  if (diagBtn) {
+    diagBtn.onclick = () => {
+      const dlg = document.getElementById("diagnostics-dialog");
+      if (dlg && typeof dlg.showModal === "function") dlg.showModal();
+    };
+  }
 }
 
 function formatDuration(sec) {
@@ -1881,23 +2429,67 @@ function formatDuration(sec) {
 }
 
 const cameraHealthData = new Map();
+const serviceStatusData = new Map();
 
 async function pollHealth() {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() =>controller.abort(), 2500);
+    const timer = setTimeout(() => controller.abort(), 2500);
     const res = await fetch("/api/health", { cache: "no-store", signal: controller.signal });
     clearTimeout(timer);
     if (!res.ok) return;
     const data = await res.json();
 
-    // 1. Update Fleet Health pill in header
-    const fleetPill = document.querySelector("#fleet-health-pill");
-    const fleetText = document.querySelector("#fleet-health-text");
-    if (fleetPill && fleetText && data.summary) {
-      const fleetStatus = (data.status || "UNKNOWN").toLowerCase();
-      fleetPill.className = `fleet-health-pill ${fleetStatus}`;
-      fleetText.textContent = `Fleet: ${data.status} (${data.summary.healthy}/${data.summary.total} healthy)`;
+    // 1. Update Topbar System Indicator & Fleet Counts
+    if (data.summary) {
+      const summary = data.summary;
+      const isAllHealthy = summary.healthy === summary.total && summary.total > 0;
+      const hasOffline = summary.offline > 0;
+
+      const healthPill = document.getElementById("system-health-pill");
+      const healthDot = document.getElementById("system-health-dot");
+      const healthText = document.getElementById("system-health-text");
+
+      if (healthPill && healthDot && healthText) {
+        if (isAllHealthy) {
+          healthPill.className = "system-status-indicator live";
+          healthDot.className = "status-dot live";
+          healthText.textContent = "System Running";
+        } else if (hasOffline) {
+          healthPill.className = "system-status-indicator danger";
+          healthDot.className = "status-dot offline";
+          healthText.textContent = "System Alert";
+        } else {
+          healthPill.className = "system-status-indicator warn";
+          healthDot.className = "status-dot warn";
+          healthText.textContent = "System Degraded";
+        }
+      }
+
+      // Top Overview Card Counts
+      const totEl = document.getElementById("stat-total-cams");
+      const hlyEl = document.getElementById("stat-healthy-cams");
+      const degEl = document.getElementById("stat-degraded-cams");
+      const offEl = document.getElementById("stat-offline-cams");
+
+      if (totEl) totEl.textContent = summary.total;
+      if (hlyEl) hlyEl.textContent = summary.healthy;
+      if (degEl) degEl.textContent = summary.degraded;
+      if (offEl) offEl.textContent = summary.offline;
+
+      // Fleet toolbar counts & filter chip badges
+      const countTag = document.getElementById("fleet-count-tag");
+      if (countTag) countTag.textContent = `${summary.total} Cameras`;
+
+      const cAll = document.getElementById("chip-count-all");
+      const cHly = document.getElementById("chip-count-healthy");
+      const cDeg = document.getElementById("chip-count-degraded");
+      const cOff = document.getElementById("chip-count-offline");
+
+      if (cAll) cAll.textContent = summary.total;
+      if (cHly) cHly.textContent = summary.healthy;
+      if (cDeg) cDeg.textContent = summary.degraded;
+      if (cOff) cOff.textContent = summary.offline;
     }
 
     // 2. Update each camera
@@ -1907,68 +2499,19 @@ async function pollHealth() {
         const status = (h.status || "UNKNOWN").toLowerCase();
         const statusUpper = h.status || "UNKNOWN";
 
-        // Tile header badge
-        const tileBadge = document.querySelector(`[data-tile-health="${CSS.escape(cid)}"]`);
-        if (tileBadge) {
-          tileBadge.className = `health-tile-badge ${status}`;
-          tileBadge.textContent = statusUpper;
+        // Card status badge (strictly rectangular with tint, NO outline capsule)
+        const statusBadge = document.querySelector(`[data-status-badge="${CSS.escape(cid)}"]`);
+        if (statusBadge) {
+          statusBadge.className = `badge-status ${status}`;
+          statusBadge.textContent = statusUpper;
         }
 
-        // Analytics card badge
-        const cardBadge = document.querySelector(`[data-health-badge="${CSS.escape(cid)}"]`);
-        if (cardBadge) {
-          cardBadge.className = `health-badge-pill ${status}`;
-          cardBadge.textContent = statusUpper;
-        }
-
-        // Analytics card health section
-        const sec = document.querySelector(`[data-health-section="${CSS.escape(cid)}"]`);
-        const stTitle = document.querySelector(`[data-health-state="${CSS.escape(cid)}"]`);
-        const stDur = document.querySelector(`[data-health-duration="${CSS.escape(cid)}"]`);
-        const stChk = document.querySelector(`[data-health-checked="${CSS.escape(cid)}"]`);
-        const stReason = document.querySelector(`[data-health-reason="${CSS.escape(cid)}"]`);
-
-        if (sec) sec.className = `health-monitor-section ${status}`;
-        if (stTitle) stTitle.textContent = `STATUS: ${statusUpper}`;
-        if (stDur) {
-          const isIncident = statusUpper === "DEGRADED" || statusUpper === "OFFLINE";
-          const durSec = isIncident ? h.incidentDurationSeconds : h.stateDurationSeconds;
-          const label = isIncident ? "Incident" : "Stable";
-          stDur.textContent = `${label}: ${formatDuration(durSec)}`;
-        }
-        if (stChk) {
-          const dt = h.lastChecked ? new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(h.lastChecked)) : "-";
-          stChk.textContent = `Checked: ${dt}`;
-        }
-        if (stReason) {
-          stReason.textContent = h.reason || "Operating normally.";
-        }
-
-        // Signals tags
-        const chk = h.checks || {};
-        const pTag = document.querySelector(`[data-sig-port="${CSS.escape(cid)}"]`);
-        const fTag = document.querySelector(`[data-sig-feed="${CSS.escape(cid)}"]`);
-        const zTag = document.querySelector(`[data-sig-frozen="${CSS.escape(cid)}"]`);
-        const fpsTag = document.querySelector(`[data-sig-fps="${CSS.escape(cid)}"]`);
-
-        if (pTag) {
-          pTag.textContent = chk.portListening ? "Port: Open" : "Port: Closed";
-          pTag.className = `signal-tag ${chk.portListening ? "pass" : "fail"}`;
-        }
-        if (fTag) {
-          pTag.textContent = chk.feedAlive ? "Feed: Flowing" : "Feed: Stalled";
-          pTag.className = `signal-tag ${chk.feedAlive ? "pass" : "warn"}`;
-        }
-        if (zTag) {
-          zTag.textContent = chk.streamFrozen ? "Frozen: YES" : "Frozen: No";
-          zTag.className = `signal-tag ${chk.streamFrozen ? "fail" : "pass"}`;
-        }
-        if (fpsTag) {
-          fpsTag.textContent = `FPS: ${h.metrics?.fps ?? 0} fps`;
-          fpsTag.className = `signal-tag ${chk.fpsAdequate ? "pass" : "warn"}`;
+        const dot = document.querySelector(`[data-dot="${CSS.escape(cid)}"]`);
+        if (dot) {
+          dot.className = `status-dot ${status === "healthy" ? "online" : status === "degraded" ? "warn" : "offline"}`;
         }
       }
-      updateCameraFilterUI();
+      applyFleetFilter();
     }
 
     // 3. Update Supervisor & Auto-Recovery state
@@ -1977,38 +2520,9 @@ async function pollHealth() {
       if (sRes.ok) {
         const sData = await sRes.json();
         for (const [cid, sInfo] of Object.entries(sData.services || {})) {
-          const supPill = document.querySelector(`[data-sup-pill="${CSS.escape(cid)}"]`);
-          const resetBtn = document.querySelector(`[data-reset-breaker="${CSS.escape(cid)}"]`);
-
-          if (supPill) {
-            const st = sInfo.state || (sInfo.running ? "RUNNING" : "STOPPED");
-            const pidStr = sInfo.pid ? ` (PID ${sInfo.pid})` : "";
-            const backoffStr = sInfo.nextAllowedRestartIn >0 ? `, Cooldown ${sInfo.nextAllowedRestartIn}s` : "";
-            supPill.textContent = `Process: ${st}${pidStr}${backoffStr}`;
-            supPill.className = `supervisor-pill state-${st.toLowerCase()}`;
-          }
-
-          if (resetBtn) {
-            const isTripped = Boolean(sInfo.circuitBreakerTripped);
-            resetBtn.style.display = isTripped ? "inline-flex" : "none";
-            resetBtn.onclick = async (e) =>{
-              e.stopPropagation();
-              resetBtn.disabled = true;
-              resetBtn.textContent = "Resetting…";
-              try {
-                await fetch(`/api/recovery/reset?id=${encodeURIComponent(cid)}`, { method: "POST" });
-                await fetch(`/api/services/start?id=${encodeURIComponent(cid)}`, { method: "POST" });
-                showToast(`Circuit breaker reset for ${cid}. Process restarted.`, "success", 3000);
-                setTimeout(pollHealth, 600);
-              } catch {
-                showToast(`Failed to reset circuit breaker for ${cid}`, "error", 3000);
-              } finally {
-                resetBtn.disabled = false;
-                resetBtn.textContent = "Reset Circuit Breaker";
-              }
-            };
-          }
+          serviceStatusData.set(cid, sInfo);
         }
+        updatePipelineInspector();
       }
     } catch {}
   } catch {
@@ -2925,8 +3439,8 @@ function initNotificationCenter() {
  </div>
  </div>
  <div class="notif-actions">
-              ${isUnread ? `<button class="button button-small notif-ack-btn" data-id="${escapeHtml(n.id)}" title="Acknowledge">✓</button>` : ''}
- <button class="button button-small notif-del-btn" data-id="${escapeHtml(n.id)}" title="Delete">✕</button>
+              ${isUnread ? `<button class="button button-small notif-ack-btn" data-id="${escapeHtml(n.id)}" title="Acknowledge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg></button>` : ''}
+ <button class="button button-small notif-del-btn" data-id="${escapeHtml(n.id)}" title="Delete"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
  </div>
  </div>
         `;
@@ -3015,10 +3529,23 @@ initEventsTimeline();
 initCameraFilter();
 initDiagnosticsModal();
 initNotificationCenter();
+initFpsChart();
+initPipelineInspector();
+initFleetFilters();
 render();
 restoreLayoutPreference();
 
-// Start periodic telemetry poller (every 2s)
+// Start periodic telemetry pollers
+pollDiagnosticsSummary();
+setInterval(pollDiagnosticsSummary, 3000);
+
+pollRecentEvents();
+setInterval(pollRecentEvents, 5000);
+
+pollStorageCard();
+setInterval(pollStorageCard, 10000);
+
+// Start metrics poller (every 2s)
 setInterval(pollMetrics, 2000);
 pollMetrics();
 

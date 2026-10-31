@@ -191,6 +191,7 @@ DIAGNOSTICS_SERVICE = CamHubDiagnosticsService(
     notification_center=NOTIFICATION_CENTER
 )
 
+SERVER_START_TIME = time.time()
 STATIC_DIR = WEB_DIR if os.path.isdir(WEB_DIR) else BASE_DIR
 
 class CamHubHandler(SimpleHTTPRequestHandler):
@@ -706,6 +707,7 @@ class CamHubHandler(SimpleHTTPRequestHandler):
                 self.send_json(200, {
                     "overallStatus": overall,
                     "issueCount": errors["totalErrorCount"],
+                    "uptimeSeconds": round(time.time() - SERVER_START_TIME, 1),
                     "software": software,
                     "resources": resources,
                     "ports": ports,
@@ -778,12 +780,41 @@ class CamHubHandler(SimpleHTTPRequestHandler):
         qs = parse_qs(url.query)
         cid = qs.get("id", [None])[0] or qs.get("cameraId", [None])[0]
 
+        # Read JSON body payload if provided
+        body_json = {}
+        content_len = int(self.headers.get("Content-Length", 0) or 0)
+        if content_len > 0 and "application/json" in self.headers.get("Content-Type", ""):
+            try:
+                body_bytes = self.rfile.read(content_len)
+                parsed = json.loads(body_bytes.decode("utf-8"))
+                if isinstance(parsed, dict):
+                    body_json = parsed
+                    if not cid:
+                        cid = body_json.get("cameraId") or body_json.get("id")
+            except Exception:
+                pass
+
         # Recording controls
         if url.path == "/api/recordings/start":
             if not cid:
                 self.send_json(400, {"error": "Missing 'cameraId' or 'id' parameter"})
                 return
-            ok, msg = RECORDING_MANAGER.start_recording(cid, mode="manual")
+
+            # Check if camera decoder port is open before starting recording
+            cfg = load_config()
+            cam = next((c for c in cfg.get("cameras", []) if c.get("id") == cid), None)
+            if cam:
+                port = cam.get("port")
+                if port and not is_port_open(port):
+                    self.send_json(400, {
+                        "success": False,
+                        "error": f"Camera '{cid}' decoder on port {port} is offline. Start the camera first.",
+                        "message": f"Camera '{cid}' decoder on port {port} is offline. Please start camera first via 'Run All'."
+                    })
+                    return
+
+            mode = body_json.get("mode") or "manual"
+            ok, msg = RECORDING_MANAGER.start_recording(cid, mode=mode)
             self.send_json(200 if ok else 400, {"success": ok, "message": msg, "storage": RECORDING_MANAGER.get_storage_status()})
             return
 
@@ -799,8 +830,8 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             if not cid:
                 self.send_json(400, {"error": "Missing 'cameraId' or 'id' parameter"})
                 return
-            dur_str = qs.get("duration", ["30"])[0]
-            dur = int(dur_str) if dur_str.isdigit() else 30
+            dur_val = body_json.get("duration") or qs.get("duration", ["30"])[0]
+            dur = int(dur_val) if str(dur_val).isdigit() else 30
             ok, msg = RECORDING_MANAGER.trigger_motion_recording(cid, duration=dur)
             self.send_json(200 if ok else 400, {"success": ok, "message": msg, "storage": RECORDING_MANAGER.get_storage_status()})
             return
