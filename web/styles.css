@@ -317,6 +317,89 @@ h1, h2, h3, p, dl, dd { margin: 0; }
 .video.fill img {
   object-fit: cover;
 }
+
+/* Multi-Lens (3-in-1) Camera 1 Slicing */
+.video.lens-1, .video.lens-2, .video.lens-3 {
+  aspect-ratio: 16 / 9 !important;
+  --cam-aspect: 16 / 9 !important;
+  --cam-ratio: 1.7778 !important;
+}
+.video.lens-1 img, .video.lens-2 img, .video.lens-3 img {
+  position: absolute !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 300% !important;
+  object-fit: fill !important;
+}
+.video.lens-1 img {
+  top: 0% !important;
+}
+.video.lens-2 img {
+  top: -100% !important;
+}
+.video.lens-3 img {
+  top: -200% !important;
+}
+
+/* 3-Lens Split Grid Layout */
+.lens-split-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  width: 100%;
+}
+.cam-split-card {
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+@media (max-width: 900px) {
+  .lens-split-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Lens Selector Bar */
+.lens-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.lens-bar-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+}
+.lens-pill {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--well);
+  padding: 2px 3px;
+  border-radius: 8px;
+}
+.lens-pill button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: 600 11px var(--sans);
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.lens-pill button:hover {
+  color: var(--text);
+}
+.lens-pill button[aria-pressed="true"] {
+  background: var(--text);
+  color: var(--bg);
+}
+
 .res-tag {
   display: inline-block;
   font: 600 11px var(--mono);

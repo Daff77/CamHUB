@@ -234,6 +234,16 @@
     fitMode = localStorage.getItem('camhub_fit_mode') || 'contain';
   } catch (_) {}
 
+  let cam1LensMode = 'all';
+  try {
+    cam1LensMode = localStorage.getItem('camhub_cam1_lens') || 'all';
+  } catch (_) {}
+
+  let cam1GridLens = 'all';
+  try {
+    cam1GridLens = localStorage.getItem('camhub_cam1_grid_lens') || 'all';
+  } catch (_) {}
+
   function gcd(a, b) {
     return b === 0 ? a : gcd(b, a % b);
   }
@@ -296,9 +306,27 @@
     const s = ST[c.s] || ST.degraded;
     const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
     const fillCls = fitMode === 'cover' ? ' fill' : '';
+    const isCam1 = c.id === 'v380-1';
+    const lensCls = isCam1 && cam1GridLens !== 'all' ? ` lens-${cam1GridLens}` : '';
+    const cardAspect = isCam1 && cam1GridLens !== 'all' ? '16 / 9' : (c.aspectRatio || '16 / 9');
+    const cardRatioVal = isCam1 && cam1GridLens !== 'all' ? 1.7778 : (c.aspectVal || 1.7778);
+    const cardRes = isCam1 && cam1GridLens !== 'all' ? '1920×1080 (16:9)' : (c.resolution || '');
+
+    const lensPill = isCam1 ? `
+      <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px;">
+        <span style="font-size:11px;color:var(--muted);font-weight:600;">Lensa:</span>
+        <div class="lens-pill">
+          <button data-cam1-lens="all" aria-pressed="${cam1GridLens === 'all'}">3-in-1</button>
+          <button data-cam1-lens="1" aria-pressed="${cam1GridLens === '1'}">L1 Atas</button>
+          <button data-cam1-lens="2" aria-pressed="${cam1GridLens === '2'}">L2 Tengah</button>
+          <button data-cam1-lens="3" aria-pressed="${cam1GridLens === '3'}">L3 Bawah</button>
+        </div>
+      </div>
+    ` : '';
+
     return `
       <article class="card cam">
-        <div class="video${fillCls}" id="feed-${c.id}" style="--cam-aspect: ${c.aspectRatio || '16 / 9'}; --cam-ratio: ${c.aspectVal || 1.7778};">
+        <div class="video${fillCls}${lensCls}" id="feed-${c.id}" style="--cam-aspect: ${cardAspect}; --cam-ratio: ${cardRatioVal};">
           ${bar(c, s)}
           <img class="mjpeg-stream" id="stream-img-${c.id}" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
             onerror="this.style.display='none'; const m=document.getElementById('msg-${c.id}'); if(m) m.style.display='flex';" 
@@ -307,7 +335,8 @@
           ${msg(c, `msg-${c.id}`)}
         </div>
         <div class="cmeta">
-          <div class="ip">${c.ip} · ${c.d} <span class="res-tag">${c.resolution || ''}</span></div>
+          <div class="ip">${c.ip} · ${c.d} <span class="res-tag">${cardRes}</span></div>
+          ${lensPill}
           ${stats(c)}
           ${acts(c, `<button class="btn sm" data-focus="${i}">Focus</button>`)}
         </div>
@@ -345,49 +374,153 @@
     const stage = $('#stage');
     const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
     const fillCls = fitMode === 'cover' ? ' fill' : '';
+    const isCam1 = c.id === 'v380-1';
+
     if (stage) {
-      stage.innerHTML = `
-        <div class="card cam">
-          <div class="video big${fillCls}" id="mc" style="--cam-aspect: ${c.aspectRatio || '16 / 9'}; --cam-ratio: ${c.aspectVal || 1.7778}; transform:scale(${zoomLevel});transform-origin:center center;">
-            ${bar(c, s)}
-            <img class="mjpeg-stream" id="stream-img-main" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
-              onerror="this.style.display='none'; const m=document.getElementById('msg-main'); if(m) m.style.display='flex';" 
-              onload="this.style.display='block'; const m=document.getElementById('msg-main'); if(m) m.style.display='none'; window.applyCameraRatio && window.applyCameraRatio(this, '${c.id}');"
-              style="${isHealthy ? 'display:block;' : 'display:none;'}">
-            ${msg(c, 'msg-main')}
-            <div class="vfoot">
-              <span class="ts"></span>
-              <span class="res-tag">${c.resolution || ''}</span>
-              <div class="zoom">
-                <button class="btn" data-zoom="in" aria-label="Zoom in">+</button>
-                <button class="btn" data-zoom="reset" aria-label="Reset zoom">${zoomLevel.toFixed(1)}x</button>
-                <button class="btn" data-zoom="out" aria-label="Zoom out">−</button>
-                <button class="btn" data-fs aria-label="Full screen">⤢</button>
+      if (isCam1 && cam1LensMode === 'split') {
+        // Multi-Lens Split 3-Channel Grid View
+        stage.innerHTML = `
+          <div class="card cam" style="grid-column: 1 / -1;">
+            <div class="lens-bar">
+              <span class="lens-bar-label">Sudut Pandang Lensa (Camera 1 · 3-in-1 Hardware):</span>
+              <div class="seg" id="lens-selector" role="group" aria-label="Pilih Lensa Kamera 1">
+                <button class="btn sm" data-lens="all" aria-pressed="false">Semua (3-in-1)</button>
+                <button class="btn sm" data-lens="1" aria-pressed="false">Lensa 1 · Atas</button>
+                <button class="btn sm" data-lens="2" aria-pressed="false">Lensa 2 · Tengah</button>
+                <button class="btn sm" data-lens="3" aria-pressed="false">Lensa 3 · Bawah</button>
+                <button class="btn sm" data-lens="split" aria-pressed="true">Split 3 Lensa</button>
               </div>
             </div>
-          </div>
-          <div class="cmeta">
-            <div class="mrow">
-              <div>
-                <b class="nm">${escapeHtml(c.n)}</b>
-                <div class="ip">${c.ip} · ${c.d} · Port ${c.p} <span class="res-tag">${c.resolution || ''}</span></div>
+            <div class="lens-split-grid">
+              <div class="cam-split-card">
+                <div class="video lens-1${fillCls}" style="aspect-ratio:16/9;">
+                  <div class="vbar"><span><i class="dot ${s[1]}"></i>Lensa 1 · Atas (Panoramic)</span><em>Live · 1920×1080</em></div>
+                  <img class="mjpeg-stream" src="${c.streamUrl}" alt="Lensa 1" style="${isHealthy ? 'display:block;' : 'display:none;'}">
+                  ${msg(c, 'msg-lens-1')}
+                </div>
+                <div class="cmeta" style="padding:10px 4px 2px;">
+                  <div class="mrow">
+                    <b>Lensa 1 · Panoramic Wide (Atas)</b>
+                    <button class="btn sm" data-switch-lens="1">Perbesar Lensa 1</button>
+                  </div>
+                  <div class="ip">Sensor Utama · 1920×1080 · 16:9 widescreen</div>
+                </div>
               </div>
-              ${acts(c, '')}
+              <div class="cam-split-card">
+                <div class="video lens-2${fillCls}" style="aspect-ratio:16/9;">
+                  <div class="vbar"><span><i class="dot ${s[1]}"></i>Lensa 2 · Tengah (Fixed Tele)</span><em>Live · 1920×1080</em></div>
+                  <img class="mjpeg-stream" src="${c.streamUrl}" alt="Lensa 2" style="${isHealthy ? 'display:block;' : 'display:none;'}">
+                  ${msg(c, 'msg-lens-2')}
+                </div>
+                <div class="cmeta" style="padding:10px 4px 2px;">
+                  <div class="mrow">
+                    <b>Lensa 2 · Fixed Tele (Tengah)</b>
+                    <button class="btn sm" data-switch-lens="2">Perbesar Lensa 2</button>
+                  </div>
+                  <div class="ip">Sensor Sekunder · 1920×1080 · 16:9 widescreen</div>
+                </div>
+              </div>
+              <div class="cam-split-card">
+                <div class="video lens-3${fillCls}" style="aspect-ratio:16/9;">
+                  <div class="vbar"><span><i class="dot ${s[1]}"></i>Lensa 3 · Bawah (PTZ Rotasi)</span><em>Live · 1920×1080</em></div>
+                  <img class="mjpeg-stream" src="${c.streamUrl}" alt="Lensa 3" style="${isHealthy ? 'display:block;' : 'display:none;'}">
+                  ${msg(c, 'msg-lens-3')}
+                </div>
+                <div class="cmeta" style="padding:10px 4px 2px;">
+                  <div class="mrow">
+                    <b>Lensa 3 · PTZ Rotasi (Bawah)</b>
+                    <button class="btn sm" data-switch-lens="3">Perbesar Lensa 3</button>
+                  </div>
+                  <div class="ip">Sensor Gerak PTZ · 1920×1080 · 16:9 widescreen</div>
+                </div>
+              </div>
             </div>
-            ${stats(c)}
-            <div class="signal-checks">
-              <div class="signal-check"><i class="dot ${c.checks.portListening ? 'good-t' : 'bad-t'}"></i>Port :${c.p}</div>
-              <div class="signal-check"><i class="dot ${c.checks.feedAlive ? 'good-t' : 'warn-t'}"></i>Feed Stream</div>
-              <div class="signal-check"><i class="dot ${!c.checks.streamFrozen ? 'good-t' : 'bad-t'}"></i>Freeze Detector</div>
-              <div class="signal-check"><i class="dot ${c.checks.fpsAdequate ? 'good-t' : 'warn-t'}"></i>FPS Quality</div>
+            <div class="cmeta" style="margin-top:14px;">
+              <div class="mrow">
+                <div>
+                  <b class="nm">${escapeHtml(c.n)} (3 Lensa Aktif Simultan)</b>
+                  <div class="ip">${c.ip} · ${c.d} · Port ${c.p} <span class="res-tag">3x 1920×1080</span></div>
+                </div>
+                ${acts(c, '')}
+              </div>
+              ${stats(c)}
+              <div class="signal-checks">
+                <div class="signal-check"><i class="dot ${c.checks.portListening ? 'good-t' : 'bad-t'}"></i>Port :${c.p}</div>
+                <div class="signal-check"><i class="dot ${c.checks.feedAlive ? 'good-t' : 'warn-t'}"></i>Feed Stream</div>
+                <div class="signal-check"><i class="dot ${!c.checks.streamFrozen ? 'good-t' : 'bad-t'}"></i>Freeze Detector</div>
+                <div class="signal-check"><i class="dot ${c.checks.fpsAdequate ? 'good-t' : 'warn-t'}"></i>FPS Quality</div>
+              </div>
+              ${c.circuitBreakerTripped ? `<div class="alert" style="margin-top:10px;"><svg class="ico"><use href="#i-warn"/></svg><p><b>Circuit Breaker Tripped</b><span>Camera exceeded restart limits. <button class="btn sm adm" data-act="reset-cb" data-cid="${c.id}" style="margin-left:8px;">Reset Breaker</button></span></p></div>` : ''}
             </div>
-            ${c.circuitBreakerTripped ? `<div class="alert" style="margin-top:10px;"><svg class="ico"><use href="#i-warn"/></svg><p><b>Circuit Breaker Tripped</b><span>Camera exceeded restart limits. <button class="btn sm adm" data-act="reset-cb" data-cid="${c.id}" style="margin-left:8px;">Reset Breaker</button></span></p></div>` : ''}
           </div>
-        </div>
-        <div class="side">
-          ${cams.map((x, i) => thumb(x, i, i === sel, 'data-thumb')).join('')}
-        </div>
-      `;
+          <div class="side">
+            ${cams.map((x, i) => thumb(x, i, i === sel, 'data-thumb')).join('')}
+          </div>
+        `;
+      } else {
+        const lensCls = isCam1 && cam1LensMode !== 'all' ? ` lens-${cam1LensMode}` : '';
+        const stageAspect = isCam1 && cam1LensMode !== 'all' ? '16 / 9' : (c.aspectRatio || '16 / 9');
+        const stageRatioVal = isCam1 && cam1LensMode !== 'all' ? 1.7778 : (c.aspectVal || 1.7778);
+        const stageRes = isCam1 && cam1LensMode !== 'all' ? '1920×1080 (16:9)' : (c.resolution || '');
+        const lensTitle = isCam1 && cam1LensMode === '1' ? 'Camera 1 · Lensa 1 (Atas - Panoramic)' : (isCam1 && cam1LensMode === '2' ? 'Camera 1 · Lensa 2 (Tengah - Fixed Tele)' : (isCam1 && cam1LensMode === '3' ? 'Camera 1 · Lensa 3 (Bawah - PTZ Rotasi)' : c.n));
+
+        const lensBar = isCam1 ? `
+          <div class="lens-bar">
+            <span class="lens-bar-label">Sudut Pandang Lensa (3-in-1 Hardware):</span>
+            <div class="seg" id="lens-selector" role="group" aria-label="Pilih Lensa Kamera 1">
+              <button class="btn sm" data-lens="all" aria-pressed="${cam1LensMode === 'all'}">Semua (3-in-1)</button>
+              <button class="btn sm" data-lens="1" aria-pressed="${cam1LensMode === '1'}">Lensa 1 · Atas</button>
+              <button class="btn sm" data-lens="2" aria-pressed="${cam1LensMode === '2'}">Lensa 2 · Tengah</button>
+              <button class="btn sm" data-lens="3" aria-pressed="${cam1LensMode === '3'}">Lensa 3 · Bawah</button>
+              <button class="btn sm" data-lens="split" aria-pressed="false">Split 3 Lensa</button>
+            </div>
+          </div>
+        ` : '';
+
+        stage.innerHTML = `
+          <div class="card cam">
+            ${lensBar}
+            <div class="video big${fillCls}${lensCls}" id="mc" style="--cam-aspect: ${stageAspect}; --cam-ratio: ${stageRatioVal}; transform:scale(${zoomLevel});transform-origin:center center;">
+              ${bar(c, s)}
+              <img class="mjpeg-stream" id="stream-img-main" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
+                onerror="this.style.display='none'; const m=document.getElementById('msg-main'); if(m) m.style.display='flex';" 
+                onload="this.style.display='block'; const m=document.getElementById('msg-main'); if(m) m.style.display='none'; window.applyCameraRatio && window.applyCameraRatio(this, '${c.id}');"
+                style="${isHealthy ? 'display:block;' : 'display:none;'}">
+              ${msg(c, 'msg-main')}
+              <div class="vfoot">
+                <span class="ts"></span>
+                <span class="res-tag">${stageRes}</span>
+                <div class="zoom">
+                  <button class="btn" data-zoom="in" aria-label="Zoom in">+</button>
+                  <button class="btn" data-zoom="reset" aria-label="Reset zoom">${zoomLevel.toFixed(1)}x</button>
+                  <button class="btn" data-zoom="out" aria-label="Zoom out">−</button>
+                  <button class="btn" data-fs aria-label="Full screen">⤢</button>
+                </div>
+              </div>
+            </div>
+            <div class="cmeta">
+              <div class="mrow">
+                <div>
+                  <b class="nm">${escapeHtml(lensTitle)}</b>
+                  <div class="ip">${c.ip} · ${c.d} · Port ${c.p} <span class="res-tag">${stageRes}</span></div>
+                </div>
+                ${acts(c, '')}
+              </div>
+              ${stats(c)}
+              <div class="signal-checks">
+                <div class="signal-check"><i class="dot ${c.checks.portListening ? 'good-t' : 'bad-t'}"></i>Port :${c.p}</div>
+                <div class="signal-check"><i class="dot ${c.checks.feedAlive ? 'good-t' : 'warn-t'}"></i>Feed Stream</div>
+                <div class="signal-check"><i class="dot ${!c.checks.streamFrozen ? 'good-t' : 'bad-t'}"></i>Freeze Detector</div>
+                <div class="signal-check"><i class="dot ${c.checks.fpsAdequate ? 'good-t' : 'warn-t'}"></i>FPS Quality</div>
+              </div>
+              ${c.circuitBreakerTripped ? `<div class="alert" style="margin-top:10px;"><svg class="ico"><use href="#i-warn"/></svg><p><b>Circuit Breaker Tripped</b><span>Camera exceeded restart limits. <button class="btn sm adm" data-act="reset-cb" data-cid="${c.id}" style="margin-left:8px;">Reset Breaker</button></span></p></div>` : ''}
+            </div>
+          </div>
+          <div class="side">
+            ${cams.map((x, i) => thumb(x, i, i === sel, 'data-thumb')).join('')}
+          </div>
+        `;
+      }
     }
 
     const camsGrid = $('#cams');
@@ -1578,6 +1711,37 @@
     if ((m = c('[data-thumb]'))) {
       sel = +m.dataset.thumb;
       return live();
+    }
+
+    // Camera 1 Multi-Lens selection
+    if ((m = c('[data-lens]'))) {
+      cam1LensMode = m.dataset.lens;
+      try { localStorage.setItem('camhub_cam1_lens', cam1LensMode); } catch (_) {}
+      return live();
+    }
+    if ((m = c('[data-switch-lens]'))) {
+      cam1LensMode = m.dataset.switchLens;
+      try { localStorage.setItem('camhub_cam1_lens', cam1LensMode); } catch (_) {}
+      return live();
+    }
+    if ((m = c('[data-cam1-lens]'))) {
+      cam1GridLens = m.dataset.cam1Lens;
+      try { localStorage.setItem('camhub_cam1_grid_lens', cam1GridLens); } catch (_) {}
+      const feed1 = $('#feed-v380-1');
+      if (feed1) {
+        feed1.className = `video${fitMode === 'cover' ? ' fill' : ''}${cam1GridLens !== 'all' ? ` lens-${cam1GridLens}` : ''}`;
+        if (cam1GridLens !== 'all') {
+          feed1.style.setProperty('--cam-aspect', '16 / 9');
+          feed1.style.setProperty('--cam-ratio', '1.7778');
+        } else {
+          feed1.style.setProperty('--cam-aspect', '16 / 27');
+          feed1.style.setProperty('--cam-ratio', '0.5926');
+        }
+      }
+      document.querySelectorAll('[data-cam1-lens]').forEach((b) => {
+        b.setAttribute('aria-pressed', b.dataset.cam1Lens === cam1GridLens ? 'true' : 'false');
+      });
+      return;
     }
 
     // Zoom controls
