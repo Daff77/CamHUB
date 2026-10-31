@@ -1,863 +1,424 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CamHub — Command Center</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f59e0b'%3E%3Cpath d='M14 7.5A1.5 1.5 0 0 1 15.5 6h5A1.5 1.5 0 0 1 22 7.5v9A1.5 1.5 0 0 1 20.5 18h-5A1.5 1.5 0 0 1 14 16.5zM2 9a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="styles.css?v=3.0" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CamHub — Command Center</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%235aa2ff'%3E%3Cpath d='M3 8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM15 11l6-3v8l-6-3'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css?v=4.0">
 </head>
 <body>
-  <div class="app-shell">
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-icon-wrap">
-          <svg class="brand-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 7.5A1.5 1.5 0 0 1 15.5 6h5A1.5 1.5 0 0 1 22 7.5v9A1.5 1.5 0 0 1 20.5 18h-5A1.5 1.5 0 0 1 14 16.5z"></path>
-            <path d="M2 9a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"></path>
-          </svg>
-        </div>
-        <div class="brand-text-group">
-          <span class="brand-title">CamHub</span>
-          <span class="brand-subtitle">Command Center</span>
-        </div>
-      </div>
+<!-- SVG Icon Defs (Matching User Template) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-cam" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM15 11l6-3v8l-6-3"/></symbol>
+<symbol id="i-live" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18 16l.8 2.2L21 19l-2.2.8L18 22l-.8-2.2L15 19l2.2-.8z"/></symbol>
+<symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h11"/></symbol>
+<symbol id="i-re" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></symbol>
+<symbol id="i-pwr" viewBox="0 0 24 24"><path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0"/></symbol>
+<symbol id="i-side" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4 2.5 20h19zM12 10v4M12 17v.5"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+<symbol id="i-cross" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+<symbol id="i-dl" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+</defs></svg>
 
-      <nav class="nav" aria-label="Main navigation">
-        <a class="nav-link active" href="#overview" data-nav="overview">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="3" width="7" height="7" rx="1"></rect>
-              <rect x="14" y="3" width="7" height="7" rx="1"></rect>
-              <rect x="3" y="14" width="7" height="7" rx="1"></rect>
-              <rect x="14" y="14" width="7" height="7" rx="1"></rect>
-            </svg>
+<div class="shell" id="shell">
+  <!-- Sidebar Navigation -->
+  <aside class="sb" id="sb">
+    <div class="brand">
+      <svg class="ico"><use href="#i-cam"/></svg>
+      <div>CamHub<small>Command Center</small></div>
+    </div>
+    <nav class="nav" id="nav" aria-label="Main"></nav>
+    <div class="sbf">
+      <span class="good-t"><i class="dot" id="sbf-dot"></i><span style="color:var(--text)" id="sbf-status">System Running</span></span>
+      <span id="sbf-uptime">Local network · Uptime --</span>
+      <span>Version 1.4.0</span>
+    </div>
+  </aside>
+
+  <!-- Main View Area -->
+  <div class="main">
+    <header class="bar">
+      <button class="btn sq" id="sbt" aria-label="Show or hide sidebar" aria-expanded="true">
+        <svg class="ico"><use href="#i-side"/></svg>
+      </button>
+      <h1 id="title">Live View</h1>
+      <button class="btn sq" id="refresh" aria-label="Refresh feeds" title="Refresh state and feeds">
+        <svg class="ico"><use href="#i-re"/></svg>
+      </button>
+      <button class="btn" id="restart" title="Restart all camera decoder services">
+        <svg class="ico"><use href="#i-pwr"/></svg>
+        <span>Restart Cameras</span>
+      </button>
+    </header>
+
+    <main class="content">
+      <p class="lede" id="lede">Watch every camera in one place. Select a camera to focus on it.</p>
+
+      <!-- View 0: Live View (Focus vs Wall) -->
+      <section class="view" id="v-live">
+        <div class="row">
+          <div class="seg" id="layouts" role="group" aria-label="Layout">
+            <button aria-pressed="true" data-l="focus">Focus</button>
+            <button aria-pressed="false" data-l="wall">Wall</button>
+          </div>
+          <span class="r sub" id="live-fleet-summary">
+            <i class="dot warn-t" id="live-fleet-dot" style="display:inline-block;margin-right:6px"></i>
+            <span id="live-fleet-counts">0 Healthy · 3 Degraded · 0 Offline</span>
           </span>
-          <span class="nav-label">Monitoring</span>
-          <span class="nav-count" id="nav-camera-count">3</span>
-        </a>
-        <a class="nav-link" href="#playback" data-nav="playback">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="9"></circle>
-              <polygon points="10 8 16 12 10 16 10 8" fill="currentColor"></polygon>
-            </svg>
-          </span>
-          <span class="nav-label">Playback</span>
-        </a>
-        <a class="nav-link" href="#events" data-nav="events">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
-            </svg>
-          </span>
-          <span class="nav-label">Events &amp; AI</span>
-          <span class="nav-count" id="nav-events-count">0</span>
-        </a>
-        <a class="nav-link" href="#diagnostics" data-nav="diagnostics">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-            </svg>
-          </span>
-          <span class="nav-label">Diagnostics</span>
-        </a>
-        <a class="nav-link" href="#notifications" data-nav="notifications">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-            </svg>
-          </span>
-          <span class="nav-label">Notifications</span>
-          <span class="nav-count" id="nav-notif-count" style="display:none;">0</span>
-        </a>
-        <a class="nav-link" href="#setup" data-nav="setup">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="4 17 10 11 4 5"></polyline>
-              <line x1="12" y1="19" x2="20" y2="19"></line>
-            </svg>
-          </span>
-          <span class="nav-label">Setup Guide</span>
-        </a>
-      </nav>
-
-      <div class="sidebar-bottom">
-        <div class="mode-status">
-          <span class="status-dot online"></span>
-          <span class="mode-text">Local network</span>
         </div>
-        <div class="version-tag">v1.4.0</div>
-      </div>
-    </aside>
+        <div class="stage" id="stage"></div>
+        <div class="grid cams" id="cams" hidden></div>
+      </section>
 
-    <!-- Main Content Area -->
-    <main class="main-content">
-      <!-- Top Command Bar -->
-      <header class="topbar">
-        <div class="topbar-main">
-          <h1 class="page-title" id="page-title">Monitoring</h1>
-          <p class="status-sentence" id="status-sentence">Real-time camera health, pipeline, and fleet telemetry.</p>
+      <!-- View 1: Dashboard -->
+      <section class="view" id="v-dash" hidden>
+        <div class="row">
+          <h2 style="font-size:17px">Live Preview</h2>
+          <button class="btn r" id="openlive">Open Live View</button>
         </div>
+        <div class="grid prev" id="prev"></div>
 
-        <div class="topbar-actions">
-          <div class="system-status-indicator" id="system-health-pill">
-            <span class="status-dot live" id="system-health-dot"></span>
-            <span class="system-status-text" id="system-health-text">System Running</span>
-          </div>
-
-          <div class="uptime-display" id="uptime-display" title="Host daemon uptime">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <polyline points="12 6 12 12 16 14"></polyline>
-            </svg>
-            <span id="uptime-val">Uptime --</span>
-          </div>
-
-          <div class="action-btn-group">
-            <button class="button button-accent button-command" id="run-all-cameras" type="button" title="Start all decoder and adapter services directly">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
-              <span id="run-all-text">Run All</span>
-            </button>
-            <button class="button button-command" id="restart-all-cameras" type="button" title="Restart all camera decoder services">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
-              </svg>
-              <span>Restart All</span>
-            </button>
-          </div>
-
-          <button class="button button-icon" id="refresh-all" type="button" title="Refresh state and feeds">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-            </svg>
-          </button>
-          <button class="button button-icon" id="diagnostics-btn" type="button" aria-label="System diagnostics" title="Host diagnostics &amp; sanitized bundle">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
-            </svg>
-          </button>
-          <button class="button button-icon notif-bell-btn" id="notif-bell-btn" type="button" aria-label="Notifications" title="Notification center">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-            </svg>
-            <span class="notif-badge" id="notif-badge" style="display: none;">0</span>
-          </button>
-        </div>
-      </header>
-
-      <!-- View: Monitoring & Command Center Overview -->
-      <div class="view-panel active" id="overview">
-        <!-- Top Telemetry Row (3 Cards) -->
-        <section class="telemetry-overview-row">
-          <!-- Card 1: System Overview (Fleet Status) -->
-          <div class="telemetry-card">
-            <div class="card-head">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-                <polyline points="2 17 12 22 22 17"></polyline>
-                <polyline points="2 12 12 17 22 12"></polyline>
-              </svg>
-              <div class="card-title-wrap">
-                <h3 class="card-title">System Overview</h3>
-                <span class="card-subtitle">Overall camera fleet status</span>
-              </div>
+        <!-- Telemetry Row 1 (Fleet, Resources, Throughput) -->
+        <div class="grid d3" style="margin-top:16px">
+          <!-- Fleet Status Card -->
+          <div class="card">
+            <h2>Fleet Status</h2>
+            <p class="sub">3 cameras on the local network</p>
+            <div class="fleet">
+              <div><b id="fleet-healthy">0</b><span><i class="dot good-t"></i>Healthy</span></div>
+              <div><b id="fleet-degraded">3</b><span><i class="dot warn-t"></i>Degraded</span></div>
+              <div><b id="fleet-offline">0</b><span><i class="dot bad-t"></i>Offline</span></div>
             </div>
-            <div class="stat-counts-grid">
-              <div class="stat-col">
-                <span class="stat-number" id="stat-total-cams">3</span>
-                <span class="stat-label">Total Cameras</span>
-              </div>
-              <div class="stat-col">
-                <span class="stat-number text-live" id="stat-healthy-cams">0</span>
-                <span class="stat-label">Healthy</span>
-              </div>
-              <div class="stat-col">
-                <span class="stat-number text-warn" id="stat-degraded-cams">3</span>
-                <span class="stat-label">Degraded</span>
-              </div>
-              <div class="stat-col">
-                <span class="stat-number text-danger" id="stat-offline-cams">0</span>
-                <span class="stat-label">Offline</span>
-              </div>
+            <div class="stack" id="fleet-stack" role="img" aria-label="Fleet status distribution">
+              <i style="width:100%;background:var(--warn)"></i>
             </div>
           </div>
 
-          <!-- Card 2: Host Resource Meters -->
-          <div class="telemetry-card">
-            <div class="card-head">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="4" y="4" width="16" height="16" rx="2"></rect>
-                <rect x="9" y="9" width="6" height="6"></rect>
-                <line x1="9" y1="1" x2="9" y2="4"></line>
-                <line x1="15" y1="1" x2="15" y2="4"></line>
-                <line x1="9" y1="20" x2="9" y2="23"></line>
-                <line x1="15" y1="20" x2="15" y2="23"></line>
-                <line x1="20" y1="9" x2="23" y2="9"></line>
-                <line x1="20" y1="14" x2="23" y2="14"></line>
-                <line x1="1" y1="9" x2="4" y2="9"></line>
-                <line x1="1" y1="14" x2="4" y2="14"></line>
-              </svg>
-              <div class="card-title-wrap">
-                <h3 class="card-title">Host Resources</h3>
-                <span class="card-subtitle">Processor, memory &amp; engine load</span>
-              </div>
+          <!-- Host Resources Card -->
+          <div class="card">
+            <h2>Host Resources</h2>
+            <p class="sub">Processor, memory and AI engine</p>
+            <div class="meter">
+              <div>CPU <span id="res-cpu-val">28%</span></div>
+              <div class="bar2" id="res-cpu-bar" style="--w:28%"><i></i></div>
             </div>
-            <div class="resource-meters-list">
-              <div class="meter-item">
-                <div class="meter-header">
-                  <span class="meter-name">CPU</span>
-                  <span class="meter-val" id="meter-cpu-val">28%</span>
-                </div>
-                <div class="meter-track">
-                  <div class="meter-fill bar-live" id="meter-cpu-bar" style="width: 28%;"></div>
-                </div>
-              </div>
-              <div class="meter-item">
-                <div class="meter-header">
-                  <span class="meter-name">RAM</span>
-                  <span class="meter-val" id="meter-ram-val">8.3 / 16.0 GB (52%)</span>
-                </div>
-                <div class="meter-track">
-                  <div class="meter-fill bar-warn" id="meter-ram-bar" style="width: 52%;"></div>
-                </div>
-              </div>
-              <div class="meter-item">
-                <div class="meter-header">
-                  <span class="meter-name">GPU (AI Engine)</span>
-                  <span class="meter-val" id="meter-gpu-val">DirectML</span>
-                </div>
-                <div class="meter-track">
-                  <div class="meter-fill bar-live" id="meter-gpu-bar" style="width: 100%;"></div>
-                </div>
-              </div>
+            <div class="meter">
+              <div>Memory <span id="res-mem-val">8.3 of 16.0 GB (52%)</span></div>
+              <div class="bar2 warn" id="res-mem-bar" style="--w:52%"><i></i></div>
+            </div>
+            <div class="meter">
+              <div>AI Engine <span id="res-ai-val">DirectML</span></div>
+              <div class="bar2 good" id="res-ai-bar" style="--w:100%"><i></i></div>
             </div>
           </div>
 
-          <!-- Card 3: Fleet Throughput -->
-          <div class="telemetry-card">
-            <div class="card-head">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-              </svg>
-              <div class="card-title-wrap">
-                <h3 class="card-title">Stream Throughput</h3>
-                <span class="card-subtitle">Aggregate fleet traffic</span>
-              </div>
+          <!-- Stream Throughput Card -->
+          <div class="card">
+            <h2>Stream Throughput</h2>
+            <p class="sub">Combined traffic from all cameras</p>
+            <div class="tp">
+              <div><b id="tp-bw">0.0 / 0.0 Mbps</b><span>Bandwidth in / out</span></div>
+              <div><b id="tp-fps">0.0 fps</b><span>Total frame rate</span></div>
+              <div><b id="tp-lat">0 ms</b><span>Average latency</span></div>
+              <div><b id="tp-subs">0 / 82</b><span>Viewers (RTSP / Web)</span></div>
             </div>
-            <div class="throughput-grid">
-              <div class="throughput-item">
-                <div class="throughput-val" id="metric-bandwidth">0.0 Mbps / 0.0 Mbps</div>
-                <div class="throughput-lbl">Bandwidth (In / Out)</div>
-              </div>
-              <div class="throughput-item">
-                <div class="throughput-val" id="metric-agg-fps">0.0 fps</div>
-                <div class="throughput-lbl">Aggregate FPS</div>
-              </div>
-              <div class="throughput-item">
-                <div class="throughput-val" id="metric-avg-latency">0 ms</div>
-                <div class="throughput-lbl">Avg. Latency</div>
-              </div>
-              <div class="throughput-item">
-                <div class="throughput-val" id="metric-subscribers">0 RTSP · 82 Web</div>
-                <div class="throughput-lbl">Subscribers</div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Main Middle Split: Camera Fleet Grid + Pipeline Inspector -->
-        <div class="fleet-pipeline-layout">
-          <!-- Left Column: Camera Fleet -->
-          <section class="fleet-section">
-            <div class="fleet-toolbar">
-              <div class="fleet-title-group">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M23 7l-7 5 7 5V7z"></path>
-                  <rect x="1" y="5" width="15" height="14" rx="2"></rect>
-                </svg>
-                <h2 class="fleet-heading">Camera Fleet</h2>
-                <span class="fleet-count-tag" id="fleet-count-tag">3 Cameras</span>
-              </div>
-
-              <div class="fleet-filter-chips" id="fleet-filter-chips">
-                <button type="button" class="filter-chip active" data-filter="all" id="filter-all-btn">All <span class="chip-count" id="chip-count-all">3</span></button>
-                <button type="button" class="filter-chip" data-filter="healthy" id="filter-healthy-btn">Healthy <span class="chip-count text-live" id="chip-count-healthy">0</span></button>
-                <button type="button" class="filter-chip" data-filter="degraded" id="filter-degraded-btn">Degraded <span class="chip-count text-warn" id="chip-count-degraded">3</span></button>
-                <button type="button" class="filter-chip" data-filter="offline" id="filter-offline-btn">Offline <span class="chip-count text-danger" id="chip-count-offline">0</span></button>
-              </div>
-
-              <div class="fleet-view-actions">
-                <div class="view-switch" role="group" aria-label="Grid layout">
-                  <button class="button button-small view-btn active" data-layout="auto" type="button" title="Adaptive 3-column grid">Grid</button>
-                  <button class="button button-small view-btn" data-layout="2col" type="button" title="Dual large feed view">2 Col</button>
-                  <button class="button button-small view-btn" data-layout="1col" type="button" title="Single column cinema view">Cinema</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Active Video Grid -->
-            <section class="camera-grid density-auto" id="camera-grid" aria-label="Camera feeds"></section>
-          </section>
-
-          <!-- Right Column: Pipeline Inspector -->
-          <aside class="pipeline-inspector-panel">
-            <div class="inspector-card">
-              <div class="inspector-header">
-                <div class="inspector-title-group">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="18" cy="5" r="3"></circle>
-                    <circle cx="6" cy="12" r="3"></circle>
-                    <circle cx="18" cy="19" r="3"></circle>
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-                  </svg>
-                  <h3 class="inspector-title" id="pipeline-cam-title">Pipeline — Camera 1</h3>
-                </div>
-                <select id="pipeline-cam-selector" class="select-ctrl select-mini" aria-label="Select camera to inspect">
-                  <option value="v380-1">Camera 1</option>
-                  <option value="v380-2">Camera 2</option>
-                  <option value="okam-3">Camera 3</option>
-                </select>
-              </div>
-
-              <!-- Pipeline Stage Flow -->
-              <div class="pipeline-flow-diagram" id="pipeline-flow-diagram">
-                <div class="pipe-node" data-pipe-stage="source">
-                  <span class="node-name">Source</span>
-                  <span class="node-fps" id="pipe-fps-source">0.0 fps</span>
-                </div>
-                <span class="pipe-arrow">→</span>
-                <div class="pipe-node" data-pipe-stage="lan">
-                  <span class="node-name">LAN</span>
-                  <span class="node-fps" id="pipe-fps-lan">0.0 fps</span>
-                </div>
-                <span class="pipe-arrow">→</span>
-                <div class="pipe-node" data-pipe-stage="decoder">
-                  <span class="node-name">Decoder</span>
-                  <span class="node-fps" id="pipe-fps-decoder">0.0 fps</span>
-                </div>
-                <span class="pipe-arrow">→</span>
-                <div class="pipe-node" data-pipe-stage="mjpeg">
-                  <span class="node-name">MJPEG</span>
-                  <span class="node-fps" id="pipe-fps-mjpeg">0.0 fps</span>
-                </div>
-                <span class="pipe-arrow">→</span>
-                <div class="pipe-node" data-pipe-stage="browser">
-                  <span class="node-name">Browser</span>
-                  <span class="node-fps" id="pipe-fps-browser">0.0 fps</span>
-                </div>
-              </div>
-
-              <!-- Bottleneck Notice -->
-              <div class="pipeline-alert-box alert-warn" id="pipeline-alert-box">
-                <svg class="alert-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                  <line x1="12" y1="9" x2="12" y2="13"></line>
-                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                </svg>
-                <div class="pipeline-alert-content">
-                  <strong class="alert-heading" id="pipeline-alert-title">Bottleneck Detected</strong>
-                  <p class="alert-desc" id="pipeline-alert-desc">Tidak ada frame diterima dari sumber kamera.</p>
-                </div>
-              </div>
-
-              <!-- Detailed Metrics List -->
-              <div class="pipeline-details-table">
-                <div class="pipe-detail-row">
-                  <span class="pipe-detail-label">Last frame</span>
-                  <span class="pipe-detail-val font-mono" id="pipe-last-frame">--</span>
-                </div>
-                <div class="pipe-detail-row">
-                  <span class="pipe-detail-label">Queue (Q / Drop)</span>
-                  <span class="pipe-detail-val font-mono" id="pipe-queue-drop">0 / 0</span>
-                </div>
-                <div class="pipe-detail-row">
-                  <span class="pipe-detail-label">Decode errors</span>
-                  <span class="pipe-detail-val font-mono" id="pipe-decode-errors">0 err</span>
-                </div>
-                <div class="pipe-detail-row">
-                  <span class="pipe-detail-label">Stage</span>
-                  <span class="pipe-detail-val badge-stage" id="pipe-stage-val">CameraSource</span>
-                </div>
-                <div class="pipe-detail-row">
-                  <span class="pipe-detail-label">Decoder Port / PID</span>
-                  <span class="pipe-detail-val font-mono" id="pipe-port-pid">Port 8080 · PID --</span>
-                </div>
-              </div>
-            </div>
-          </aside>
-        </div>
-
-        <!-- Bottom Telemetry & Real-Time Series Row (3 Cards) -->
-        <section class="bottom-telemetry-row">
-          <!-- Card 1: FPS (Real-time) Canvas Graph -->
-          <div class="bottom-card fps-graph-card">
-            <div class="bottom-card-head">
-              <div class="card-head-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                </svg>
-                <h3 class="card-title">FPS (Real-time)</h3>
-              </div>
-              <div class="fps-time-toggles" id="fps-time-toggles">
-                <button type="button" class="time-toggle-btn active" data-window="1m">1m</button>
-                <button type="button" class="time-toggle-btn" data-window="5m">5m</button>
-                <button type="button" class="time-toggle-btn" data-window="30m">30m</button>
-                <button type="button" class="time-toggle-btn" data-window="1h">1h</button>
-              </div>
-            </div>
-
-            <div class="canvas-wrap">
-              <canvas id="fps-canvas" width="640" height="150" class="fps-canvas"></canvas>
-            </div>
-
-            <div class="fps-legend" id="fps-legend">
-              <div class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span><span>Camera 1: <strong class="font-mono" id="legend-fps-cam1">0.0 fps</strong></span></div>
-              <div class="legend-item"><span class="legend-dot" style="background:#38bdf8;"></span><span>Camera 2: <strong class="font-mono" id="legend-fps-cam2">0.0 fps</strong></span></div>
-              <div class="legend-item"><span class="legend-dot" style="background:#e879f9;"></span><span>Camera 3: <strong class="font-mono" id="legend-fps-cam3">0.0 fps</strong></span></div>
-            </div>
-          </div>
-
-          <!-- Card 2: Recent Activity Feed -->
-          <div class="bottom-card events-feed-card">
-            <div class="bottom-card-head">
-              <div class="card-head-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-                </svg>
-                <h3 class="card-title">Events (Recent)</h3>
-                <span class="badge-count" id="recent-events-count">0 new</span>
-              </div>
-              <a href="#events" class="card-head-link" id="recent-events-view-all">View All ↗</a>
-            </div>
-            <div class="recent-events-list" id="recent-events-list">
-              <div class="empty-list-notice">Listening for edge activity...</div>
-            </div>
-          </div>
-
-          <!-- Card 3: Storage & System Resources -->
-          <div class="bottom-card storage-resources-card">
-            <div class="bottom-card-head">
-              <div class="card-head-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-                  <line x1="6" y1="6" x2="6.01" y2="6"></line>
-                  <line x1="6" y1="18" x2="6.01" y2="18"></line>
-                </svg>
-                <h3 class="card-title">Storage &amp; Retention</h3>
-              </div>
-              <span class="storage-percent-tag" id="storage-percent-tag">85% Used</span>
-            </div>
-
-            <div class="storage-meter-block">
-              <div class="storage-meter-track">
-                <div class="storage-meter-fill" id="bottom-storage-bar" style="width: 85%;"></div>
-                <div class="threshold-marker warn" style="left: 80%;" title="Warning Threshold (80%)"></div>
-                <div class="threshold-marker danger" style="left: 90%;" title="Critical Threshold (90%)"></div>
-              </div>
-              <div class="storage-meter-labels">
-                <span id="storage-used-gb">406 GB Used</span>
-                <span id="storage-free-gb">70 GB Free</span>
-              </div>
-            </div>
-
-            <div class="storage-breakdown-table">
-              <div class="breakdown-row">
-                <span class="breakdown-label">CamHUB Data</span>
-                <span class="breakdown-val font-mono" id="storage-camhub-val">12.7 MB</span>
-              </div>
-              <div class="breakdown-row">
-                <span class="breakdown-label">Recordings</span>
-                <span class="breakdown-val font-mono" id="storage-recordings-val">10.2 MB</span>
-              </div>
-              <div class="breakdown-row">
-                <span class="breakdown-label">Snapshots</span>
-                <span class="breakdown-val font-mono" id="storage-snapshots-val">2.5 MB</span>
-              </div>
-              <div class="breakdown-row">
-                <span class="breakdown-label">Forecast</span>
-                <span class="breakdown-val badge-forecast" id="storage-forecast-val">&gt; 30 days remaining</span>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <!-- View: Local Recording & Playback -->
-      <section class="playback-panel" id="playback">
-        <div class="playback-header">
-          <div>
-            <h2 class="playback-title">Local Recording &amp; Playback</h2>
-            <p class="playback-description">Zero-transcode segmented MP4 recording, timeline scrubber, and storage management.</p>
-          </div>
-          <div class="storage-indicator-pill" id="storage-indicator-pill">
-            <span class="storage-dot" id="storage-dot"></span>
-            <span class="storage-text" id="storage-text">Storage: Checking…</span>
           </div>
         </div>
 
-        <!-- Controls Toolbar -->
-        <div class="playback-toolbar">
-          <div class="playback-filters">
-            <div class="filter-item">
-              <label for="playback-cam-select">Camera</label>
-              <select id="playback-cam-select" class="select-ctrl">
-                <option value="">All cameras</option>
-              </select>
+        <!-- Telemetry Row 2 (Stream Path + Real-time FPS Chart) -->
+        <div class="grid d2">
+          <!-- Stream Path Card -->
+          <div class="card">
+            <div class="row" style="margin:0">
+              <h2>Stream Path</h2>
+              <div class="seg r" id="pick"></div>
             </div>
-            <div class="filter-item">
-              <label for="playback-date-select">Date</label>
-              <input type="date" id="playback-date-select" class="date-ctrl" />
+            <p class="sub" style="margin-bottom:14px">Where <span id="pc">Camera 1</span> stops sending frames</p>
+            <div class="flow" id="flow"></div>
+            <div class="note" id="path-note">
+              <svg class="ico"><use href="#i-warn"/></svg>
+              <p>
+                <b id="path-note-title">Camera Source Is Silent</b>
+                <span id="path-note-msg">No frames received from the camera. Check that it is powered on and reachable at its IP address, then retry.</span>
+              </p>
             </div>
-            <button class="button button-small" id="playback-refresh-btn" type="button">Refresh</button>
+            <dl>
+              <div><dt>Last Frame</dt><dd id="dl-last-frame">None yet</dd></div>
+              <div><dt>Queue / Dropped</dt><dd id="dl-queue">0 / 0</dd></div>
+              <div><dt>Decode Errors</dt><dd id="dl-errors">0</dd></div>
+              <div><dt>Decoder Port</dt><dd id="dl-port">8080</dd></div>
+            </dl>
           </div>
 
-          <div class="manual-record-group">
-            <span class="rec-label">Manual record:</span>
-            <div id="manual-record-buttons" class="manual-rec-btns"></div>
+          <!-- Frame Rate Chart Card -->
+          <div class="card">
+            <div class="row" style="margin:0">
+              <h2>Frame Rate</h2>
+              <div class="seg r" id="range">
+                <button aria-pressed="true" data-range="1m">1m</button>
+                <button aria-pressed="false" data-range="5m">5m</button>
+                <button aria-pressed="false" data-range="30m">30m</button>
+                <button aria-pressed="false" data-range="1h">1h</button>
+              </div>
+            </div>
+            <div class="chart-box">
+              <canvas id="fps-chart-canvas" width="600" height="130"></canvas>
+            </div>
+            <div class="empty" id="fps-empty" style="padding-top:10px">
+              <b>Live Frame Rate History</b>
+              <p id="fps-summary-sub">Collecting telemetry metrics from local decoder streams.</p>
+            </div>
           </div>
         </div>
 
-        <!-- Player & Timeline Grid -->
+        <!-- Telemetry Row 3 (Recent Events + Storage Ring) -->
+        <div class="grid d2">
+          <!-- Recent Events Card -->
+          <div class="card">
+            <div class="row" style="margin:0 0 10px">
+              <h2>Recent Events</h2>
+              <button class="btn r" data-go="3">Open Events &amp; AI</button>
+            </div>
+            <div id="dash-recent-events" class="notif-list">
+              <div class="empty"><b>No Activity Yet</b><p>Motion and AI detections from your cameras will appear here.</p></div>
+            </div>
+          </div>
+
+          <!-- Storage Card -->
+          <div class="card">
+            <h2>Storage</h2>
+            <p class="sub">Recordings and snapshots on this computer</p>
+            <div class="store">
+              <div class="ring" id="store-ring">
+                <div><span id="store-percent">85%<small>Used</small></span></div>
+              </div>
+              <dl>
+                <div><dt>Used</dt><dd id="store-used">406 GB</dd></div>
+                <div><dt>Free</dt><dd id="store-free">70 GB</dd></div>
+                <div><dt>Recordings</dt><dd id="store-recs">10.2 MB</dd></div>
+                <div><dt>Snapshots</dt><dd id="store-snaps">2.5 MB</dd></div>
+                <div><dt>Forecast</dt><dd class="good-t" id="store-forecast">30+ days left</dd></div>
+              </dl>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 2: Playback -->
+      <section class="view" id="v-playback" hidden>
+        <!-- Manual Recording Status Bar -->
+        <div class="rec-status-strip" id="rec-status-strip"></div>
+
         <div class="playback-grid">
-          <!-- Video Player Window -->
-          <div class="playback-player-card">
-            <div class="player-wrapper">
-              <video id="playback-video" controls preload="metadata" playsinline class="playback-video">
-                Your browser does not support HTML5 video.
-              </video>
-              <div class="tile-zoom-bar playback-zoom-bar" id="playback-zoom-bar">
-                <button class="tile-zoom-btn" id="playback-zoom-in" type="button" title="Zoom in (+)">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                </button>
-                <button class="tile-zoom-btn zoom-level-badge" id="playback-zoom-reset" type="button" title="Reset zoom (1.0x)"><span id="playback-zoom-val">1.0x</span></button>
-                <button class="tile-zoom-btn" id="playback-zoom-out" type="button" title="Zoom out (-)">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                </button>
-              </div>
-              <div id="playback-empty-placeholder" class="playback-placeholder">
-                <p>Select a recorded segment from the timeline to start playback</p>
-              </div>
+          <!-- Video Player Card -->
+          <div class="card rec-player-card">
+            <div class="row" style="margin:0 0 10px">
+              <h2 id="player-title">Recorded Clip Player</h2>
+              <span class="r tag" id="player-status-tag">Ready</span>
             </div>
-            <div class="player-info" id="playback-current-info">
-              <span class="current-rec-title" id="current-rec-title">No segment selected</span>
-              <div class="current-rec-actions">
-                <a id="current-rec-download" class="button button-small" href="#" download style="display:none;">Download MP4</a>
-                <button id="current-rec-delete" class="button button-small button-warn" type="button" style="display:none;">Delete</button>
+            <div class="rec-player">
+              <video id="video-player" controls preload="metadata"></video>
+            </div>
+            <div class="row" style="margin:12px 0 0">
+              <span class="sub" id="player-clip-info">Select a recorded segment from the archive list to stream playback.</span>
+              <div class="r acts">
+                <a class="btn" id="player-download-btn" href="#" download="" style="display:none">
+                  <svg class="ico"><use href="#i-dl"/></svg><span>Download MP4</span>
+                </a>
               </div>
             </div>
           </div>
 
-          <!-- Segments Timeline / List -->
-          <div class="playback-timeline-card">
-            <div class="timeline-head">
-              <span class="timeline-title">Recorded Segments</span>
-              <span class="timeline-count" id="timeline-count">0 clips</span>
+          <!-- Recordings Archive List Card -->
+          <div class="card">
+            <div class="row" style="margin:0 0 12px">
+              <h2>Archive Segments</h2>
+              <button class="btn sq r" id="refresh-recordings" title="Refresh recordings list">
+                <svg class="ico"><use href="#i-re"/></svg>
+              </button>
             </div>
-            <div class="segments-list" id="segments-list">
-              <div class="segments-loading">Loading recording index…</div>
+            <div class="rec-list" id="recordings-list">
+              <div class="empty"><b>Loading recordings…</b><p>Querying recorded segments on disk.</p></div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- View: Motion Events & Timeline -->
-      <section class="events-panel" id="events">
-        <div class="events-header">
-          <div>
-            <h2 class="events-title">Motion Events &amp; AI Detection</h2>
-            <p class="events-description">Edge motion detection, activity snapshots with bounding box localization, and historical event review.</p>
+      <!-- View 3: Events & AI -->
+      <section class="view" id="v-events" hidden>
+        <div class="row">
+          <div class="seg" id="events-cam-filter" role="group" aria-label="Filter events by camera">
+            <button aria-pressed="true" data-cid="">All Cameras</button>
+            <button aria-pressed="false" data-cid="v380-1">Camera 1</button>
+            <button aria-pressed="false" data-cid="v380-2">Camera 2</button>
+            <button aria-pressed="false" data-cid="okam-3">Camera 3</button>
           </div>
-          <div class="events-status-pill" id="events-status-pill">
-            <span class="events-dot" id="events-dot"></span>
-            <span class="events-status-text" id="events-status-text">Analytics: Active</span>
-          </div>
+          <button class="btn r" id="clear-events-btn">
+            <svg class="ico"><use href="#i-trash"/></svg><span>Clear Events</span>
+          </button>
         </div>
-
-        <!-- Controls & Filter Toolbar -->
-        <div class="events-toolbar">
-          <div class="events-filters">
-            <div class="filter-item">
-              <label for="events-cam-select">Camera</label>
-              <select id="events-cam-select" class="select-ctrl">
-                <option value="">All cameras</option>
-              </select>
-            </div>
-            <div class="filter-item">
-              <label for="events-date-select">Date</label>
-              <input type="date" id="events-date-select" class="date-ctrl" />
-            </div>
-            <div class="filter-item">
-              <label for="events-score-select">Min Score</label>
-              <select id="events-score-select" class="select-ctrl">
-                <option value="">Any score</option>
-                <option value="5">&gt; 5%</option>
-                <option value="15">&gt; 15%</option>
-                <option value="30">&gt; 30%</option>
-              </select>
-            </div>
-            <div class="filter-item">
-              <label for="events-class-select">Object</label>
-              <select id="events-class-select" class="select-ctrl">
-                <option value="">All objects</option>
-                <option value="person">Person</option>
-                <option value="car">Vehicle</option>
-                <option value="motorcycle">Motorcycle</option>
-                <option value="animal">Animal</option>
-              </select>
-            </div>
-            <button class="button button-small" id="events-refresh-btn" type="button">Refresh</button>
-          </div>
-
-          <div class="events-meta-summary">
-            <span class="events-meta-item" id="events-fps-stat">FPS: 0.0</span>
-            <span class="events-meta-item" id="events-storage-stat">Storage: 0 MB</span>
-            <span class="events-meta-item events-ai-badge" id="events-ai-stat" title="CamHUB edge AI engine. Click to benchmark GPU vs CPU.">AI: DirectML</span>
-          </div>
+        <div class="events-grid" id="events-list">
+          <div class="empty"><b>No Activity Yet</b><p>Motion and edge AI detection snapshots will be displayed here.</p></div>
         </div>
+      </section>
 
-        <!-- Events Grid / Timeline -->
-        <div class="events-container">
-          <div class="events-list-head">
-            <span class="events-list-title">Detected Activity</span>
-            <span class="events-list-count" id="events-list-count">0 events</span>
+      <!-- View 4: Diagnostics -->
+      <section class="view" id="v-diagnostics" hidden>
+        <div class="diag-grid">
+          <!-- Software & System Versions Card -->
+          <div class="card">
+            <h2>System &amp; Engine Versions</h2>
+            <p class="sub" style="margin-bottom:12px">Installed runtimes and service host details</p>
+            <div class="diag-row"><span>Application</span><b id="diag-app-ver">CamHUB v1.4.0</b></div>
+            <div class="diag-row"><span>Python Host</span><b id="diag-py-ver">--</b></div>
+            <div class="diag-row"><span>.NET Runtime</span><b id="diag-dotnet-ver">--</b></div>
+            <div class="diag-row"><span>FFmpeg Transcoder</span><b id="diag-ffmpeg-ver">--</b></div>
+            <div class="diag-row"><span>Host Uptime</span><b id="diag-uptime-val">--</b></div>
           </div>
-          <div class="events-cards-grid" id="events-cards-grid">
-            <div class="events-loading">Loading event timeline…</div>
+
+          <!-- Port & Network Status Card -->
+          <div class="card">
+            <h2>Decoders &amp; Local Ports</h2>
+            <p class="sub" style="margin-bottom:12px">Local TCP decoders and HTTP stream endpoints</p>
+            <div class="diag-row"><span>Port 8080 (Camera 1)</span><b id="diag-p8080">Checking…</b></div>
+            <div class="diag-row"><span>Port 8081 (Camera 2)</span><b id="diag-p8081">Checking…</b></div>
+            <div class="diag-row"><span>Port 8082 (Camera 3)</span><b id="diag-p8082">Checking…</b></div>
+            <div class="diag-row"><span>Backend API (Port 3000)</span><b class="good-t">LISTENING</b></div>
+            <div class="diag-row"><span>AI Inference Device</span><b id="diag-ai-device">DirectML / CPU</b></div>
+          </div>
+
+          <!-- 1-Click Export Bundle Card -->
+          <div class="card">
+            <h2>Diagnostic Report Bundle</h2>
+            <p class="sub" style="margin-bottom:14px">Export sanitized system telemetry, error logs, and port audits</p>
+            <button class="btn pri" id="btn-generate-bundle" style="width:100%">
+              <svg class="ico"><use href="#i-dl"/></svg>
+              <span>Generate Diagnostic Bundle (.ZIP)</span>
+            </button>
+            <div id="bundle-progress" style="display:none;margin-top:10px;" class="sub">Creating sanitized diagnostic archive…</div>
+            <div id="diag-bundles-list" style="margin-top:14px">
+              <div class="empty" style="padding:14px 10px">Click "Generate Diagnostic Bundle" to export a troubleshooting archive.</div>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- View: Setup Guide -->
-      <section class="setup-panel" id="setup">
-        <div class="setup-header">
-          <h2 class="setup-title">Setup Guide</h2>
-          <p class="setup-description">Run the PowerShell script below in a separate terminal to start local streaming to CamHub. Passwords are entered securely via prompt and are not stored in the dashboard.</p>
-        </div>
-        <div class="setup-code">
-          <div class="code-title">
-            <div class="code-tabs">
-              <button class="code-tab active" data-script-tab="cam1" type="button">Camera 1 (8080)</button>
-              <button class="code-tab" data-script-tab="cam2" type="button">Camera 2 (8081)</button>
-              <button class="code-tab" data-script-tab="okam" type="button">Camera 3 (8082)</button>
-              <button class="code-tab" data-script-tab="all" type="button">All scripts</button>
-            </div>
-            <button class="button code-copy-btn" id="copy-script-btn" type="button">Copy script</button>
+      <!-- View 5: Notifications Center -->
+      <section class="view" id="v-notif" hidden>
+        <div class="row">
+          <div class="seg" id="notif-sev-filter" role="group" aria-label="Filter notifications by severity">
+            <button aria-pressed="true" data-sev="">All</button>
+            <button aria-pressed="false" data-sev="critical">Critical</button>
+            <button aria-pressed="false" data-sev="warning">Warning</button>
+            <button aria-pressed="false" data-sev="info">Info</button>
           </div>
-          <pre><code id="setup-script-code"></code></pre>
-          <div class="code-note">Script clears sensitive password pointers from memory immediately after execution.</div>
+          <div class="r" style="display:flex;gap:8px">
+            <button class="btn" id="notif-ack-all">Acknowledge All</button>
+            <button class="btn" id="notif-clear-all"><svg class="ico"><use href="#i-trash"/></svg><span>Clear</span></button>
+            <button class="btn" id="notif-simulate">Simulate Alert</button>
+          </div>
+        </div>
+        <div class="notif-list" id="notif-list">
+          <div class="empty"><b>No Notifications</b><p>Camera faults and alerts will be collected here.</p></div>
         </div>
       </section>
 
-      <!-- Footer -->
-      <footer class="footer">
-        <span>CamHub Command Center</span>
-        <span>Local-first monitoring · Zero cloud transmission</span>
-      </footer>
+      <!-- View 6: Setup Guide -->
+      <section class="view card" id="v-setup" hidden>
+        <h2 style="font-size:18px;margin-bottom:4px">CamHub Setup &amp; Architecture Guide</h2>
+        <p class="sub" style="margin-bottom:18px">Zero-cloud local camera bridge and hardware configuration.</p>
+
+        <div class="setup-step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <b>V380 Protocol Decoder</b>
+            <p>V380 cameras stream on local UDP/TCP port 8800. The C# decoder converts raw frames into an MJPEG HTTP stream on ports 8080 and 8081.</p>
+            <div class="code-box">dotnet run --project decoders/v380/V380Decoder.csproj -- --id 124095217 --ip 192.168.100.24 --port 8080</div>
+          </div>
+        </div>
+
+        <div class="setup-step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <b>RTSP Stream Adapter (FFmpeg)</b>
+            <p>O Kam Pro or RTSP cameras are bridged via ultra-low latency FFmpeg transcoder to port 8082 without cloud dependencies.</p>
+            <div class="code-box">ffmpeg -hide_banner -rtsp_transport tcp -i rtsp://192.168.100.6:10554/live/ch0 -f mpjpeg -q:v 3 http://127.0.0.1:8082/stream</div>
+          </div>
+        </div>
+
+        <div class="setup-step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <b>One-Click Service Launch</b>
+            <p>Click "Restart Cameras" on the top right bar to start or cycle all camera decoder workers automatically.</p>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
+</div>
 
-  <!-- Dialogs & Modals -->
-  <!-- 1. Configure Camera Modal -->
-  <dialog id="config-dialog" class="config-dialog">
-    <form method="dialog" id="config-form">
-      <div class="dialog-head">
-        <h2 id="dialog-title">Configure camera</h2>
-        <button class="icon-button" value="cancel" aria-label="Close" type="button" id="close-dialog-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
-      </div>
-      <input type="hidden" id="camera-id" />
+<!-- Restart Modal Confirmation -->
+<dialog id="dlg" aria-labelledby="dt">
+  <h2 id="dt">Restart All 3 Cameras?</h2>
+  <p>Live feeds disconnect while the camera processes restart.</p>
+  <div class="acts">
+    <button class="btn" id="no" autofocus>Cancel</button>
+    <button class="btn dng" id="yes">Restart Cameras</button>
+  </div>
+</dialog>
 
-      <div class="form-group">
-        <label for="camera-name">Display name</label>
-        <input id="camera-name" maxlength="60" required placeholder="e.g. Camera 1, indoor" />
-      </div>
-
-      <div class="form-group">
-        <label for="camera-location">Details line</label>
-        <input id="camera-location" maxlength="80" required placeholder="e.g. 192.168.100.24, ID 124095217, port 8080" />
-      </div>
-
-      <div class="form-group">
-        <label for="camera-brand">Brand / adapter</label>
-        <input id="camera-brand" maxlength="60" required placeholder="e.g. V380 Pro / V380Decoder" />
-      </div>
-
-      <div class="form-group">
-        <label for="camera-url">Stream URL (MJPEG)</label>
-        <input id="camera-url" type="url" placeholder="http://192.168.100.11:8080/stream.mjpg" />
-      </div>
-
-      <div class="form-group">
-        <label for="camera-snapshot">Snapshot URL (optional)</label>
-        <input id="camera-snapshot" type="url" placeholder="http://192.168.100.11:8080/snapshot" />
-      </div>
-
-      <p class="form-hint">Settings are saved locally in this browser. Never enter a URL containing passwords.</p>
-
-      <div class="dialog-actions">
-        <button class="button" value="cancel" type="button" id="cancel-dialog-btn">Cancel</button>
-        <button class="button button-accent" id="save-camera" type="submit">Save camera</button>
-      </div>
-    </form>
-  </dialog>
-
-  <!-- 2. Event Snapshot Lightbox Modal -->
-  <dialog id="event-dialog" class="event-dialog">
-    <div class="dialog-head">
-      <h2 id="event-modal-title">Motion Event Snapshot</h2>
-      <button class="icon-button" aria-label="Close" type="button" id="close-event-dialog-btn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-      </button>
+<!-- Camera Config Dialog -->
+<dialog id="config-dialog">
+  <h2>Configure Camera</h2>
+  <p id="config-cam-name">Camera Configuration</p>
+  <form id="config-form" method="dialog">
+    <div class="form-group">
+      <label for="cfg-name">Display Name</label>
+      <input type="text" id="cfg-name" class="input-text" required />
     </div>
-    <div class="event-modal-body">
-      <div class="event-modal-image-wrapper">
-        <img id="event-modal-img" src="" alt="Event snapshot" class="event-modal-img" />
-        <div id="event-modal-bbox" class="event-modal-bbox" style="display:none;"></div>
-        <div id="event-modal-bboxes-container" class="event-modal-bboxes-container"></div>
-      </div>
-      <div class="event-modal-meta" id="event-modal-meta">
-        <!-- Event stats injected here -->
-      </div>
+    <div class="form-group">
+      <label for="cfg-url">Stream URL</label>
+      <input type="text" id="cfg-url" class="input-text" required />
     </div>
-    <div class="dialog-actions">
-      <button class="button button-accent" id="event-modal-enrich-btn" type="button">Re-analyze with AI</button>
-      <a id="event-modal-jump-playback" class="button button-primary" href="#playback">Jump to Playback</a>
-      <button class="button button-warn" id="event-modal-delete-btn" type="button">Delete event</button>
-      <button class="button" id="close-event-dialog-action" type="button">Close</button>
+    <div class="form-group">
+      <label for="cfg-location">Location / IP Address</label>
+      <input type="text" id="cfg-location" class="input-text" />
     </div>
-  </dialog>
-
-  <!-- 3. Diagnostics & System Troubleshooting Modal -->
-  <dialog id="diagnostics-dialog" class="diagnostics-dialog">
-    <div class="dialog-head">
-      <div class="dialog-title-group">
-        <h2>System Diagnostics &amp; Troubleshooting</h2>
-        <span class="diag-status-badge" id="diag-status-badge">Checking...</span>
-      </div>
-      <button class="icon-button" aria-label="Close" type="button" id="close-diag-dialog-btn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-      </button>
+    <div class="acts">
+      <button class="btn" type="button" id="cfg-cancel">Cancel</button>
+      <button class="btn pri" type="submit" id="cfg-save">Save Settings</button>
     </div>
-    <div class="diag-modal-body">
-      <!-- Quick Status Cards Grid -->
-      <div class="diag-cards-grid">
-        <div class="diag-card">
-          <div class="diag-card-title">Software Environment</div>
-          <div class="diag-card-content" id="diag-software-content">
-            <div class="diag-item"><span class="diag-lbl">CamHUB:</span> <span class="diag-val" id="diag-app-ver">-</span></div>
-            <div class="diag-item"><span class="diag-lbl">Python:</span> <span class="diag-val" id="diag-python-ver">-</span></div>
-            <div class="diag-item"><span class="diag-lbl">FFmpeg:</span> <span class="diag-val" id="diag-ffmpeg-ver">-</span></div>
-            <div class="diag-item"><span class="diag-lbl">.NET:</span> <span class="diag-val" id="diag-dotnet-ver">-</span></div>
-          </div>
-        </div>
+  </form>
+</dialog>
 
-        <div class="diag-card">
-          <div class="diag-card-title">Host Resources</div>
-          <div class="diag-card-content" id="diag-resources-content">
-            <div class="diag-item"><span class="diag-lbl">OS:</span> <span class="diag-val" id="diag-os-val">-</span></div>
-            <div class="diag-item"><span class="diag-lbl">Disk:</span> <span class="diag-val" id="diag-disk-val">-</span></div>
-            <div class="diag-item"><span class="diag-lbl">PID:</span> <span class="diag-val" id="diag-pid-val">-</span></div>
-          </div>
-        </div>
+<!-- Event Snapshot Lightbox Dialog -->
+<dialog id="event-dialog" style="max-width:720px;padding:16px;">
+  <div class="row" style="margin:0 0 10px;">
+    <h2 id="lightbox-title">Activity Snapshot</h2>
+    <button class="btn sq r" id="lightbox-close"><svg class="ico"><use href="#i-cross"/></svg></button>
+  </div>
+  <div style="position:relative;background:#000;border-radius:8px;overflow:hidden;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;">
+    <img id="lightbox-img" style="width:100%;height:100%;object-fit:contain;" alt="Detection snapshot" />
+    <canvas id="lightbox-canvas" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
+  </div>
+  <p id="lightbox-details" class="sub" style="margin-top:10px;font-family:var(--mono);"></p>
+</dialog>
 
-        <div class="diag-card diag-card-wide">
-          <div class="diag-card-title">TCP Port Health Matrix</div>
-          <div class="diag-ports-grid" id="diag-ports-grid">
-            <!-- Dynamic port badges -->
-          </div>
-        </div>
-      </div>
+<!-- Global Toast -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-      <!-- Action & Generation Container -->
-      <div class="diag-action-box">
-        <div class="diag-action-left">
-          <button class="button button-accent button-large" id="generate-bundle-btn" type="button">
-            <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            <span>Generate Diagnostic Bundle (ZIP)</span>
-          </button>
-          <span class="diag-hint">Redacts all credentials, limits logs, and includes full manifest.</span>
-        </div>
-        <div class="diag-progress-wrap" id="diag-progress-wrap" style="display: none;">
-          <div class="diag-spinner"></div>
-          <span id="diag-progress-text">Generating ZIP bundle...</span>
-        </div>
-      </div>
-
-      <!-- Generated Result Box -->
-      <div class="diag-result-card" id="diag-result-card" style="display: none;">
-        <div class="diag-result-head">
-          <span class="diag-result-badge">Bundle Ready</span>
-          <span class="diag-result-filename" id="diag-result-filename">camhub_diagnostics_...zip</span>
-        </div>
-        <div class="diag-result-details" id="diag-result-details">
-          <!-- Size, sha256, duration -->
-        </div>
-        <div class="diag-result-actions">
-          <a class="button button-primary" id="diag-download-link" href="#" download>Download diagnostic report (ZIP)</a>
-        </div>
-      </div>
-
-      <!-- Previous Bundles Section -->
-      <div class="diag-history-section">
-        <h3 class="diag-section-title">Available Diagnostic Reports on Host</h3>
-        <div class="diag-history-list" id="diag-history-list">
-          <p class="diag-empty-text">No previous bundles generated.</p>
-        </div>
-      </div>
-    </div>
-    <div class="dialog-actions">
-      <button class="button" id="close-diag-dialog-action" type="button">Close</button>
-    </div>
-  </dialog>
-
-  <!-- 4. Notification Center Modal -->
-  <dialog id="notif-dialog" class="notif-dialog">
-    <div class="dialog-head">
-      <div class="dialog-title-group">
-        <h2>Notification Center</h2>
-        <span class="notif-unread-count-pill" id="notif-modal-count-pill">0 unread</span>
-      </div>
-      <div class="notif-head-actions">
-        <button class="button button-small" id="notif-ack-all-btn" type="button">Mark all read</button>
-        <button class="button button-small" id="notif-clear-all-btn" type="button">Clear all</button>
-        <button class="icon-button" aria-label="Close" type="button" id="close-notif-dialog-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
-      </div>
-    </div>
-    <div class="notif-modal-body">
-      <div class="notif-filter-tabs">
-        <button class="notif-tab active" data-sev="all">All</button>
-        <button class="notif-tab" data-sev="critical">Critical</button>
-        <button class="notif-tab" data-sev="warning">Warning</button>
-        <button class="notif-tab" data-sev="info">Info</button>
-      </div>
-      <div class="notif-list" id="notif-list">
-        <!-- Injected dynamically -->
-      </div>
-    </div>
-    <div class="dialog-actions">
-      <button class="button button-secondary" id="notif-simulate-btn" type="button">Simulate test notification</button>
-      <button class="button" id="close-notif-dialog-action" type="button">Close</button>
-    </div>
-  </dialog>
-
-  <div class="toast-container" id="toast-container" aria-live="polite"></div>
-
-  <script src="app.js?v=3.0"></script>
+<!-- Application Logic -->
+<script src="app.js?v=4.0"></script>
 </body>
 </html>

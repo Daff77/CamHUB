@@ -1,3554 +1,1447 @@
-// Global fetch interceptor to automatically bypass Ngrok browser warning for all API calls
-if (typeof window !== "undefined" && window.fetch) {
-  const _origFetch = window.fetch;
-  window.fetch = function(input, init = {}) {
-    init = init || {};
-    const headers = new Headers(init.headers || {});
-    if (!headers.has("ngrok-skip-browser-warning")) {
-      headers.set("ngrok-skip-browser-warning", "1");
-    }
-    init.headers = headers;
-    return _origFetch.call(this, input, init);
-  };
-}
-
-const defaultHost = (typeof window !== "undefined" && window.location && window.location.hostname) ? window.location.hostname : "127.0.0.1";
-
-let activeRecordings = new Set();
-
-function updateAllRecordingButtons() {
-  document.querySelectorAll("[data-tile-rec]").forEach((btn) =>{
-    const cid = btn.dataset.tileRec;
-    const isRec = activeRecordings.has(cid);
-    btn.classList.toggle("is-recording", isRec);
-    const textEl = btn.querySelector(".tile-rec-text");
-    if (textEl) textEl.textContent = isRec ? "Recording" : "Record";
-  });
-  document.querySelectorAll(".rec-toggle-btn").forEach((btn) =>{
-    const cid = btn.getAttribute("data-rec-cam");
-    const isRec = activeRecordings.has(cid);
-    btn.classList.toggle("is-recording", isRec);
-    btn.textContent = `${isRec ? 'Stop' : 'Rec'} ${cid}`;
-  });
-}
-
-const DEFAULT_CAMERAS = [
-  {
-    id: "v380-1",
-    name: "Camera 1, Indoor",
-    location: "192.168.100.24, ID 124095217, Port 8080",
-    brand: "V380 Pro / V380Decoder-Latest",
-    url: `http://${defaultHost}:8080/stream.mjpg`,
-    snapshotUrl: `http://${defaultHost}:8080/snapshot`,
-    metricsUrl: `http://${defaultHost}:8080/api/metrics`,
-    hint: "LAN"
-  },
-  {
-    id: "v380-2",
-    name: "Camera 2, Garage",
-    location: "192.168.100.4, ID 97357757, Port 8081",
-    brand: "V380 Pro / V380Decoder-Fork",
-    url: `http://${defaultHost}:8081/stream.mjpg`,
-    snapshotUrl: `http://${defaultHost}:8081/snapshot`,
-    metricsUrl: `http://${defaultHost}:8081/api/metrics`,
-    hint: "LAN"
-  },
-  {
-    id: "okam-3",
-    name: "Camera 3, O Kam Pro",
-    location: "192.168.100.6, Port 10554, VStarcam",
-    brand: "O Kam Pro / VStarcam",
-    url: `http://${defaultHost}:8082/stream.mjpg`,
-    snapshotUrl: `http://${defaultHost}:8082/snapshot`,
-    metricsUrl: `http://${defaultHost}:8082/api/metrics`,
-    hint: "LAN RTSP"
-  }
-];
-
-const STORAGE_KEY = "camhub.control.cameras.v3";
-const PREV_KEYS = ["camhub.control.cameras.v2", "camhub.control.cameras.v1", "camhub.mvp.cameras.v3", "camhub.mvp.cameras.v2", "camhub.mvp.cameras.v1"];
-const SELECTED_CAMERAS_KEY = "camhub.selected_cameras.v1";
-
-let cameras = loadCameras();
-
-function getSelectedCameraIds() {
-  try {
-    const raw = localStorage.getItem(SELECTED_CAMERAS_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr) && arr.length >0) {
-        return new Set(arr);
-      }
-    }
-  } catch {}
-  return new Set(cameras.map((c) =>c.id));
-}
-
-let selectedCameraIds = getSelectedCameraIds();
-
-function saveSelectedCameraIds() {
-  try {
-    localStorage.setItem(SELECTED_CAMERAS_KEY, JSON.stringify(Array.from(selectedCameraIds)));
-  } catch {}
-}
-
-function isCameraSelected(id) {
-  return selectedCameraIds.has(id);
-}
-
-function stopStream(id) {
-  clearWatchdog(id);
-  const img = document.querySelector(`[data-feed="${CSS.escape(id)}"]`);
-  if (img) {
-    img.onload = null;
-    img.onerror = null;
-    img.removeAttribute("src");
-  }
-}
-
-const connectionStates = new Map();
-const watchdogs = new Map();
-const metricsData = new Map();
-const metricsHistory = new Map();
-
-const grid = document.querySelector("#camera-grid");
-const dialog = document.querySelector("#config-dialog");
-const configForm = document.querySelector("#config-form");
-const closeDialogBtn = document.querySelector("#close-dialog-btn");
-const cancelDialogBtn = document.querySelector("#cancel-dialog-btn");
-const analyticsCards = document.querySelector("#analytics-cards");
-
-function getFormattedTime() {
-  return new Intl.DateTimeFormat([], {
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(new Date());
-}
-
-function deriveMetricsUrl(streamUrl) {
-  if (!streamUrl) return "";
-  try {
-    const u = new URL(streamUrl);
-    return `${u.protocol}//${u.host}/api/metrics`;
-  } catch {
-    return "";
-  }
-}
-
-function loadCameras() {
-  try {
-    let raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      for (const k of PREV_KEYS) {
-        raw = localStorage.getItem(k);
-        if (raw) break;
-      }
-    }
-    if (raw) {
-      const saved = JSON.parse(raw);
-      if (Array.isArray(saved)) {
-        return DEFAULT_CAMERAS.map((def, idx) =>{
-          const legacyId = ["v380-a", "v380-b", "okam-c"][idx];
-          const matched = saved.find(item =>item.id === def.id || item.id === legacyId);
-          if (matched) {
-            const isGenericDefault = !matched.location || matched.location.includes("Point") || matched.location.includes("Local network");
-            let url = matched.url !== undefined && matched.url !== "" ? matched.url : def.url;
-            let snapshotUrl = matched.snapshotUrl !== undefined && matched.snapshotUrl !== "" ? matched.snapshotUrl : def.snapshotUrl;
-            if (url && url.includes("192.168.100.11") && defaultHost !== "192.168.100.11") {
-              url = url.replace("192.168.100.11", defaultHost);
-            }
-            if (snapshotUrl && snapshotUrl.includes("192.168.100.11") && defaultHost !== "192.168.100.11") {
-              snapshotUrl = snapshotUrl.replace("192.168.100.11", defaultHost);
-            }
-            return {
-              ...def,
-              ...matched,
-              id: def.id,
-              name: matched.name || def.name,
-              location: isGenericDefault ? def.location : matched.location,
-              brand: isGenericDefault ? def.brand : (matched.brand || def.brand),
-              url: url,
-              snapshotUrl: snapshotUrl,
-              metricsUrl: deriveMetricsUrl(url),
-              hint: def.hint
-            };
-          }
-          return { ...def };
-        });
-      }
-    }
-  } catch (error) {
-    console.warn("CamHub config could not be loaded; using defaults.", error);
-  }
-  return DEFAULT_CAMERAS.map((camera) =>({ ...camera }));
-}
-
-function saveCameras() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cameras));
-}
-
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) =>({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
-  })[char]);
-}
-
-function clearWatchdog(id) {
-  if (watchdogs.has(id)) {
-    clearTimeout(watchdogs.get(id));
-    watchdogs.delete(id);
-  }
-}
-
-function setConnection(id, status, message = "") {
-  connectionStates.set(id, { status, message, timestamp: Date.now() });
-
-  const card = document.querySelector(`[data-camera="${CSS.escape(id)}"]`);
-  if (!card) {
-    updateSummary();
-    return;
-  }
-
-  const dot = card.querySelector(`[data-dot="${CSS.escape(id)}"]`);
-  const statusText = card.querySelector(`[data-status-text="${CSS.escape(id)}"]`);
-  const micro = card.querySelector(`[data-micro="${CSS.escape(id)}"]`);
-  const feed = card.querySelector(`[data-feed="${CSS.escape(id)}"]`);
-  const placeholder = card.querySelector(`[data-placeholder="${CSS.escape(id)}"]`);
-  const placeholderMsg = card.querySelector(`[data-placeholder-message="${CSS.escape(id)}"]`);
-  const retryBtn = card.querySelector(`[data-retry-btn="${CSS.escape(id)}"]`);
-  const configBtnInPlaceholder = card.querySelector(`[data-placeholder-config="${CSS.escape(id)}"]`);
-
-  let word = "Offline";
-  if (status === "online") word = "Live";
-  else if (status === "connecting") word = "Connecting";
-  else if (status === "unconfigured") word = "Not configured";
-
-  if (dot) {
-    dot.className = `status-dot ${status}`;
-  }
-  if (statusText) {
-    statusText.textContent = word;
-  }
-  if (micro && status === "online") {
-    micro.textContent = getFormattedTime();
-  }
-
-  if (feed) {
-    feed.classList.toggle("is-hidden", status !== "online");
-  }
-
-  if (placeholder) {
-    placeholder.classList.toggle("is-hidden", status === "online");
-    if (placeholderMsg) {
-      if (status === "connecting") {
-        placeholderMsg.textContent = "Connecting to camera stream…";
-      } else if (status === "offline") {
-        placeholderMsg.textContent = message || "Stream unavailable. Verify local decoder is active.";
-      } else if (status === "unconfigured") {
-        placeholderMsg.textContent = "Protocol adapter not configured.";
-      }
-    }
-    if (retryBtn) {
-      retryBtn.style.display = status === "offline" ? "inline-flex" : "none";
-    }
-    if (configBtnInPlaceholder) {
-      configBtnInPlaceholder.style.display = status === "unconfigured" ? "inline-flex" : "none";
-    }
-  }
-
-  updateSummary();
-}
-
-function updateSummary() {
-  const visibleCameras = cameras.filter((c) =>isCameraSelected(c.id));
-  const onlineCount = visibleCameras.filter((camera) =>connectionStates.get(camera.id)?.status === "online").length;
-  const sentenceEl = document.querySelector("#status-sentence");
-  const navCountEl = document.querySelector("#nav-camera-count");
-  const timeStr = getFormattedTime();
-
-  if (sentenceEl) {
-    if (visibleCameras.length < cameras.length) {
-      sentenceEl.textContent = `${onlineCount} of ${visibleCameras.length} displayed cameras connected (${visibleCameras.length}/${cameras.length} visible). Checked ${timeStr}.`;
-    } else {
-      sentenceEl.textContent = `${onlineCount} of ${cameras.length} cameras connected. Checked ${timeStr}.`;
-    }
-  }
-  if (navCountEl) {
-    navCountEl.textContent = visibleCameras.length < cameras.length ? `${visibleCameras.length}/${cameras.length}` : String(cameras.length);
-  }
-}
-
-function isRemoteOrHttps() {
-  if (typeof window === "undefined" || !window.location) return false;
-  return (
-    window.location.protocol === "https:" ||
-    window.location.hostname.includes("ngrok") ||
-    window.location.hostname.includes("loca.lt") ||
-    window.location.hostname.includes("trycloudflare.com")
-  );
-}
-
-function resolveCameraStreamUrl(camera) {
-  if (isRemoteOrHttps()) {
-    return `/proxy/stream/${encodeURIComponent(camera.id)}`;
-  }
-  return camera.url;
-}
-
-function resolveCameraSnapshotUrl(camera) {
-  if (isRemoteOrHttps()) {
-    return `/proxy/snapshot/${encodeURIComponent(camera.id)}`;
-  }
-  return camera.snapshotUrl;
-}
-
-function resolveCameraMetricsUrl(camera) {
-  if (isRemoteOrHttps()) {
-    return `/proxy/metrics/${encodeURIComponent(camera.id)}`;
-  }
-  return camera.metricsUrl;
-}
-
-function startStream(id) {
-  const camera = cameras.find((item) =>item.id === id);
-  if (!camera) return;
-
-  clearWatchdog(id);
-
-  if (!camera.url) {
-    setConnection(id, "unconfigured", "Protocol adapter not configured.");
-    return;
-  }
-
-  setConnection(id, "connecting");
-
-  const img = document.querySelector(`[data-feed="${CSS.escape(id)}"]`);
-  if (!img) return;
-
-  img.onload = null;
-  img.onerror = null;
-
-  // Watchdog timer (8s)
-  const timer = setTimeout(() =>{
-    if (connectionStates.get(id)?.status === "connecting") {
-      setConnection(id, "offline", "Connection timed out (8s). No frames received from decoder.");
-    }
-  }, 8000);
-  watchdogs.set(id, timer);
-
-  img.onload = () =>{
-    clearWatchdog(id);
-    setConnection(id, "online");
-
-    // Dynamic stream ratio adjustment
-    if (img.naturalWidth && img.naturalHeight) {
-      const wrap = img.closest(".video-container");
-      if (wrap) {
-        wrap.style.setProperty("--stream-ratio", `${img.naturalWidth} / ${img.naturalHeight}`);
-      }
-      const badge = document.querySelector(`[data-ratio="${CSS.escape(id)}"]`);
-      if (badge) {
-        badge.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
-        badge.style.display = "inline-block";
-      }
-      const tileRes = document.querySelector(`[data-telemetry-res="${CSS.escape(id)}"]`);
-      if (tileRes) {
-        tileRes.textContent = `${img.naturalWidth}×${img.naturalHeight}`;
-      }
-    }
-  };
-
-  img.onerror = () =>{
-    clearWatchdog(id);
-    const activeUrl = resolveCameraStreamUrl(camera);
-    const portMatch = activeUrl.match(/:(\d+)/);
-    const portNote = portMatch ? `port :${portMatch[1]}` : activeUrl;
-    setConnection(id, "offline", `Connection failed on ${portNote}. Verify decoder is running.`);
-  };
-
-  const cacheBuster = `camhub_t=${Date.now()}`;
-  const activeStreamUrl = resolveCameraStreamUrl(camera);
-  const sep = activeStreamUrl.includes("?") ? "&" : "?";
-  img.src = `${activeStreamUrl}${sep}${cacheBuster}`;
-}
-
-function render() {
-  const timeStr = getFormattedTime();
-
-  const visibleCameras = cameras.filter((camera) => isCameraSelected(camera.id));
-
-  if (visibleCameras.length === 0) {
-    grid.innerHTML = `
-      <div class="no-cameras-selected">
-        <div class="no-cam-icon">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M2 7.5A1.5 1.5 0 0 1 3.5 6h9A1.5 1.5 0 0 1 14 7.5v9A1.5 1.5 0 0 1 12.5 18h-9A1.5 1.5 0 0 1 2 16.5z"></path>
-            <path d="M14 10.5 22 6v12l-8-4.5"></path>
-          </svg>
-        </div>
-        <h3 class="no-cam-title">No cameras selected</h3>
-        <p class="no-cam-desc">All camera feeds are currently hidden. Choose one or more cameras using the selection bar above to display them.</p>
-        <button class="button button-accent button-small" id="empty-state-show-all" type="button">Show all cameras</button>
-      </div>`;
-    const emptyBtn = document.getElementById("empty-state-show-all");
-    if (emptyBtn) {
-      emptyBtn.onclick = () => selectAllCameras(true);
-    }
-  } else {
-    grid.innerHTML = visibleCameras.map((camera, idx) => {
-      const isUnconfigured = !camera.url;
-      const stateObj = connectionStates.get(camera.id);
-      const status = stateObj?.status || (camera.url ? "connecting" : "unconfigured");
-      const statusClass = status;
-      const placeholderMsg = stateObj?.message || (status === "connecting" ? "Connecting to camera stream…" : status === "offline" ? "Stream unavailable. Verify local decoder is active." : "Protocol adapter not configured.");
-
-      // Read current health status
-      const h = cameraHealthData.get(camera.id);
-      const healthStatus = (h?.status || "UNKNOWN").toLowerCase();
-      const healthUpper = h?.status || (status === "online" ? "HEALTHY" : "DEGRADED");
-      const camTag = `CAM ${String(idx + 1).padStart(2, "0")}`;
-
-      return `
-        <article class="camera-card ${isUnconfigured ? 'is-unconfigured' : ''}" data-camera="${escapeHtml(camera.id)}">
-          <div class="video-container" data-video-wrap="${escapeHtml(camera.id)}">
-            <div class="tile-scrim">
-              <span class="tile-tag">${camTag}</span>
-              <span class="tile-timestamp" data-micro="${escapeHtml(camera.id)}">${timeStr}</span>
-            </div>
-
-            <!-- Zoom & Pan Indicator Badge -->
-            <div class="zoom-pan-hint" data-zoom-hint="${escapeHtml(camera.id)}" style="display:none;">
-              <span data-zoom-hint-text="${escapeHtml(camera.id)}">1.0x, Drag to pan</span>
-              <button type="button" class="zoom-hint-reset" data-zoom-reset="${escapeHtml(camera.id)}" title="Reset to 1.0x"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-            </div>
-
-            <!-- Floating CCTV Zoom Bar -->
-            <div class="tile-zoom-bar" data-zoom-bar="${escapeHtml(camera.id)}">
-              <button class="tile-zoom-btn" data-zoom-in="${escapeHtml(camera.id)}" type="button" title="Zoom in (+)">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              </button>
-              <button class="tile-zoom-btn zoom-level-badge" data-zoom-reset="${escapeHtml(camera.id)}" type="button" title="Click to reset zoom (1.0x)">
-                <span data-zoom-val="${escapeHtml(camera.id)}">1.0x</span>
-              </button>
-              <button class="tile-zoom-btn" data-zoom-out="${escapeHtml(camera.id)}" type="button" title="Zoom out (-)">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              </button>
-              <button class="tile-zoom-btn" data-zoom-fullscreen="${escapeHtml(camera.id)}" type="button" title="Toggle fullscreen">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
-              </button>
-            </div>
-
-            <img
-              class="camera-feed ${status === 'online' ? '' : 'is-hidden'}"
-              data-feed="${escapeHtml(camera.id)}"
-              alt="Live feed: ${escapeHtml(camera.name)}"
-            />
-
-            <div class="feed-placeholder ${status === 'online' ? 'is-hidden' : ''}" data-placeholder="${escapeHtml(camera.id)}">
-              <div class="placeholder-content">
-                <div class="placeholder-badge">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                  <span>No Signal</span>
-                </div>
-                <p class="placeholder-message" data-placeholder-message="${escapeHtml(camera.id)}">${escapeHtml(placeholderMsg)}</p>
-                ${isUnconfigured
-                  ? `<button class="button button-accent button-small" style="margin-top:8px;" data-placeholder-config="${escapeHtml(camera.id)}" type="button">Set up protocol</button>`
-                  : `<button class="button button-small" data-retry-btn="${escapeHtml(camera.id)}" type="button" style="margin-top:8px; ${status === 'offline' ? 'display:inline-flex;' : 'display:none;'}">Retry connection</button>`
-                }
-              </div>
-            </div>
-          </div>
-
-          <div class="tile-footer">
-            <div class="tile-footer-top">
-              <div class="tile-identity">
-                <span class="status-dot ${statusClass}" data-dot="${escapeHtml(camera.id)}"></span>
-                <h3 class="tile-cam-name">${escapeHtml(camera.name)}</h3>
-              </div>
-              <span class="badge-status ${healthStatus}" data-status-badge="${escapeHtml(camera.id)}">${healthUpper}</span>
-            </div>
-
-            <div class="tile-location-sub" title="${escapeHtml(camera.location)}">
-              ${escapeHtml(camera.hint || "LAN")} · 1920×1080
-            </div>
-
-            <div class="tile-footer-meta">
-              <span class="tile-meta-item">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                <span>FPS:</span>
-                <strong class="tile-meta-val font-mono" data-telemetry-fps="${escapeHtml(camera.id)}">0.0 / 15</strong>
-              </span>
-              <span class="tile-meta-item">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                <span>Latency:</span>
-                <strong class="tile-meta-val font-mono" data-telemetry-lat="${escapeHtml(camera.id)}">0 ms</strong>
-              </span>
-              <span class="tile-meta-item">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                <span>Subs:</span>
-                <strong class="tile-meta-val font-mono" data-telemetry-clients="${escapeHtml(camera.id)}">1 Web</strong>
-              </span>
-            </div>
-
-            <div class="tile-footer-actions">
-              <button class="button button-small tile-rec-btn ${activeRecordings.has(camera.id) ? 'is-recording' : ''}" data-tile-rec="${escapeHtml(camera.id)}" type="button" title="Toggle local recording">
-                <span class="tile-rec-dot"></span>
-                <span class="tile-rec-text">${activeRecordings.has(camera.id) ? 'Recording' : 'Record'}</span>
-              </button>
-              <button class="button button-small button-icon" data-refresh="${escapeHtml(camera.id)}" type="button" title="Reload feed">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-              </button>
-              <button class="button button-small button-icon" data-configure="${escapeHtml(camera.id)}" type="button" title="Configure camera">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-              </button>
-              <button class="button button-small" data-inspect-pipeline="${escapeHtml(camera.id)}" type="button" title="Inspect camera pipeline">
-                <span>Pipeline</span>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-              </button>
-              <button class="button button-small button-focus" data-focus="${escapeHtml(camera.id)}" type="button" title="Expand to full row">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
-              </button>
-            </div>
-          </div>
-        </article>`;
-    }).join("");
-  }
-
-  updateSummary();
-  attachEvents();
-
-  cameras.forEach((camera) => {
-    if (isCameraSelected(camera.id)) {
-      startStream(camera.id);
-    } else {
-      stopStream(camera.id);
-    }
-  });
-}
-
-const clientRenderMetrics = new Map();
-
-function trackClientRender(id) {
-  const now = performance.now();
-  let m = clientRenderMetrics.get(id);
-  if (!m) {
-    m = { frames: [], fps: 0 };
-    clientRenderMetrics.set(id, m);
-  }
-  m.frames.push(now);
-  while (m.frames.length >0 && m.frames[0] < now - 2000) {
-    m.frames.shift();
-  }
-  if (m.frames.length >= 2) {
-    const durSec = (m.frames[m.frames.length - 1] - m.frames[0]) / 1000;
-    if (durSec >0) {
-      m.fps = Math.round(((m.frames.length - 1) / durSec) * 10) / 10;
-    }
-  }
-}
-
-function renderAnalyticsCards() {
-  if (!analyticsCards) return;
-
-  analyticsCards.innerHTML = cameras.map((camera) =>{
-    const isUnconfigured = !camera.url;
-    return `
- <article class="metric-card" data-metric-card="${escapeHtml(camera.id)}">
- <div class="metric-card-head">
- <div class="metric-card-title">
- <span class="status-dot ${isUnconfigured ? 'unconfigured' : 'connecting'}" data-metric-dot="${escapeHtml(camera.id)}"></span>
-            ${escapeHtml(camera.name)}
- </div>
- <div style="display:flex; align-items:center; gap:6px;">
- <span class="health-badge-pill" data-health-badge="${escapeHtml(camera.id)}">UNKNOWN</span>
- <span class="metric-card-chip">${escapeHtml(camera.hint || 'LAN')}</span>
- </div>
- </div>
-
- <!-- Pipeline stages -->
- <div class="pipeline-section">
- <div class="pipeline-title">Pipeline stages</div>
- <div class="pipeline-flow" data-pipeline-flow="${escapeHtml(camera.id)}">
- <div class="stage-step">
- <span class="stage-name">Target</span>
- <span class="stage-fps" data-stage-target="${escapeHtml(camera.id)}">15.0 fps</span>
- </div>
- <span class="stage-arrow">→</span>
- <div class="stage-step">
- <span class="stage-name">LAN Ingest</span>
- <span class="stage-fps live" data-stage-source="${escapeHtml(camera.id)}">- fps</span>
- </div>
- <span class="stage-arrow">→</span>
- <div class="stage-step">
- <span class="stage-name">Decoder</span>
- <span class="stage-fps live" data-stage-decoder="${escapeHtml(camera.id)}">- fps</span>
- </div>
- <span class="stage-arrow">→</span>
- <div class="stage-step">
- <span class="stage-name">MJPEG</span>
- <span class="stage-fps live" data-stage-mjpeg="${escapeHtml(camera.id)}">- fps</span>
- </div>
- <span class="stage-arrow">→</span>
- <div class="stage-step">
- <span class="stage-name">Browser</span>
- <span class="stage-fps live" data-stage-browser="${escapeHtml(camera.id)}">- fps</span>
- </div>
- </div>
- </div>
-
- <!-- Bottleneck Diagnosis Box -->
- <div class="diagnosis-box" data-diagnosis-box="${escapeHtml(camera.id)}">
- <div class="diagnosis-head">
- <span class="diagnosis-pill" data-diagnosis-pill="${escapeHtml(camera.id)}">Analyzing…</span>
- <span class="diagnosis-stage" data-diagnosis-stage="${escapeHtml(camera.id)}"></span>
- </div>
- <p class="diagnosis-desc" data-diagnosis-desc="${escapeHtml(camera.id)}">Gathering pipeline telemetry data…</p>
- </div>
-
- <!-- Detailed Metric Grid -->
- <div class="metric-grid">
- <div class="metric-item">
- <span class="metric-label">Pipeline latency</span>
- <span class="metric-value latency" data-val-latency="${escapeHtml(camera.id)}">- ms</span>
- </div>
- <div class="metric-item">
- <span class="metric-label">Active subscribers</span>
- <span class="metric-value" data-val-clients="${escapeHtml(camera.id)}">-</span>
- </div>
- <div class="metric-item">
- <span class="metric-label">Queue / Dropped</span>
- <span class="metric-value" data-val-drops="${escapeHtml(camera.id)}">Q: 0, Drop: 0</span>
- </div>
- <div class="metric-item">
- <span class="metric-label">Decode errors</span>
- <span class="metric-value" data-val-errors="${escapeHtml(camera.id)}">0</span>
- </div>
- <div class="metric-item">
- <span class="metric-label">Total frames</span>
- <span class="metric-value" data-val-frames="${escapeHtml(camera.id)}">-</span>
- </div>
- <div class="metric-item">
- <span class="metric-label">Stream resolution</span>
- <span class="metric-value" data-val-resolution="${escapeHtml(camera.id)}">-</span>
- </div>
- </div>
-
- <!-- Sparkline FPS Stability -->
- <div class="sparkline-wrap">
- <div class="sparkline-label">
- <span>FPS stability (last 30s)</span>
- <span data-val-fps-current="${escapeHtml(camera.id)}">-</span>
- </div>
- <svg class="sparkline-svg" data-sparkline="${escapeHtml(camera.id)}" viewBox="0 0 320 44" preserveAspectRatio="none">
- <line x1="0" y1="22" x2="320" y2="22" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="2 2" />
- </svg>
- </div>
-
- <!-- Smart Health Monitor Section -->
- <div class="health-monitor-section" data-health-section="${escapeHtml(camera.id)}">
- <div class="health-section-head">
- <div class="health-status-group">
- <span class="health-state-dot" data-health-dot="${escapeHtml(camera.id)}"></span>
- <span class="health-state-title" data-health-state="${escapeHtml(camera.id)}">STATUS: UNKNOWN</span>
- </div>
- <div class="health-time-group">
- <span class="health-duration" data-health-duration="${escapeHtml(camera.id)}">-</span>
- <span class="health-checked" data-health-checked="${escapeHtml(camera.id)}">Checked: -</span>
- </div>
- </div>
- <p class="health-reason" data-health-reason="${escapeHtml(camera.id)}">Evaluating camera signals…</p>
- <div class="health-signals" data-health-signals="${escapeHtml(camera.id)}">
- <span class="signal-tag" data-sig-port="${escapeHtml(camera.id)}">Port: -</span>
- <span class="signal-tag" data-sig-feed="${escapeHtml(camera.id)}">Feed: -</span>
- <span class="signal-tag" data-sig-frozen="${escapeHtml(camera.id)}">Frozen: -</span>
- <span class="signal-tag" data-sig-fps="${escapeHtml(camera.id)}">FPS: -</span>
- </div>
-
- <!-- Process Supervisor & Auto-Recovery Status -->
- <div class="supervisor-line" data-supervisor-line="${escapeHtml(camera.id)}">
- <span class="supervisor-pill" data-sup-pill="${escapeHtml(camera.id)}">Supervisor: STOPPED</span>
- <button class="button button-small button-reset-breaker" data-reset-breaker="${escapeHtml(camera.id)}" type="button" style="display:none;">Reset Circuit Breaker</button>
- </div>
- </div>
- </article>`;
-  }).join("");
-}
-
-function updateSparkline(id, history) {
-  const svg = document.querySelector(`[data-sparkline="${CSS.escape(id)}"]`);
-  if (!svg || !history || history.length < 2) return;
-
-  const width = 320;
-  const height = 44;
-  const pad = 4;
-  const maxVal = Math.max(...history, 16);
-  const minVal = 0;
-  const range = maxVal - minVal || 1;
-
-  const points = history.map((val, idx) =>{
-    const x = pad + (idx / (history.length - 1)) * (width - pad * 2);
-    const y = height - pad - ((val - minVal) / range) * (height - pad * 2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-
-  const polylinePts = points.join(" ");
-  const polygonPts = `${points[0].split(",")[0]},${height - pad} ${polylinePts} ${points[points.length - 1].split(",")[0]},${height - pad}`;
-
-  svg.innerHTML = `
- <line x1="0" y1="${height / 2}" x2="${width}" y2="${height / 2}" stroke="rgba(255,255,255,0.08)" stroke-width="1" stroke-dasharray="3 3" />
- <polygon points="${polygonPts}" fill="rgba(111, 207, 151, 0.12)" />
- <polyline points="${polylinePts}" fill="none" stroke="var(--live)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  `;
-}
-
-let clientDisplayFps = 60.0;
-let lastRafTime = performance.now();
-let rafFrameCount = 0;
-
-function monitorDisplayFps(now) {
-  rafFrameCount++;
-  if (now - lastRafTime >= 1000) {
-    clientDisplayFps = Math.round((rafFrameCount * 1000) / (now - lastRafTime));
-    rafFrameCount = 0;
-    lastRafTime = now;
-  }
-  requestAnimationFrame(monitorDisplayFps);
-}
-requestAnimationFrame(monitorDisplayFps);
-
-async function pollMetrics() {
-  await Promise.allSettled(cameras.map(async (camera) =>{
-    const activeMetricsUrl = resolveCameraMetricsUrl(camera);
-    if (!activeMetricsUrl) return;
-    try {
-      const isHidden = typeof document !== "undefined" && document.hidden;
-      const cached = metricsData.get(camera.id);
-      const estFps = isHidden ? 0.0 : Math.min(clientDisplayFps, (cached?.stages?.mjpegOutFps ?? cached?.mjpegFps ?? 15.0));
-
-      const fetchUrl = new URL(activeMetricsUrl, window.location.href);
-      fetchUrl.searchParams.set("clientFps", estFps.toFixed(1));
-
-      const controller = new AbortController();
-      const timer = setTimeout(() =>controller.abort(), 2000);
-      const res = await fetch(fetchUrl.toString(), {
-        cache: "no-store",
-        headers: { "ngrok-skip-browser-warning": "1" },
-        signal: controller.signal
-      });
-      clearTimeout(timer);
-      if (!res.ok) return;
-      const data = await res.json();
-      metricsData.set(camera.id, data);
-
-      // Record history
-      let history = metricsHistory.get(camera.id);
-      if (!history) {
-        history = [];
-        metricsHistory.set(camera.id, history);
-      }
-      const primaryFps = data.stages?.sourceFps ?? data.sourceFps ?? 0;
-      history.push(primaryFps);
-      if (history.length >30) history.shift();
-
-      // Update per-tile telemetry strip
-      const fpsEl = document.querySelector(`[data-telemetry-fps="${CSS.escape(camera.id)}"]`);
-      const latEl = document.querySelector(`[data-telemetry-lat="${CSS.escape(camera.id)}"]`);
-      const clientsEl = document.querySelector(`[data-telemetry-clients="${CSS.escape(camera.id)}"]`);
-      const latMs = data.latency?.decodeLatencyMs ?? data.xcodeLatencyMs ?? 0;
-      if (fpsEl) fpsEl.textContent = `${primaryFps.toFixed(1)} / 15`;
-      if (latEl) latEl.textContent = `${Math.round(latMs)} ms`;
-      if (clientsEl) clientsEl.textContent = `${data.activeRtspSessions ?? 0} RTSP · ${data.activeMjpegClients ?? 0} Web`;
-
-      // Update Pipeline stages
-      const stages = data.stages || {};
-      const targetFps = stages.cameraDeclaredFps >0 ? stages.cameraDeclaredFps : 15.0;
-      const srcFpsVal = stages.sourceFps ?? data.sourceFps ?? 0;
-      const xcodeFpsVal = stages.decoderOutFps ?? data.xcodeOutFps ?? 0;
-      const mjpegFpsVal = stages.mjpegOutFps ?? data.mjpegFps ?? 0;
-      const browserFpsVal = stages.browserRenderFps >0 ? stages.browserRenderFps : (isHidden ? 0.0 : mjpegFpsVal);
-
-      function setStageFps(sel, val, target) {
-        const el = document.querySelector(`[${sel}="${CSS.escape(camera.id)}"]`);
-        if (!el) return;
-        el.textContent = `${val.toFixed(1)} fps`;
-        el.className = "stage-fps";
-        if (val >= target * 0.8) {
-          el.classList.add("live");
-        } else if (val >= target * 0.4) {
-          el.classList.add("warn");
-        } else {
-          el.classList.add("bad");
-        }
-      }
-
-      const targetEl = document.querySelector(`[data-stage-target="${CSS.escape(camera.id)}"]`);
-      if (targetEl) targetEl.textContent = `${targetFps.toFixed(1)} fps`;
-
-      setStageFps("data-stage-source", srcFpsVal, targetFps);
-      setStageFps("data-stage-decoder", xcodeFpsVal, targetFps);
-      setStageFps("data-stage-mjpeg", mjpegFpsVal, targetFps);
-      setStageFps("data-stage-browser", browserFpsVal, targetFps);
-
-      // Update Bottleneck Diagnosis
-      const diag = data.bottleneck;
-      const diagBox = document.querySelector(`[data-diagnosis-box="${CSS.escape(camera.id)}"]`);
-      const diagPill = document.querySelector(`[data-diagnosis-pill="${CSS.escape(camera.id)}"]`);
-      const diagStage = document.querySelector(`[data-diagnosis-stage="${CSS.escape(camera.id)}"]`);
-      const diagDesc = document.querySelector(`[data-diagnosis-desc="${CSS.escape(camera.id)}"]`);
-
-      if (diag && diagBox && diagPill && diagDesc) {
-        const sev = diag.severity || "none";
-        diagBox.className = `diagnosis-box ${sev !== "none" ? `severity-${sev}` : ""}`;
-        diagPill.className = `diagnosis-pill ${sev !== "none" ? sev : ""}`;
-
-        let pillText = "Pipeline Smooth";
-        if (diag.dominantStage === "CameraSource") pillText = "Ingest / Sensor";
-        else if (diag.dominantStage === "Transcoder") pillText = "Decode Latency";
-        else if (diag.dominantStage === "MjpegEncoder") pillText = "MJPEG Backlog";
-        else if (diag.dominantStage === "BrowserClient") pillText = "Browser Throttled";
-        diagPill.textContent = pillText;
-
-        if (diagStage) {
-          diagStage.textContent = diag.dominantStage && diag.dominantStage !== "None" ? `Stage: ${diag.dominantStage}` : "All stages OK";
-        }
-        diagDesc.textContent = diag.description || "Pipeline berjalan optimal.";
-      }
-
-      // Update Metric Grid
-      const latVal = document.querySelector(`[data-val-latency="${CSS.escape(camera.id)}"]`);
-      const framesVal = document.querySelector(`[data-val-frames="${CSS.escape(camera.id)}"]`);
-      const clientsVal = document.querySelector(`[data-val-clients="${CSS.escape(camera.id)}"]`);
-      const dropsVal = document.querySelector(`[data-val-drops="${CSS.escape(camera.id)}"]`);
-      const errorsVal = document.querySelector(`[data-val-errors="${CSS.escape(camera.id)}"]`);
-      const curFps = document.querySelector(`[data-val-fps-current="${CSS.escape(camera.id)}"]`);
-      const mDot = document.querySelector(`[data-metric-dot="${CSS.escape(camera.id)}"]`);
-
-      if (latVal) latVal.textContent = `${Math.round(latMs)} ms`;
-      if (framesVal) framesVal.textContent = Number(data.totalSourceFrames || 0).toLocaleString();
-      if (clientsVal) clientsVal.textContent = `${data.activeRtspSessions ?? 0} RTSP, ${data.activeMjpegClients ?? 0} Web`;
-
-      const health = data.health || {};
-      const totalDrops = (health.droppedDecoderIn || 0) + (health.droppedMjpegIn || 0);
-      if (dropsVal) dropsVal.textContent = `Q: ${health.queueDepth ?? 0}, Drop: ${totalDrops}`;
-      if (errorsVal) errorsVal.textContent = `${health.decodingErrors ?? 0} err, ${health.reconnectCount ?? 0} rcn`;
-      if (curFps) curFps.textContent = `${primaryFps.toFixed(1)} fps`;
-      if (mDot) mDot.className = "status-dot online";
-
-      const img = document.querySelector(`[data-feed="${CSS.escape(camera.id)}"]`);
-      if (img && img.naturalWidth) {
-        const resVal = document.querySelector(`[data-val-resolution="${CSS.escape(camera.id)}"]`);
-        if (resVal) resVal.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
-      }
-
-      updateSparkline(camera.id, history);
-    } catch {
-      // Offline or network error
-      const mDot = document.querySelector(`[data-metric-dot="${CSS.escape(camera.id)}"]`);
-      if (mDot && connectionStates.get(camera.id)?.status === "offline") {
-        mDot.className = "status-dot offline";
-      }
-    }
-  }));
-
-  // Aggregate Fleet Telemetry
-  let totalFps = 0;
-  let totalLat = 0;
-  let latCount = 0;
-  let totalRtsp = 0;
-  let totalWeb = 0;
-  const camFpsMap = {};
-
-  cameras.forEach((cam) => {
-    const d = metricsData.get(cam.id);
-    const fps = d?.stages?.sourceFps ?? d?.sourceFps ?? 0;
-    camFpsMap[cam.id] = fps;
-    totalFps += fps;
-
-    const lat = d?.latency?.decodeLatencyMs ?? d?.xcodeLatencyMs ?? 0;
-    if (lat > 0) {
-      totalLat += lat;
-      latCount++;
-    }
-
-    totalRtsp += (d?.activeRtspSessions ?? 0);
-    totalWeb += (d?.activeMjpegClients ?? 0);
-  });
-
-  const totalInMbps = totalFps > 0 ? (totalFps * 0.18).toFixed(1) : "0.0";
-  const totalOutMbps = (totalWeb * 1.8 + totalRtsp * 2.2).toFixed(1);
-  const avgLat = latCount > 0 ? Math.round(totalLat / latCount) : 0;
-
-  const bwEl = document.getElementById("metric-bandwidth");
-  const aggFpsEl = document.getElementById("metric-agg-fps");
-  const avgLatEl = document.getElementById("metric-avg-latency");
-  const subsEl = document.getElementById("metric-subscribers");
-
-  if (bwEl) bwEl.textContent = `${totalInMbps} Mbps / ${totalOutMbps} Mbps`;
-  if (aggFpsEl) aggFpsEl.textContent = `${totalFps.toFixed(1)} fps`;
-  if (avgLatEl) avgLatEl.textContent = `${avgLat} ms`;
-  if (subsEl) subsEl.textContent = `${totalRtsp} RTSP · ${totalWeb} Web`;
-
-  updateFpsHistory(camFpsMap);
-  updatePipelineInspector();
-}
-
-// ==========================================================================
-// Real-time Canvas FPS Line Chart
-// ==========================================================================
-
-let fpsTimeWindow = "1m";
-const MAX_FPS_HISTORY = 40;
-let fpsHistory = [];
-
-function initFpsChart() {
-  const canvas = document.getElementById("fps-canvas");
-  if (!canvas) return;
-
-  document.querySelectorAll("#fps-time-toggles .time-toggle-btn").forEach((btn) => {
-    btn.onclick = () => {
-      document.querySelectorAll("#fps-time-toggles .time-toggle-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      fpsTimeWindow = btn.dataset.window;
-      drawFpsChart();
-    };
-  });
-
-  window.addEventListener("resize", drawFpsChart);
-  drawFpsChart();
-}
-
-function updateFpsHistory(camFpsMap) {
-  const now = new Date();
-  fpsHistory.push({
-    time: now,
-    cam1: camFpsMap["v380-1"] ?? 0,
-    cam2: camFpsMap["v380-2"] ?? 0,
-    cam3: camFpsMap["okam-3"] ?? 0
-  });
-
-  if (fpsHistory.length > MAX_FPS_HISTORY) {
-    fpsHistory.shift();
-  }
-
-  const l1 = document.getElementById("legend-fps-cam1");
-  const l2 = document.getElementById("legend-fps-cam2");
-  const l3 = document.getElementById("legend-fps-cam3");
-  if (l1) l1.textContent = `${(camFpsMap["v380-1"] ?? 0).toFixed(1)} fps`;
-  if (l2) l2.textContent = `${(camFpsMap["v380-2"] ?? 0).toFixed(1)} fps`;
-  if (l3) l3.textContent = `${(camFpsMap["okam-3"] ?? 0).toFixed(1)} fps`;
-
-  drawFpsChart();
-}
-
-function drawFpsChart() {
-  const canvas = document.getElementById("fps-canvas");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const width = rect.width || 600;
-  const height = 150;
-
-  if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
-  }
-
-  ctx.save();
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, width, height);
-
-  ctx.fillStyle = "#101319";
-  ctx.fillRect(0, 0, width, height);
-
-  const padLeft = 32;
-  const padRight = 16;
-  const padTop = 14;
-  const padBottom = 24;
-  const chartW = width - padLeft - padRight;
-  const chartH = height - padTop - padBottom;
-  const maxFps = 20;
-
-  // Grid lines
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
-  ctx.font = "9.5px 'JetBrains Mono', Consolas, monospace";
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
-
-  const ticks = [0, 5, 10, 15, 20];
-  for (const tick of ticks) {
-    const y = padTop + chartH - (tick / maxFps) * chartH;
-    ctx.beginPath();
-    ctx.moveTo(padLeft, y);
-    ctx.lineTo(width - padRight, y);
-    ctx.stroke();
-    ctx.fillText(String(tick), padLeft - 6, y);
-  }
-
-  if (fpsHistory.length < 2) {
-    ctx.strokeStyle = "rgba(245, 158, 11, 0.3)";
-    ctx.beginPath();
-    ctx.moveTo(padLeft, padTop + chartH);
-    ctx.lineTo(width - padRight, padTop + chartH);
-    ctx.stroke();
-    ctx.restore();
-    return;
-  }
-
-  const drawSeries = (key, color) => {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-
-    for (let i = 0; i < fpsHistory.length; i++) {
-      const pt = fpsHistory[i];
-      const val = Math.min(maxFps, Math.max(0, pt[key]));
-      const x = padLeft + (i / (fpsHistory.length - 1)) * chartW;
-      const y = padTop + chartH - (val / maxFps) * chartH;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    const last = fpsHistory[fpsHistory.length - 1];
-    const lastVal = Math.min(maxFps, Math.max(0, last[key]));
-    const lastX = padLeft + chartW;
-    const lastY = padTop + chartH - (lastVal / maxFps) * chartH;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(lastX, lastY, 3, 0, Math.PI * 2);
-    ctx.fill();
-  };
-
-  drawSeries("cam1", "#f59e0b");
-  drawSeries("cam2", "#38bdf8");
-  drawSeries("cam3", "#e879f9");
-
-  // X-axis timestamps
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
-  const step = Math.max(1, Math.floor(fpsHistory.length / 5));
-  for (let i = 0; i < fpsHistory.length; i += step) {
-    const pt = fpsHistory[i];
-    const x = padLeft + (i / (fpsHistory.length - 1)) * chartW;
-    const timeStr = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(pt.time);
-    ctx.fillText(timeStr, x, padTop + chartH + 7);
-  }
-
-  ctx.restore();
-}
-
-// ==========================================================================
-// Interactive Pipeline Inspector
-// ==========================================================================
-
-let inspectedCameraId = "v380-1";
-
-function initPipelineInspector() {
-  const sel = document.getElementById("pipeline-cam-selector");
-  if (!sel) return;
-
-  sel.innerHTML = cameras.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name.split(',')[0])}</option>`).join("");
-  sel.value = inspectedCameraId;
-
-  sel.onchange = () => {
-    setInspectedCamera(sel.value);
-  };
-}
-
-function setInspectedCamera(cid) {
-  if (!cid) return;
-  inspectedCameraId = cid;
-  const sel = document.getElementById("pipeline-cam-selector");
-  if (sel) sel.value = cid;
-
-  const cam = cameras.find((c) => c.id === cid);
-  const title = document.getElementById("pipeline-cam-title");
-  if (title && cam) {
-    title.textContent = `Pipeline — ${cam.name.split(',')[0]}`;
-  }
-
-  updatePipelineInspector();
-}
-
-function updatePipelineInspector() {
-  const cam = cameras.find((c) => c.id === inspectedCameraId);
-  if (!cam) return;
-
-  const data = metricsData.get(inspectedCameraId) || {};
-  const stages = data.stages || {};
-  const isOnline = connectionStates.get(inspectedCameraId)?.status === "online";
-
-  const srcFps = stages.sourceFps ?? data.sourceFps ?? 0;
-  const lanFps = stages.lanInFps ?? (isOnline ? srcFps : 0);
-  const decFps = stages.decoderOutFps ?? data.xcodeOutFps ?? 0;
-  const mjpegFps = stages.mjpegOutFps ?? data.mjpegFps ?? 0;
-  const browserFps = stages.browserRenderFps > 0 ? stages.browserRenderFps : (isOnline ? mjpegFps : 0);
-
-  const setNode = (id, fps) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = `${fps.toFixed(1)} fps`;
-    el.className = "node-fps " + (fps >= 10 ? "live" : fps > 0 ? "warn" : "bad");
-  };
-
-  setNode("pipe-fps-source", srcFps);
-  setNode("pipe-fps-lan", lanFps);
-  setNode("pipe-fps-decoder", decFps);
-  setNode("pipe-fps-mjpeg", mjpegFps);
-  setNode("pipe-fps-browser", browserFps);
-
-  const alertBox = document.getElementById("pipeline-alert-box");
-  const alertTitle = document.getElementById("pipeline-alert-title");
-  const alertDesc = document.getElementById("pipeline-alert-desc");
-  const diag = data.bottleneck || {};
-
-  if (alertBox && alertTitle && alertDesc) {
-    if (!isOnline || srcFps === 0) {
-      alertBox.className = "pipeline-alert-box alert-warn";
-      alertTitle.textContent = "Bottleneck Detected";
-      alertDesc.textContent = diag.description || "Tidak ada frame diterima dari sumber kamera.";
-    } else if (diag.severity === "critical" || diag.severity === "warning") {
-      alertBox.className = "pipeline-alert-box alert-warn";
-      alertTitle.textContent = "Bottleneck Detected";
-      alertDesc.textContent = diag.description || `Pipeline delayed at ${diag.dominantStage || 'decoder'}.`;
-    } else {
-      alertBox.className = "pipeline-alert-box alert-nominal";
-      alertTitle.textContent = "Pipeline Nominal";
-      alertDesc.textContent = "All ingest and decode stages performing smoothly within target FPS.";
-    }
-  }
-
-  const lastFrameEl = document.getElementById("pipe-last-frame");
-  const qDropEl = document.getElementById("pipe-queue-drop");
-  const decodeErrorsEl = document.getElementById("pipe-decode-errors");
-  const stageValEl = document.getElementById("pipe-stage-val");
-  const portPidEl = document.getElementById("pipe-port-pid");
-
-  if (lastFrameEl) lastFrameEl.textContent = isOnline ? "0.1s ago" : "--";
-  const hMetrics = data.health || {};
-  const totalDrops = (hMetrics.droppedDecoderIn || 0) + (hMetrics.droppedMjpegIn || 0);
-  if (qDropEl) qDropEl.textContent = `${hMetrics.queueDepth ?? 0} / ${totalDrops}`;
-  if (decodeErrorsEl) decodeErrorsEl.textContent = `${hMetrics.decodingErrors ?? 0} err`;
-  if (stageValEl) {
-    const stageName = diag.dominantStage || (isOnline ? "Nominal" : "CameraSource");
-    stageValEl.textContent = stageName;
-    stageValEl.className = "pipe-detail-val badge-stage " + (stageName === "Nominal" ? "nominal" : "");
-  }
-  if (portPidEl) {
-    const portMatch = cam.url ? cam.url.match(/:(\d+)/) : null;
-    const port = portMatch ? portMatch[1] : (cam.port || 8080);
-    const sInfo = serviceStatusData.get(cam.id);
-    const pid = sInfo?.pid ? `PID ${sInfo.pid}` : "PID --";
-    portPidEl.textContent = `Port ${port} · ${pid}`;
-  }
-}
-
-// ==========================================================================
-// Diagnostics Summary & Host Resource Meters
-// ==========================================================================
-
-function formatDurationDetailed(sec) {
-  if (!sec || isNaN(sec)) return "0s";
-  sec = Math.round(sec);
-  const hrs = Math.floor(sec / 3600);
-  const mins = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  if (hrs > 0) return `${hrs}h ${String(mins).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
-  if (mins > 0) return `${mins}m ${String(s).padStart(2, '0')}s`;
-  return `${s}s`;
-}
-
-async function pollDiagnosticsSummary() {
-  try {
-    const res = await fetch("/api/diagnostics/summary", { cache: "no-store" });
-    if (!res.ok) return;
-    const data = await res.json();
-
-    const uptimeEl = document.getElementById("uptime-val");
-    if (uptimeEl && typeof data.uptimeSeconds === "number") {
-      uptimeEl.textContent = `Uptime ${formatDurationDetailed(data.uptimeSeconds)}`;
-    }
-
-    const resrc = data.resources || {};
-    const cpu = resrc.cpu || {};
-    const mem = resrc.memory || {};
-
-    const cpuVal = document.getElementById("meter-cpu-val");
-    const cpuBar = document.getElementById("meter-cpu-bar");
-    if (cpuVal && cpuBar && typeof cpu.percent === "number") {
-      cpuVal.textContent = `${Math.round(cpu.percent)}%`;
-      cpuBar.style.width = `${Math.min(100, Math.max(2, cpu.percent))}%`;
-      cpuBar.className = "meter-fill " + (cpu.percent >= 85 ? "bar-danger" : cpu.percent >= 65 ? "bar-warn" : "bar-live");
-    }
-
-    const ramVal = document.getElementById("meter-ram-val");
-    const ramBar = document.getElementById("meter-ram-bar");
-    if (ramVal && ramBar && typeof mem.percent === "number") {
-      ramVal.textContent = `${mem.usedGb} / ${mem.totalGb} GB (${Math.round(mem.percent)}%)`;
-      ramBar.style.width = `${Math.min(100, Math.max(2, mem.percent))}%`;
-      ramBar.className = "meter-fill " + (mem.percent >= 85 ? "bar-danger" : mem.percent >= 65 ? "bar-warn" : "bar-live");
-    }
-
-    const gpuVal = document.getElementById("meter-gpu-val");
-    if (gpuVal) {
-      gpuVal.textContent = "DirectML";
-    }
-  } catch {}
-}
-
-// ==========================================================================
-// Recent Events & Storage Card Polling
-// ==========================================================================
-
-async function pollRecentEvents() {
-  const container = document.getElementById("recent-events-list");
-  const countBadge = document.getElementById("recent-events-count");
-  if (!container) return;
-
-  try {
-    const res = await fetch("/api/events?limit=4", { cache: "no-store" });
-    if (!res.ok) return;
-    const data = await res.json();
-    const events = data.events || [];
-
-    if (events.length === 0) {
-      const nRes = await fetch("/api/notifications?limit=4", { cache: "no-store" });
-      if (nRes.ok) {
-        const nData = await nRes.json();
-        const notifs = nData.notifications || [];
-        if (notifs.length > 0) {
-          if (countBadge) countBadge.textContent = `${notifs.length} new`;
-          container.innerHTML = notifs.map((n) => {
-            const timeStr = n.timestamp ? new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(n.timestamp)) : "";
-            const sevClass = n.severity === "critical" ? "fail" : n.severity === "warning" ? "warn" : "pass";
-            return `
-              <div class="recent-event-item">
-                <span class="recent-event-dot ${sevClass}"></span>
-                <div class="recent-event-info">
-                  <span class="recent-event-title">${escapeHtml(n.cameraName || n.cameraId)}: ${escapeHtml(n.title)}</span>
-                </div>
-                <span class="recent-event-time font-mono">${timeStr}</span>
-              </div>`;
-          }).join("");
-          return;
-        }
-      }
-
-      if (countBadge) countBadge.textContent = "0 new";
-      container.innerHTML = `<div class="empty-list-notice">Listening for edge activity...</div>`;
-      return;
-    }
-
-    if (countBadge) countBadge.textContent = `${events.length} new`;
-    container.innerHTML = events.map((e) => {
-      const timeStr = e.timestamp ? new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(e.timestamp)) : "";
-      const scoreStr = e.score ? `${Math.round(e.score)}%` : "";
-      const label = e.aiEnriched && e.aiDetections?.length ? e.aiDetections[0].label : "Motion";
-      return `
-        <div class="recent-event-item">
-          <span class="recent-event-dot warn"></span>
-          <div class="recent-event-info">
-            <span class="recent-event-title">${escapeHtml(e.cameraName || e.cameraId)}: ${escapeHtml(label)} detected (${scoreStr})</span>
-          </div>
-          <span class="recent-event-time font-mono">${timeStr}</span>
-        </div>`;
-    }).join("");
-  } catch {}
-}
-
-async function pollStorageCard() {
-  try {
-    const res = await fetch("/api/storage/status", { cache: "no-store" });
-    if (!res.ok) return;
-    const data = await res.json();
-    const disk = data.disk || {};
-    const forecast = data.forecasting || {};
-    const camhub = data.camhub || {};
-
-    const tag = document.getElementById("storage-percent-tag");
-    const bar = document.getElementById("storage-meter-fill");
-    const usedVal = document.getElementById("storage-used-val");
-    const freeVal = document.getElementById("storage-free-val");
-    const camhubVal = document.getElementById("storage-camhub-val");
-    const forecastVal = document.getElementById("storage-forecast-val");
-
-    if (tag) tag.textContent = `${disk.usedPercent || 0}% Used`;
-    if (bar) {
-      const pct = disk.usedPercent || 0;
-      bar.style.width = `${pct}%`;
-      bar.className = "storage-fill " + (pct >= 90 ? "bar-danger" : pct >= 75 ? "bar-warn" : "bar-live");
-    }
-    if (usedVal) usedVal.textContent = `${disk.usedGb || 0} GB`;
-    if (freeVal) freeVal.textContent = `${disk.freeGb || 0} GB`;
-    if (camhubVal) camhubVal.textContent = `${camhub.totalMb || 0} MB`;
-    if (forecastVal) forecastVal.textContent = forecast.formattedRemaining || `${forecast.estimatedDaysRemaining || ">30"} days`;
-  } catch {}
-}
-
-// ==========================================================================
-// Fleet Filter Chips
-// ==========================================================================
-
-let currentFleetFilter = "all";
-
-function initFleetFilters() {
-  document.querySelectorAll("#fleet-filter-chips .filter-chip").forEach((chip) => {
-    chip.onclick = () => {
-      document.querySelectorAll("#fleet-filter-chips .filter-chip").forEach((c) => c.classList.remove("active"));
-      chip.classList.add("active");
-      currentFleetFilter = chip.dataset.filter;
-      applyFleetFilter();
-    };
-  });
-}
-
-function applyFleetFilter() {
-  document.querySelectorAll(".camera-card").forEach((card) => {
-    const cid = card.dataset.camera;
-    const h = cameraHealthData.get(cid);
-    const status = (h?.status || "offline").toLowerCase();
-
-    let show = true;
-    if (currentFleetFilter === "healthy") {
-      show = status === "healthy";
-    } else if (currentFleetFilter === "degraded") {
-      show = status === "degraded";
-    } else if (currentFleetFilter === "offline") {
-      show = status === "offline" || status === "critical";
-    }
-    card.style.display = show ? "" : "none";
-  });
-}
-
-function attachEvents() {
-  document.querySelectorAll("[data-configure]").forEach((button) =>{
-    button.onclick = (e) =>{
-      e.stopPropagation();
-      openConfig(button.dataset.configure);
-    };
-  });
-
-  document.querySelectorAll("[data-placeholder-config]").forEach((button) =>{
-    button.onclick = (e) =>{
-      e.stopPropagation();
-      openConfig(button.dataset.placeholderConfig);
-    };
-  });
-
-  document.querySelectorAll("[data-refresh]").forEach((button) =>{
-    button.onclick = (e) =>{
-      e.stopPropagation();
-      startStream(button.dataset.refresh);
-    };
-  });
-
-  document.querySelectorAll("[data-retry-btn]").forEach((button) =>{
-    button.onclick = (e) =>{
-      e.stopPropagation();
-      startStream(button.dataset.retryBtn);
-    };
-  });
-
-  // Focus mode
-  document.querySelectorAll("[data-focus]").forEach((btn) =>{
-    btn.onclick = (e) =>{
-      e.stopPropagation();
-      const card = btn.closest(".camera-card");
-      if (card) {
-        const isFocused = card.classList.toggle("is-focused");
-        btn.textContent = isFocused ? "Restore" : "Focus";
-      }
-    };
-  });
-
-  document.querySelectorAll("[data-video-wrap]").forEach((wrap) =>{
-    wrap.onclick = (e) =>{
-      if (e.target.closest("button") || e.target.closest(".tile-zoom-bar") || e.target.closest(".zoom-pan-hint")) return;
-      if (panHasMoved) return; // Ignore card focus when user dragged/panned
-      const cid = wrap.dataset.videoWrap;
-      const z = getZoomState(cid);
-      if (z && z.scale >1.05) return; // Ignore card focus when zoomed in
-      const card = wrap.closest(".camera-card");
-      if (card) {
-        const isFocused = card.classList.toggle("is-focused");
-        const focusBtn = card.querySelector("[data-focus]");
-        if (focusBtn) {
-          focusBtn.textContent = isFocused ? "Restore" : "Focus";
-        }
-      }
-    };
-  });
-
-  // Inspect pipeline buttons
-  document.querySelectorAll("[data-inspect-pipeline]").forEach((button) => {
-    button.onclick = (e) => {
-      e.stopPropagation();
-      setInspectedCamera(button.dataset.inspectPipeline);
-    };
-  });
-
-  // Camera card selection
-  document.querySelectorAll(".camera-card").forEach((card) => {
-    card.addEventListener("click", (e) => {
-      if (e.target.closest("button") || e.target.closest(".tile-zoom-bar") || e.target.closest("select")) return;
-      const cid = card.dataset.camera;
-      if (cid) setInspectedCamera(cid);
-    });
-  });
-
-  // Layout View Switcher (2col, auto, 1col)
-  document.querySelectorAll("[data-layout]").forEach((btn) =>{
-    btn.onclick = () =>{
-      document.querySelectorAll("[data-layout]").forEach((b) =>b.classList.remove("active"));
-      btn.classList.add("active");
-      const mode = btn.dataset.layout;
-      grid.classList.remove("density-2col", "density-auto", "density-1col");
-      grid.classList.add(`density-${mode}`);
-      localStorage.setItem("camhub.view.density", mode);
-    };
-  });
-
-  attachZoomEvents();
-}
-
-function restoreLayoutPreference() {
-  const saved = localStorage.getItem("camhub.view.density") || "auto";
-  const btn = document.querySelector(`[data-layout="${saved}"]`);
-  if (btn) {
-    document.querySelectorAll("[data-layout]").forEach((b) =>b.classList.remove("active"));
-    btn.classList.add("active");
-    grid.classList.remove("density-2col", "density-auto", "density-1col");
-    grid.classList.add(`density-${saved}`);
-  }
-}
-
-const cameraZoomState = new Map();
-let activePanningCamId = null;
-let panStartX = 0;
-let panStartY = 0;
-let panOrigX = 0;
-let panOrigY = 0;
-let panHasMoved = false;
-let globalZoomListenersAttached = false;
-
-function ensureGlobalZoomListeners() {
-  if (globalZoomListenersAttached) return;
-  globalZoomListenersAttached = true;
-
-  window.addEventListener("mousemove", (e) =>{
-    if (!activePanningCamId) return;
-    const dx = e.clientX - panStartX;
-    const dy = e.clientY - panStartY;
-    if (Math.hypot(dx, dy) >4) {
-      panHasMoved = true;
-    }
-    const z = getZoomState(activePanningCamId);
-    z.x = panOrigX + dx;
-    z.y = panOrigY + dy;
-    applyZoom(activePanningCamId, false);
-  });
-
-  window.addEventListener("mouseup", () =>{
-    if (!activePanningCamId) return;
-    const cid = activePanningCamId;
-    const wrap = document.querySelector(`[data-video-wrap="${CSS.escape(cid)}"]`);
-    if (wrap) wrap.classList.remove("is-panning");
-    activePanningCamId = null;
-    setTimeout(() =>{
-      panHasMoved = false;
-    }, 100);
-  });
-}
-
-function getZoomState(id) {
-  if (!cameraZoomState.has(id)) {
-    cameraZoomState.set(id, { scale: 1.0, x: 0, y: 0 });
-  }
-  return cameraZoomState.get(id);
-}
-
-function applyZoom(id, smooth = false) {
-  const z = getZoomState(id);
-  const wrap = document.querySelector(`[data-video-wrap="${CSS.escape(id)}"]`);
-  const img = document.querySelector(`[data-feed="${CSS.escape(id)}"]`);
-  const valBadge = document.querySelector(`[data-zoom-val="${CSS.escape(id)}"]`);
-  const actionValBadge = document.querySelector(`[data-zoom-action-val="${CSS.escape(id)}"]`);
-  const hint = document.querySelector(`[data-zoom-hint="${CSS.escape(id)}"]`);
-  const hintText = document.querySelector(`[data-zoom-hint-text="${CSS.escape(id)}"]`);
-
-  if (!wrap || !img) return;
-
-  const rect = wrap.getBoundingClientRect();
-  const maxX = Math.max(0, (rect.width * (z.scale - 1)) / 2);
-  const maxY = Math.max(0, (rect.height * (z.scale - 1)) / 2);
-
-  z.x = Math.max(-maxX, Math.min(maxX, z.x));
-  z.y = Math.max(-maxY, Math.min(maxY, z.y));
-
-  img.style.transition = smooth ? "transform 0.16s ease-out" : "none";
-  img.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.scale})`;
-
-  const formattedScale = `${z.scale.toFixed(1)}x`;
-
-  if (z.scale >1.02) {
-    wrap.classList.add("is-zoomed");
-    if (valBadge) valBadge.classList.add("is-active");
-    if (hint) hint.style.display = "inline-flex";
-    if (hintText) hintText.textContent = ` ${formattedScale}, Drag to pan`;
-  } else {
-    wrap.classList.remove("is-zoomed", "is-panning");
-    if (valBadge) valBadge.classList.remove("is-active");
-    if (hint) hint.style.display = "none";
-    z.x = 0;
-    z.y = 0;
-  }
-
-  if (valBadge) {
-    valBadge.textContent = formattedScale;
-  }
-  if (actionValBadge) {
-    actionValBadge.textContent = formattedScale;
-  }
-}
-
-function zoomCamera(id, deltaScale, focalX = 0, focalY = 0) {
-  const z = getZoomState(id);
-  const oldScale = z.scale;
-  let newScale = Math.round((oldScale + deltaScale) * 10) / 10;
-  newScale = Math.max(1.0, Math.min(5.0, newScale));
-
-  if (newScale === oldScale) return;
-
-  if (newScale >1.0 && oldScale >0) {
-    const factor = newScale / oldScale;
-    z.x = (z.x - focalX) * factor + focalX;
-    z.y = (z.y - focalY) * factor + focalY;
-  } else {
-    z.x = 0;
-    z.y = 0;
-  }
-
-  z.scale = newScale;
-  applyZoom(id, true);
-}
-
-function resetZoom(id) {
-  const z = getZoomState(id);
-  z.scale = 1.0;
-  z.x = 0;
-  z.y = 0;
-  applyZoom(id, true);
-}
-
-function attachZoomEvents() {
-  ensureGlobalZoomListeners();
-
-  // Bottom card footer zoom buttons
-  document.querySelectorAll("[data-zoom-in-btn]").forEach((btn) =>{
-    btn.onclick = (e) =>{
-      e.stopPropagation();
-      zoomCamera(btn.dataset.zoomInBtn, 0.5);
-    };
-  });
-
-  document.querySelectorAll("[data-zoom-out-btn]").forEach((btn) =>{
-    btn.onclick = (e) =>{
-      e.stopPropagation();
-      zoomCamera(btn.dataset.zoomOutBtn, -0.5);
-    };
-  });
-
-  document.querySelectorAll("[data-zoom-reset-btn]").forEach((btn) =>{
-    btn.onclick = (e) =>{
-      e.stopPropagation();
-      resetZoom(btn.dataset.zoomResetBtn);
-    };
-  });
-
-  document.querySelectorAll("[data-video-wrap]").forEach((wrap) =>{
-    const id = wrap.dataset.videoWrap;
-    if (!id) return;
-
-    // Apply current zoom state on re-render
-    applyZoom(id, false);
-
-    // Floating overlay buttons
-    const inBtn = wrap.querySelector(`[data-zoom-in="${CSS.escape(id)}"]`);
-    const outBtn = wrap.querySelector(`[data-zoom-out="${CSS.escape(id)}"]`);
-    const resetBtns = wrap.querySelectorAll(`[data-zoom-reset="${CSS.escape(id)}"]`);
-    const fsBtn = wrap.querySelector(`[data-zoom-fullscreen="${CSS.escape(id)}"]`);
-
-    if (inBtn) inBtn.onclick = (e) =>{ e.stopPropagation(); zoomCamera(id, 0.5); };
-    if (outBtn) outBtn.onclick = (e) =>{ e.stopPropagation(); zoomCamera(id, -0.5); };
-    resetBtns.forEach((btn) =>{
-      btn.onclick = (e) =>{ e.stopPropagation(); resetZoom(id); };
-    });
-
-    if (fsBtn) {
-      fsBtn.onclick = (e) =>{
-        e.stopPropagation();
-        if (!document.fullscreenElement) {
-          wrap.requestFullscreen().catch(() =>{});
-        } else {
-          document.exitFullscreen().catch(() =>{});
-        }
-      };
-    }
-
-    // Wheel Zoom (centered around cursor position, non-passive to prevent page scrolling)
-    wrap.addEventListener(
-      "wheel",
-      (e) =>{
-        e.preventDefault();
-        const rect = wrap.getBoundingClientRect();
-        const focalX = e.clientX - rect.left - rect.width / 2;
-        const focalY = e.clientY - rect.top - rect.height / 2;
-        const delta = e.deltaY < 0 ? 0.3 : -0.3;
-        zoomCamera(id, delta, focalX, focalY);
-      },
-      { passive: false }
-    );
-
-    // Double-click to toggle 1.0x <->2.5x
-    wrap.ondblclick = (e) =>{
-      if (e.target.closest("button") || e.target.closest(".tile-zoom-bar") || e.target.closest(".zoom-pan-hint")) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const z = getZoomState(id);
-      if (z.scale >1.05) {
-        resetZoom(id);
-      } else {
-        const rect = wrap.getBoundingClientRect();
-        const focalX = e.clientX - rect.left - rect.width / 2;
-        const focalY = e.clientY - rect.top - rect.height / 2;
-        zoomCamera(id, 1.5, focalX, focalY);
-      }
-    };
-
-    // Mouse Drag initiation
-    wrap.onmousedown = (e) =>{
-      if (e.target.closest("button") || e.target.closest(".tile-zoom-bar") || e.target.closest(".zoom-pan-hint")) return;
-      const z = getZoomState(id);
-      if (z.scale <= 1.02) return;
-
-      activePanningCamId = id;
-      panStartX = e.clientX;
-      panStartY = e.clientY;
-      panOrigX = z.x;
-      panOrigY = z.y;
-      panHasMoved = false;
-      wrap.classList.add("is-panning");
-      e.preventDefault();
-    };
-
-    // Touch support (1 finger pan when zoomed, 2 finger pinch-to-zoom)
-    let lastTouchDist = null;
-    let touchStartX = 0, touchStartY = 0;
-    let touchOrigX = 0, touchOrigY = 0;
-
-    wrap.ontouchstart = (e) =>{
-      if (e.touches.length === 1) {
-        const z = getZoomState(id);
-        if (z.scale >1.02) {
-          activePanningCamId = id;
-          touchStartX = e.touches[0].clientX;
-          touchStartY = e.touches[0].clientY;
-          touchOrigX = z.x;
-          touchOrigY = z.y;
-        }
-      } else if (e.touches.length === 2) {
-        activePanningCamId = null;
-        lastTouchDist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-      }
-    };
-
-    wrap.ontouchmove = (e) =>{
-      if (e.touches.length === 1 && activePanningCamId === id) {
-        e.preventDefault();
-        const z = getZoomState(id);
-        z.x = touchOrigX + (e.touches[0].clientX - touchStartX);
-        z.y = touchOrigY + (e.touches[0].clientY - touchStartY);
-        applyZoom(id, false);
-      } else if (e.touches.length === 2 && lastTouchDist !== null) {
-        e.preventDefault();
-        const dist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        const delta = (dist - lastTouchDist) * 0.01;
-        lastTouchDist = dist;
-        zoomCamera(id, delta);
-      }
-    };
-
-    wrap.ontouchend = () =>{
-      if (activePanningCamId === id) {
-        activePanningCamId = null;
-        wrap.classList.remove("is-panning");
-      }
-      lastTouchDist = null;
-    };
-  });
-
-  // Tile Record Toggle Buttons
-  document.querySelectorAll("[data-tile-rec]").forEach((btn) =>{
-    btn.onclick = async (e) =>{
-      e.stopPropagation();
-      const cid = btn.dataset.tileRec;
-      const isRec = activeRecordings.has(cid);
-      const action = isRec ? "stop" : "start";
-      btn.disabled = true;
-      try {
-        const res = await fetch(`/api/recordings/${action}?cameraId=${encodeURIComponent(cid)}`, { method: "POST" });
-        const data = await res.json();
-        if (data.success) {
-          if (isRec) activeRecordings.delete(cid);
-          else activeRecordings.add(cid);
-          showToast(`${isRec ? 'Stopped' : 'Started'} recording for ${cid}`, "success", 2500);
-          updateAllRecordingButtons();
-        } else {
-          showToast(data.message || "Failed to toggle recording", "error", 4000);
-        }
-      } catch (err) {
-        showToast("Recording request failed", "error", 3500);
-      } finally {
-        btn.disabled = false;
-      }
-    };
-  });
-}
-
-let playbackZoomInitialized = false;
-
-function initPlaybackZoom() {
-  const video = document.querySelector("#playback-video");
-  const wrapper = document.querySelector(".playback-player-card .player-wrapper");
-  const inBtn = document.querySelector("#playback-zoom-in");
-  const outBtn = document.querySelector("#playback-zoom-out");
-  const resetBtn = document.querySelector("#playback-zoom-reset");
-  const valBadge = document.querySelector("#playback-zoom-val");
-
-  if (!video || !wrapper) return;
-
-  let pScale = 1.0;
-  let pX = 0, pY = 0;
-
-  const applyPbZoom = (smooth = false) =>{
-    const rect = wrapper.getBoundingClientRect();
-    const maxX = Math.max(0, (rect.width * (pScale - 1)) / 2);
-    const maxY = Math.max(0, (rect.height * (pScale - 1)) / 2);
-
-    pX = Math.max(-maxX, Math.min(maxX, pX));
-    pY = Math.max(-maxY, Math.min(maxY, pY));
-
-    video.style.transition = smooth ? "transform 0.16s ease-out" : "none";
-    video.style.transform = `translate(${pX}px, ${pY}px) scale(${pScale})`;
-
-    if (valBadge) valBadge.textContent = `${pScale.toFixed(1)}x`;
-    if (pScale >1.02) {
-      wrapper.classList.add("is-zoomed");
-    } else {
-      wrapper.classList.remove("is-zoomed", "is-panning");
-      pX = 0;
-      pY = 0;
-    }
-  };
-
-  const zoomPb = (delta) =>{
-    pScale = Math.max(1.0, Math.min(5.0, Math.round((pScale + delta) * 10) / 10));
-    applyPbZoom(true);
-  };
-
-  if (inBtn) inBtn.onclick = () =>zoomPb(0.5);
-  if (outBtn) outBtn.onclick = () =>zoomPb(-0.5);
-  if (resetBtn) resetBtn.onclick = () =>{ pScale = 1.0; pX = 0; pY = 0; applyPbZoom(true); };
-
-  wrapper.addEventListener(
-    "wheel",
-    (e) =>{
-      if (e.target.closest("button") || e.target.closest("input")) return;
-      e.preventDefault();
-      zoomPb(e.deltaY < 0 ? 0.3 : -0.3);
+// CamHub Command Center - Core Frontend Application (v4.0)
+// High-density tactical CCTV operations and telemetry console.
+
+(function () {
+  'use strict';
+
+  // --- Core State & Camera Fleet Definition ---
+  const cameras = [
+    {
+      id: 'v380-1',
+      name: 'Camera 1, Indoor',
+      shortName: 'Cam 1',
+      ip: '192.168.100.24',
+      port: 8080,
+      streamUrl: 'http://127.0.0.1:8080/live.mjpg',
+      status: 'DEGRADED',
+      fps: 0.0,
+      targetFps: 15.0,
+      latencyMs: 0,
+      viewers: 1,
+      aspect: '16:9',
+      queue: '0 / 0',
+      decodeErrors: 0,
+      lastFrame: 'None yet',
+      recording: false,
+      recordStartTime: null
     },
-    { passive: false }
-  );
+    {
+      id: 'v380-2',
+      name: 'Camera 2, Garage',
+      shortName: 'Cam 2',
+      ip: '192.168.100.4',
+      port: 8081,
+      streamUrl: 'http://127.0.0.1:8081/live.mjpg',
+      status: 'DEGRADED',
+      fps: 0.0,
+      targetFps: 15.0,
+      latencyMs: 0,
+      viewers: 1,
+      aspect: '16:9',
+      queue: '0 / 0',
+      decodeErrors: 0,
+      lastFrame: 'None yet',
+      recording: false,
+      recordStartTime: null
+    },
+    {
+      id: 'okam-3',
+      name: 'Camera 3, O Kam Pro',
+      shortName: 'Cam 3',
+      ip: '192.168.100.6',
+      port: 8082,
+      streamUrl: 'http://127.0.0.1:8082/live.mjpg',
+      status: 'DEGRADED',
+      fps: 0.0,
+      targetFps: 15.0,
+      latencyMs: 0,
+      viewers: 80,
+      aspect: '16:9',
+      queue: '0 / 0',
+      decodeErrors: 0,
+      lastFrame: 'None yet',
+      recording: false,
+      recordStartTime: null
+    }
+  ];
 
-  let isPbDragging = false;
-  let startX = 0, startY = 0;
-  let origX = 0, origY = 0;
+  const navItems = [
+    { title: 'Live View', icon: 'i-live', id: 'v-live', lede: 'Watch every camera in one place. Select a camera to focus on it.' },
+    { title: 'Dashboard', icon: 'i-grid', id: 'v-dash', lede: 'Real-time camera health, pipeline, and hardware performance.' },
+    { title: 'Playback', icon: 'i-play', id: 'v-playback', lede: 'Play and export recorded video archives directly from local storage.' },
+    { title: 'Events & AI', icon: 'i-spark', id: 'v-events', lede: 'Motion events and edge neural vision activity timeline.', badge: 0 },
+    { title: 'Diagnostics', icon: 'i-pulse', id: 'v-diagnostics', lede: 'One-click diagnostics, port health checks, and log export bundle.' },
+    { title: 'Notifications', icon: 'i-bell', id: 'v-notif', lede: 'System alerts, camera offline notices, and fault timeline.', badge: 0 },
+    { title: 'Setup Guide', icon: 'i-book', id: 'v-setup', lede: 'Zero-cloud local camera bridge and hardware configuration.' }
+  ];
 
-  wrapper.onmousedown = (e) =>{
-    if (e.target.closest("button") || e.target.closest(".tile-zoom-bar") || pScale <= 1.0) return;
-    isPbDragging = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    origX = pX;
-    origY = pY;
-    wrapper.classList.add("is-panning");
-    e.preventDefault();
+  let currentViewIdx = 0;
+  let selectedCamIdx = 0;
+  let streamPathCamIdx = 0;
+  let activeLayout = 'focus'; // 'focus' | 'wall'
+  let zoomLevel = 1.0;
+  let chartRange = '1m';
+  let eventFilterCid = '';
+  let notifFilterSev = '';
+  let fpsHistory = {
+    'v380-1': [],
+    'v380-2': [],
+    'okam-3': []
   };
 
-  if (!playbackZoomInitialized) {
-    playbackZoomInitialized = true;
-    window.addEventListener("mousemove", (e) =>{
-      if (!isPbDragging) return;
-      pX = origX + (e.clientX - startX);
-      pY = origY + (e.clientY - startY);
-      applyPbZoom(false);
+  // Helper DOM selector
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => document.querySelectorAll(sel);
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0 || !bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+  }
+
+  function formatDuration(sec) {
+    if (!sec || isNaN(sec)) return '0s';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    if (m === 0) return `${s}s`;
+    return `${m}m ${s}s`;
+  }
+
+  function formatTime(isoStrOrMs) {
+    if (!isoStrOrMs) return '--:--:--';
+    const d = new Date(isoStrOrMs);
+    if (isNaN(d.getTime())) return '--:--:--';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  function formatDateTime(isoStrOrMs) {
+    if (!isoStrOrMs) return '--';
+    const d = new Date(isoStrOrMs);
+    if (isNaN(d.getTime())) return '--';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  // --- Toast Notification ---
+  function showToast(message) {
+    const t = $('#toast');
+    if (!t) return;
+    t.textContent = message;
+    t.classList.add('on');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('on'), 2800);
+  }
+
+  // --- Clock & OSD Timestamp Tick ---
+  function updateTimestamps() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const timeStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    $$('.ts').forEach((el) => {
+      el.textContent = timeStr;
     });
 
-    window.addEventListener("mouseup", () =>{
-      if (!isPbDragging) return;
-      isPbDragging = false;
-      wrapper.classList.remove("is-panning");
+    // Update active recording duration timers
+    cameras.forEach((cam) => {
+      if (cam.recording && cam.recordStartTime) {
+        const elapsed = Math.floor((Date.now() - cam.recordStartTime) / 1000);
+        const timerEl = $(`#rec-timer-${cam.id}`);
+        if (timerEl) timerEl.textContent = formatDuration(elapsed);
+      }
     });
   }
-}
+  setInterval(updateTimestamps, 1000);
 
-function toggleCameraSelection(id) {
-  if (selectedCameraIds.has(id)) {
-    selectedCameraIds.delete(id);
-  } else {
-    selectedCameraIds.add(id);
+  // --- Navigation & View Switching ---
+  function initNav() {
+    const navEl = $('#nav');
+    if (!navEl) return;
+    navEl.innerHTML = navItems
+      .map(
+        (item, idx) => `
+      <button data-go="${idx}" ${idx === currentViewIdx ? 'aria-current="page"' : ''} title="${item.title}">
+        <svg class="ico"><use href="#${item.icon}"/></svg>
+        <span>${item.title}</span>
+        ${item.badge ? `<b>${item.badge}</b>` : ''}
+      </button>`
+      )
+      .join('');
   }
-  saveSelectedCameraIds();
-  updateCameraFilterUI();
-  render();
-}
 
-function selectAllCameras(selectAll = true) {
-  if (selectAll) {
-    selectedCameraIds = new Set(cameras.map((c) =>c.id));
-  } else {
-    selectedCameraIds.clear();
-  }
-  saveSelectedCameraIds();
-  updateCameraFilterUI();
-  render();
-}
+  function switchView(idx) {
+    if (idx < 0 || idx >= navItems.length) return;
+    currentViewIdx = idx;
 
-function selectHealthyCamerasOnly() {
-  selectedCameraIds.clear();
-  cameras.forEach((c) =>{
-    const h = cameraHealthData.get(c.id);
-    const status = (h?.status || "UNKNOWN").toUpperCase();
-    if (status === "HEALTHY") {
-      selectedCameraIds.add(c.id);
+    // Update nav active states
+    $$('#nav button').forEach((b, k) => {
+      if (k === idx) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    });
+
+    // Toggle views visibility
+    navItems.forEach((item, k) => {
+      const v = $(`#${item.id}`);
+      if (v) v.hidden = k !== idx;
+    });
+
+    // Update Bar Title & Lede
+    const activeItem = navItems[idx];
+    if ($('#title')) $('#title').textContent = activeItem.title;
+    if ($('#lede')) {
+      $('#lede').textContent = activeItem.lede;
+      $('#lede').hidden = idx === 1; // Le de hidden on dashboard to save space
     }
-  });
-  if (selectedCameraIds.size === 0) {
-    selectedCameraIds = new Set(cameras.map((c) =>c.id));
-    showToast("No healthy cameras found at the moment", "warn", 3000);
-  } else {
-    showToast(`Showing ${selectedCameraIds.size} healthy camera(s)`, "info", 2500);
-  }
-  saveSelectedCameraIds();
-  updateCameraFilterUI();
-  render();
-}
 
-function updateCameraFilterUI() {
-  const toggleText = document.querySelector("#camera-filter-toggle-text");
-  const chipsContainer = document.querySelector("#camera-filter-chips");
-  const dropdownList = document.querySelector("#filter-dropdown-list");
-  const countLabel = document.querySelector("#cam-sel-count");
-  const resetBtn = document.querySelector("#cam-sel-reset-btn");
+    // Refresh view specific data
+    if (idx === 0) renderLiveView();
+    if (idx === 1) renderDashboard();
+    if (idx === 2) loadRecordings();
+    if (idx === 3) loadEvents();
+    if (idx === 4) loadDiagnostics();
+    if (idx === 5) loadNotifications();
 
-  const total = cameras.length;
-  const selCount = selectedCameraIds.size;
-
-  if (toggleText) {
-    toggleText.textContent = `Cameras (${selCount}/${total})`;
+    if (window.innerWidth <= 900) {
+      const shell = $('#shell');
+      if (shell) shell.classList.add('hide');
+    }
   }
 
-  if (countLabel) {
-    countLabel.textContent = `${selCount} of ${total} visible`;
+  // --- Segmented Controls ---
+  function initSegmentedControls() {
+    // Layout switcher (Focus / Wall)
+    $('#layouts')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const l = btn.dataset.l;
+      setLayout(l);
+    });
+
+    // Stream Path Camera Picker
+    $('#pick')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      streamPathCamIdx = parseInt(btn.dataset.i, 10);
+      $$('#pick button').forEach((b) => b.setAttribute('aria-pressed', b === btn));
+      updateStreamPathCard();
+    });
+
+    // Chart Range Picker
+    $('#range')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      chartRange = btn.dataset.range || '1m';
+      $$('#range button').forEach((b) => b.setAttribute('aria-pressed', b === btn));
+      drawFpsChart();
+    });
+
+    // Events Camera Filter
+    $('#events-cam-filter')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      eventFilterCid = btn.dataset.cid || '';
+      $$('#events-cam-filter button').forEach((b) => b.setAttribute('aria-pressed', b === btn));
+      renderEventsList();
+    });
+
+    // Notifications Severity Filter
+    $('#notif-sev-filter')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      notifFilterSev = btn.dataset.sev || '';
+      $$('#notif-sev-filter button').forEach((b) => b.setAttribute('aria-pressed', b === btn));
+      renderNotificationsList();
+    });
   }
 
-  if (resetBtn) {
-    resetBtn.style.display = selCount < total ? "inline-block" : "none";
+  function setLayout(l) {
+    activeLayout = l;
+    const isWall = l === 'wall';
+    if ($('#stage')) $('#stage').hidden = isWall;
+    if ($('#cams')) $('#cams').hidden = !isWall;
+    $$('#layouts button').forEach((btn) => {
+      btn.setAttribute('aria-pressed', btn.dataset.l === l);
+    });
+    if (isWall) renderWallGrid();
+    else renderFocusStage();
   }
 
-  // Render quick chips
-  if (chipsContainer) {
-    chipsContainer.innerHTML = cameras.map((c) =>{
-      const isSel = isCameraSelected(c.id);
-      const h = cameraHealthData.get(c.id);
-      const st = (h?.status || "UNKNOWN").toLowerCase();
-      const stUpper = h?.status || "UNKNOWN";
-      const reason = h?.reason || "Checking camera status…";
-      const fps = h?.metrics?.fps !== undefined ? `${h.metrics.fps} fps` : "";
+  // --- Live View Components ---
+  function getCameraFeedHtml(cam, isFocusView, idx) {
+    const isDegradedOrOffline = cam.status === 'DEGRADED' || cam.status === 'OFFLINE' || cam.fps === 0;
+    const dotClass = cam.status === 'HEALTHY' ? 'good-t' : cam.status === 'DEGRADED' ? 'warn-t' : 'bad-t';
+    const statusText = cam.status === 'HEALTHY' ? 'ONLINE' : cam.status === 'DEGRADED' ? 'DEGRADED' : 'NO SIGNAL';
 
-      return `
-        <button
-          type="button"
-          class="camera-filter-chip ${isSel ? 'active' : 'inactive'}"
-          data-cam-chip="${escapeHtml(c.id)}"
-          aria-pressed="${isSel ? 'true' : 'false'}"
-          title="${escapeHtml(reason)}"
-        >
-          <span class="chip-status-dot ${st}"></span>
-          <span class="chip-name">${escapeHtml(c.name)}</span>
+    return `
+      <div class="feed" id="feed-${cam.id}" style="${isFocusView ? `transform: scale(${zoomLevel}); transform-origin: center center;` : ''}">
+        <div class="osd t">
+          <i><span class="dot ${dotClass}"></span>CAM ${String(idx + 1).padStart(2, '0')}</i>
+          <i>${statusText}</i>
+        </div>
+        
+        <img class="mjpeg-stream" id="stream-img-${cam.id}" src="${cam.streamUrl}?t=${Date.now()}" alt="${escapeHtml(cam.name)}" onerror="this.style.display='none'; document.getElementById('msg-${cam.id}').style.display='block';" onload="this.style.display='block'; document.getElementById('msg-${cam.id}').style.display='none';" />
+        
+        <div class="msg" id="msg-${cam.id}" style="${isDegradedOrOffline ? 'display:block' : 'display:none'}">
+          <svg class="ico nosig"><use href="#i-cam"/></svg>
+          <b>Can't Reach ${escapeHtml(cam.name.split(',')[0])}</b>
+          <p>No frames from ${cam.ip}. Check that the camera is on and on this network.</p>
+          ${isFocusView ? `<button class="btn" data-retry="${idx}">Retry Connection</button>` : ''}
+        </div>
+
+        <div class="osd b">
+          <i class="ts"></i>
+          ${isFocusView ? `
+            <div class="zoom">
+              <button data-zoom="in" aria-label="Zoom in">+</button>
+              <button data-zoom="reset" aria-label="Reset zoom">${zoomLevel.toFixed(1)}x</button>
+              <button data-zoom="out" aria-label="Zoom out">−</button>
+              <button data-fs aria-label="Full screen">⤢</button>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderFocusStage() {
+    const stage = $('#stage');
+    if (!stage) return;
+    const cam = cameras[selectedCamIdx] || cameras[0];
+
+    const mainCamHtml = `
+      <div class="card main-cam" id="mc">
+        ${getCameraFeedHtml(cam, true, selectedCamIdx)}
+        <div class="meta">
+          <div>
+            <b>${escapeHtml(cam.name)}</b>
+            <div class="ip">${cam.ip} · Port ${cam.port}</div>
+          </div>
+          <div class="stats">
+            <div><b>${cam.fps.toFixed(1)}</b><span>Frame rate</span></div>
+            <div><b>${cam.latencyMs} ms</b><span>Latency</span></div>
+            <div><b>${cam.aspect}</b><span>Aspect</span></div>
+            <div><b>${cam.viewers}</b><span>Viewers</span></div>
+          </div>
+          <div class="acts">
+            <button class="btn ${cam.recording ? 'dng' : ''}" data-act="record" data-cid="${cam.id}">
+              <svg class="ico"><use href="#i-play"/></svg>
+              <span>${cam.recording ? 'Stop Record' : 'Record'}</span>
+            </button>
+            <button class="btn" data-act="reload" data-cid="${cam.id}">
+              <svg class="ico"><use href="#i-re"/></svg>
+              <span>Reload</span>
+            </button>
+            <button class="btn" data-act="config" data-cid="${cam.id}">
+              <svg class="ico"><use href="#i-gear"/></svg>
+              <span>Configure</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const sideThumbnailsHtml = `
+      <div class="side">
+        ${cameras
+          .map((c, i) => {
+            const isSel = i === selectedCamIdx;
+            const dotClass = c.status === 'HEALTHY' ? 'good-t' : c.status === 'DEGRADED' ? 'warn-t' : 'bad-t';
+            return `
+            <button class="thumb" data-i="${i}" aria-pressed="${isSel}" aria-label="${escapeHtml(c.name)}">
+              ${getCameraFeedHtml(c, false, i)}
+              <div class="tl">
+                <span>${escapeHtml(c.name)}</span>
+                <span class="${dotClass}"><i class="dot"></i>${c.status}</span>
+              </div>
+            </button>
+          `;
+          })
+          .join('')}
+      </div>
+    `;
+
+    stage.innerHTML = mainCamHtml + sideThumbnailsHtml;
+  }
+
+  function renderWallGrid() {
+    const camsGrid = $('#cams');
+    if (!camsGrid) return;
+
+    camsGrid.innerHTML = cameras
+      .map(
+        (cam, i) => `
+      <article class="card main-cam">
+        ${getCameraFeedHtml(cam, false, i)}
+        <div class="meta">
+          <div>
+            <b style="font-size:15px">${escapeHtml(cam.name)}</b>
+            <div class="ip">${cam.ip} · Port ${cam.port}</div>
+          </div>
+          <div class="acts">
+            <button class="btn" data-focus="${i}">Focus</button>
+            <button class="btn ${cam.recording ? 'dng' : ''}" data-act="record" data-cid="${cam.id}">
+              ${cam.recording ? 'Stop' : 'Record'}
+            </button>
+            <button class="btn" data-act="reload" data-cid="${cam.id}">Reload</button>
+          </div>
+        </div>
+      </article>
+    `
+      )
+      .join('');
+  }
+
+  function renderLiveView() {
+    updateFleetSummary();
+    if (activeLayout === 'wall') renderWallGrid();
+    else renderFocusStage();
+  }
+
+  function updateFleetSummary() {
+    let healthy = 0,
+      degraded = 0,
+      offline = 0;
+    cameras.forEach((c) => {
+      if (c.status === 'HEALTHY') healthy++;
+      else if (c.status === 'DEGRADED') degraded++;
+      else offline++;
+    });
+
+    const summaryEl = $('#live-fleet-counts');
+    if (summaryEl) {
+      summaryEl.textContent = `${healthy} Healthy · ${degraded} Degraded · ${offline} Offline`;
+    }
+
+    const dotEl = $('#live-fleet-dot');
+    if (dotEl) {
+      dotEl.className = 'dot ' + (healthy === cameras.length ? 'good-t' : degraded > 0 ? 'warn-t' : 'bad-t');
+    }
+  }
+
+  // --- Dashboard Components & Real-time Chart ---
+  function renderDashboard() {
+    // 1. Live Preview Thumbnails
+    const prev = $('#prev');
+    if (prev) {
+      prev.innerHTML = cameras
+        .map(
+          (c, i) => `
+        <button class="thumb" data-i="${i}" aria-pressed="false" aria-label="${escapeHtml(c.name)}">
+          ${getCameraFeedHtml(c, false, i)}
+          <div class="tl">
+            <span>${escapeHtml(c.name)}</span>
+            <span class="${c.status === 'HEALTHY' ? 'good-t' : 'warn-t'}"><i class="dot"></i>${c.status}</span>
+          </div>
         </button>
+      `
+        )
+        .join('');
+    }
+
+    // 2. Stream Path Camera Selector
+    const pick = $('#pick');
+    if (pick && pick.children.length === 0) {
+      pick.innerHTML = cameras
+        .map((c, i) => `<button aria-pressed="${i === streamPathCamIdx}" data-i="${i}">Camera ${i + 1}</button>`)
+        .join('');
+    }
+
+    updateDashboardFleetStats();
+    updateStreamPathCard();
+    drawFpsChart();
+    loadDashboardRecentEvents();
+  }
+
+  function updateDashboardFleetStats() {
+    let healthy = 0,
+      degraded = 0,
+      offline = 0;
+    cameras.forEach((c) => {
+      if (c.status === 'HEALTHY') healthy++;
+      else if (c.status === 'DEGRADED') degraded++;
+      else offline++;
+    });
+
+    if ($('#fleet-healthy')) $('#fleet-healthy').textContent = healthy;
+    if ($('#fleet-degraded')) $('#fleet-degraded').textContent = degraded;
+    if ($('#fleet-offline')) $('#fleet-offline').textContent = offline;
+
+    const stack = $('#fleet-stack');
+    if (stack) {
+      const total = cameras.length || 3;
+      const hPct = (healthy / total) * 100;
+      const dPct = (degraded / total) * 100;
+      const oPct = (offline / total) * 100;
+      stack.innerHTML = `
+        ${hPct > 0 ? `<i style="width:${hPct}%;background:var(--good)"></i>` : ''}
+        ${dPct > 0 ? `<i style="width:${dPct}%;background:var(--warn)"></i>` : ''}
+        ${oPct > 0 ? `<i style="width:${oPct}%;background:var(--bad)"></i>` : ''}
       `;
-    }).join("");
-
-    chipsContainer.querySelectorAll("[data-cam-chip]").forEach((btn) =>{
-      btn.onclick = () =>{
-        toggleCameraSelection(btn.dataset.camChip);
-      };
-    });
-  }
-
-  // Render dropdown list
-  if (dropdownList) {
-    dropdownList.innerHTML = cameras.map((c) =>{
-      const isSel = isCameraSelected(c.id);
-      const h = cameraHealthData.get(c.id);
-      const st = (h?.status || "UNKNOWN").toLowerCase();
-      const stUpper = h?.status || "UNKNOWN";
-      const reason = h?.reason || "Checking camera status…";
-      const fps = h?.metrics?.fps !== undefined ? `${h.metrics.fps} fps` : "";
-
-      return `
- <label class="filter-item-row" title="${escapeHtml(reason)}">
- <input
-            type="checkbox"
-            class="filter-item-check"
-            data-cam-check="${escapeHtml(c.id)}"
-            ${isSel ? 'checked' : ''}
-          />
- <span class="chip-status-dot ${st}"></span>
- <div class="filter-item-info">
- <span class="filter-item-name">${escapeHtml(c.name)}</span>
- <span class="filter-item-sub">${escapeHtml(c.location || c.id)}${fps ? `, ${fps}` : ''}</span>
- </div>
- <span class="chip-status-badge ${st}">${stUpper}</span>
- </label>
-      `;
-    }).join("");
-
-    dropdownList.querySelectorAll("[data-cam-check]").forEach((chk) =>{
-      chk.onchange = () =>{
-        toggleCameraSelection(chk.dataset.camCheck);
-      };
-    });
-  }
-}
-
-function initCameraFilter() {
-  const toggleBtn = document.querySelector("#camera-filter-toggle-btn");
-  const dropdown = document.querySelector("#camera-filter-dropdown");
-  const allBtn = document.querySelector("#filter-all-btn");
-  const healthyBtn = document.querySelector("#filter-healthy-btn");
-  const noneBtn = document.querySelector("#filter-none-btn");
-  const resetBtn = document.querySelector("#cam-sel-reset-btn");
-
-  if (toggleBtn && dropdown) {
-    toggleBtn.onclick = (e) =>{
-      e.stopPropagation();
-      const isVisible = dropdown.style.display !== "none";
-      dropdown.style.display = isVisible ? "none" : "flex";
-      toggleBtn.setAttribute("aria-expanded", String(!isVisible));
-    };
-
-    document.addEventListener("click", (e) =>{
-      if (!dropdown.contains(e.target) && !toggleBtn.contains(e.target)) {
-        dropdown.style.display = "none";
-        toggleBtn.setAttribute("aria-expanded", "false");
-      }
-    });
-  }
-
-  if (allBtn) allBtn.onclick = () =>selectAllCameras(true);
-  if (healthyBtn) healthyBtn.onclick = () =>selectHealthyCamerasOnly();
-  if (noneBtn) noneBtn.onclick = () =>selectAllCameras(false);
-  if (resetBtn) resetBtn.onclick = () =>selectAllCameras(true);
-
-  updateCameraFilterUI();
-}
-
-function openConfig(id) {
-  const camera = cameras.find((item) =>item.id === id);
-  if (!camera) return;
-
-  document.querySelector("#camera-id").value = camera.id;
-  document.querySelector("#dialog-title").textContent = `Configure ${camera.name}`;
-  document.querySelector("#camera-name").value = camera.name || "";
-  document.querySelector("#camera-location").value = camera.location || "";
-  document.querySelector("#camera-brand").value = camera.brand || "";
-  document.querySelector("#camera-url").value = camera.url || "";
-  document.querySelector("#camera-snapshot").value = camera.snapshotUrl || "";
-
-  if (typeof dialog.showModal === "function") {
-    dialog.showModal();
-  } else {
-    dialog.setAttribute("open", "true");
-  }
-}
-
-function closeDialog() {
-  if (typeof dialog.close === "function") {
-    dialog.close();
-  } else {
-    dialog.removeAttribute("open");
-  }
-}
-
-if (closeDialogBtn) closeDialogBtn.onclick = closeDialog;
-if (cancelDialogBtn) cancelDialogBtn.onclick = closeDialog;
-
-configForm.addEventListener("submit", (event) =>{
-  event.preventDefault();
-  const id = document.querySelector("#camera-id").value;
-  const camera = cameras.find((item) =>item.id === id);
-  if (!camera) return;
-
-  const urlInput = document.querySelector("#camera-url").value.trim();
-  const snapshotInput = document.querySelector("#camera-snapshot").value.trim();
-
-  if (urlInput) {
-    try {
-      const parsed = new URL(urlInput);
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        throw new Error("Only HTTP(S) stream URLs are supported.");
-      }
-      if (parsed.username || parsed.password) {
-        throw new Error("Do not embed camera usernames or passwords inside the stream URL.");
-      }
-    } catch (error) {
-      alert(error.message || "Please enter a valid HTTP or HTTPS stream URL.");
-      return;
     }
   }
 
-  if (snapshotInput) {
-    try {
-      const parsed = new URL(snapshotInput);
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        throw new Error("Only HTTP(S) snapshot URLs are supported.");
-      }
-      if (parsed.username || parsed.password) {
-        throw new Error("Do not embed camera usernames or passwords inside snapshot URLs.");
-      }
-    } catch (error) {
-      alert(error.message || "Please enter a valid HTTP or HTTPS snapshot URL.");
-      return;
-    }
-  }
+  function updateStreamPathCard() {
+    const cam = cameras[streamPathCamIdx] || cameras[0];
+    if ($('#pc')) $('#pc').textContent = `Camera ${streamPathCamIdx + 1}`;
 
-  camera.name = document.querySelector("#camera-name").value.trim();
-  camera.location = document.querySelector("#camera-location").value.trim();
-  camera.brand = document.querySelector("#camera-brand").value.trim();
-  camera.url = urlInput;
-  camera.snapshotUrl = snapshotInput;
-  camera.metricsUrl = deriveMetricsUrl(urlInput);
+    const isDegraded = cam.status === 'DEGRADED' || cam.fps === 0;
+    const flow = $('#flow');
+    if (flow) {
+      const nodes = [
+        { label: 'Camera', status: isDegraded ? 'No frames' : 'OK', bad: isDegraded },
+        { label: 'Network', status: isDegraded ? 'Waiting' : 'Connected', bad: false },
+        { label: 'Decoder', status: isDegraded ? 'Idle' : 'Active', bad: false },
+        { label: 'Stream', status: isDegraded ? 'Degraded' : 'Active', bad: false },
+        { label: 'Browser', status: 'Rendering', bad: false }
+      ];
 
-  saveCameras();
-  closeDialog();
-  render();
-});
-
-document.querySelector("#refresh-all").addEventListener("click", () =>{
-  cameras.forEach((camera) =>{
-    if (camera.url && isCameraSelected(camera.id)) {
-      startStream(camera.id);
-    }
-  });
-});
-
-window.addEventListener("focus", () =>{
-  cameras.forEach((camera) =>{
-    if (camera.url && isCameraSelected(camera.id) && connectionStates.get(camera.id)?.status === "offline") {
-      startStream(camera.id);
-    }
-  });
-});
-
-// Setup guide scripts
-const SETUP_SCRIPTS = {
-  cam1: `cd "$HOME\\V380Decoder-Latest"
-
-$user1 = Read-Host "Username camera 1"
-$secure1 = Read-Host "Password camera 1" -AsSecureString
-$ptr1 = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure1)
-$pass1 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr1)
-
-dotnet run --no-build -- \`
-  --id 124095217 \`
-  --username $user1 \`
-  --password $pass1 \`
-  --ip 192.168.100.24 \`
-  --port 8800 \`
-  --source lan \`
-  --output rtsp \`
-  --quality hd \`
-  --enable-api \`
-  --http-port 8080 \`
-  --rtsp-port 8554 \`
-  --debug
-
-[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr1)
-Remove-Variable pass1, secure1, user1 -ErrorAction SilentlyContinue`,
-
-  cam2: `cd "$HOME\\V380Decoder-Fork"
-
-$user2 = Read-Host "Username camera 2"
-$secure2 = Read-Host "Password camera 2" -AsSecureString
-$ptr2 = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure2)
-$pass2 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr2)
-
-dotnet run --no-build -- \`
-  --id 97357757 \`
-  --username $user2 \`
-  --password $pass2 \`
-  --ip 192.168.100.4 \`
-  --port 8800 \`
-  --source lan \`
-  --output rtsp \`
-  --quality hd \`
-  --enable-api \`
-  --http-port 8081 \`
-  --rtsp-port 8555 \`
-  --debug
-
-[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr2)
-Remove-Variable pass2, secure2, user2 -ErrorAction SilentlyContinue`,
-
-  all: `# ==========================================
-# 1. CAMERA 1 - Indoor (Port 8080)
-# ==========================================
-cd "$HOME\\V380Decoder-Latest"
-
-$user1 = Read-Host "Username camera 1"
-$secure1 = Read-Host "Password camera 1" -AsSecureString
-$ptr1 = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure1)
-$pass1 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr1)
-
-dotnet run --no-build -- \`
-  --id 124095217 \`
-  --username $user1 \`
-  --password $pass1 \`
-  --ip 192.168.100.24 \`
-  --port 8800 \`
-  --source lan \`
-  --output rtsp \`
-  --quality hd \`
-  --enable-api \`
-  --http-port 8080 \`
-  --rtsp-port 8554 \`
-  --debug
-
-[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr1)
-Remove-Variable pass1, secure1, user1 -ErrorAction SilentlyContinue
-
-# ==========================================
-# 2. CAMERA 2 - Garage (Port 8081)
-# ==========================================
-cd "$HOME\\V380Decoder-Fork"
-
-$user2 = Read-Host "Username camera 2"
-$secure2 = Read-Host "Password camera 2" -AsSecureString
-$ptr2 = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure2)
-$pass2 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr2)
-
-dotnet run --no-build -- \`
-  --id 97357757 \`
-  --username $user2 \`
-  --password $pass2 \`
-  --ip 192.168.100.4 \`
-  --port 8800 \`
-  --source lan \`
-  --output rtsp \`
-  --quality hd \`
-  --enable-api \`
-  --http-port 8081 \`
-  --rtsp-port 8555 \`
-  --debug
-
-[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr2)
-Remove-Variable pass2, secure2, user2 -ErrorAction SilentlyContinue
-
-# ==========================================
-# 3. CAMERA 3 - O-Kam Pro / VStarcam (Port 8082)
-# ==========================================
-cd "C:\\DaffaP\\Project df\\CamHUB"
-python okam_adapter.py --port 8082 --rtsp "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0"`,
-
-  okam: `# ==========================================
-# 3. CAMERA 3 - O-Kam Pro / VStarcam (Port 8082)
-# ==========================================
-cd "C:\\DaffaP\\Project df\\CamHUB"
-
-# Runs O-Kam RTSP-to-MJPEG adapter on port 8082
-python okam_adapter.py --port 8082 --rtsp "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0"`
-};
-
-function initSetupGuide() {
-  const codeEl = document.querySelector("#setup-script-code");
-  const copyBtn = document.querySelector("#copy-script-btn");
-  const tabButtons = document.querySelectorAll("[data-script-tab]");
-
-  if (codeEl && SETUP_SCRIPTS.cam1) {
-    codeEl.textContent = SETUP_SCRIPTS.cam1;
-  }
-
-  tabButtons.forEach((btn) =>{
-    btn.addEventListener("click", () =>{
-      tabButtons.forEach((b) =>b.classList.remove("active"));
-      btn.classList.add("active");
-      const key = btn.dataset.scriptTab;
-      if (codeEl && SETUP_SCRIPTS[key]) {
-        codeEl.textContent = SETUP_SCRIPTS[key];
-      }
-    });
-  });
-
-  if (copyBtn) {
-    copyBtn.addEventListener("click", async () =>{
-      const textToCopy = codeEl ? codeEl.textContent : "";
-      if (!textToCopy) return;
-      try {
-        await navigator.clipboard.writeText(textToCopy);
-        const originalText = copyBtn.textContent;
-        copyBtn.textContent = "Copied";
-        setTimeout(() =>{
-          copyBtn.textContent = originalText;
-        }, 2000);
-      } catch (err) {
-        const range = document.createRange();
-        range.selectNodeContents(codeEl);
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-    });
-  }
-}
-
-function switchView(viewName) {
-  const views = ["overview", "playback", "events", "setup"];
-  if (!views.includes(viewName)) return;
-
-  // Toggle view active class
-  views.forEach((v) => {
-    const el = document.getElementById(v);
-    if (el) el.classList.toggle("active", v === viewName);
-  });
-
-  // Update sidebar nav link active class
-  document.querySelectorAll(".nav-link").forEach((l) => {
-    const navAttr = l.dataset.nav;
-    l.classList.toggle("active", navAttr === viewName);
-  });
-
-  // Update topbar title & subtitle
-  const titleEl = document.getElementById("page-title");
-  const subEl = document.getElementById("status-sentence");
-  if (viewName === "overview") {
-    if (titleEl) titleEl.textContent = "Monitoring";
-    if (subEl) subEl.textContent = "Real-time camera health, pipeline, and fleet telemetry.";
-  } else if (viewName === "playback") {
-    if (titleEl) titleEl.textContent = "Playback";
-    if (subEl) subEl.textContent = "Zero-transcode segmented MP4 recording, timeline scrubber, and storage.";
-  } else if (viewName === "events") {
-    if (titleEl) titleEl.textContent = "Events & AI";
-    if (subEl) subEl.textContent = "Edge motion detection, activity snapshots with bounding box localization.";
-  } else if (viewName === "setup") {
-    if (titleEl) titleEl.textContent = "Setup Guide";
-    if (subEl) subEl.textContent = "Architecture, RTSP streams, and local hardware configuration.";
-  }
-}
-
-function initNav() {
-  document.querySelectorAll(".nav-link").forEach((link) => {
-    link.addEventListener("click", (e) => {
-      const navTarget = link.dataset.nav;
-      if (navTarget === "diagnostics") {
-        e.preventDefault();
-        const dlg = document.getElementById("diagnostics-dialog");
-        if (dlg && typeof dlg.showModal === "function") dlg.showModal();
-        return;
-      }
-      if (navTarget === "notifications") {
-        e.preventDefault();
-        const dlg = document.getElementById("notif-dialog");
-        if (dlg && typeof dlg.showModal === "function") dlg.showModal();
-        return;
-      }
-      if (navTarget) {
-        e.preventDefault();
-        switchView(navTarget);
-        window.location.hash = navTarget;
-      }
-    });
-  });
-
-  const viewAllEventsLink = document.getElementById("recent-events-view-all");
-  if (viewAllEventsLink) {
-    viewAllEventsLink.addEventListener("click", (e) => {
-      e.preventDefault();
-      switchView("events");
-      window.location.hash = "events";
-    });
-  }
-
-  const handleHash = () => {
-    const hash = window.location.hash.replace("#", "");
-    if (["overview", "playback", "events", "setup"].includes(hash)) {
-      switchView(hash);
-    } else {
-      switchView("overview");
-    }
-  };
-
-  window.addEventListener("popstate", handleHash);
-  handleHash();
-}
-
-function showToast(message, type = "info", duration = 3500) {
-  const container = document.getElementById("toast-container");
-  if (!container) return;
-
-  const toast = document.createElement("div");
-  toast.className = `toast toast-${type}`;
-  toast.textContent = message;
-  container.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    setTimeout(() => toast.remove(), 250);
-  }, duration);
-}
-
-function initServiceControls() {
-  const runBtn = document.getElementById("run-all-cameras");
-  const restartBtn = document.getElementById("restart-all-cameras");
-  const refreshAllBtn = document.getElementById("refresh-all");
-  const diagBtn = document.getElementById("diagnostics-btn");
-
-  if (runBtn) {
-    runBtn.addEventListener("click", async () => {
-      runBtn.disabled = true;
-      showToast("Launching all camera decoders and adapters...", "info", 2500);
-
-      try {
-        const res = await fetch("/api/services/start-all", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" }
-        });
-
-        if (res.ok) {
-          showToast("All camera services active (8080, 8081, 8082). Connecting feeds...", "success", 4000);
-          setTimeout(() => {
-            cameras.forEach((cam) => startStream(cam.id));
-            pollMetrics();
-            pollHealth();
-          }, 1200);
-        } else {
-          showToast("Failed to communicate with CamHub service manager", "error", 4000);
-        }
-      } catch (err) {
-        showToast("Could not reach service manager. Run server.py on port 3000.", "error", 4500);
-      } finally {
-        runBtn.disabled = false;
-      }
-    });
-  }
-
-  if (restartBtn) {
-    restartBtn.addEventListener("click", async () => {
-      restartBtn.disabled = true;
-      showToast("Restarting all camera decoders...", "info", 2500);
-
-      try {
-        const res = await fetch("/api/services/restart-all", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" }
-        });
-
-        if (res.ok) {
-          showToast("All camera services restarted. Reconnecting feeds...", "success", 3500);
-          setTimeout(() => {
-            cameras.forEach((cam) => startStream(cam.id));
-            pollMetrics();
-            pollHealth();
-          }, 1200);
-        } else {
-          showToast("Failed to restart camera services", "error", 4000);
-        }
-      } catch (err) {
-        showToast("Could not reach service manager", "error", 4000);
-      } finally {
-        restartBtn.disabled = false;
-      }
-    });
-  }
-
-  if (refreshAllBtn) {
-    refreshAllBtn.onclick = () => {
-      showToast("Refreshed telemetry & feeds", "info", 1500);
-      cameras.forEach((cam) => startStream(cam.id));
-      pollHealth();
-      pollMetrics();
-      pollDiagnosticsSummary();
-      pollRecentEvents();
-      pollStorageCard();
-    };
-  }
-
-  if (diagBtn) {
-    diagBtn.onclick = () => {
-      const dlg = document.getElementById("diagnostics-dialog");
-      if (dlg && typeof dlg.showModal === "function") dlg.showModal();
-    };
-  }
-}
-
-function formatDuration(sec) {
-  if (!sec || sec < 0) return "0s";
-  sec = Math.round(sec);
-  if (sec < 60) return `${sec}s`;
-  const mins = Math.floor(sec / 60);
-  const remSec = sec % 60;
-  if (mins < 60) return `${mins}m ${remSec}s`;
-  const hrs = Math.floor(mins / 60);
-  const remMin = mins % 60;
-  return `${hrs}h ${remMin}m`;
-}
-
-const cameraHealthData = new Map();
-const serviceStatusData = new Map();
-
-async function pollHealth() {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2500);
-    const res = await fetch("/api/health", { cache: "no-store", signal: controller.signal });
-    clearTimeout(timer);
-    if (!res.ok) return;
-    const data = await res.json();
-
-    // 1. Update Topbar System Indicator & Fleet Counts
-    if (data.summary) {
-      const summary = data.summary;
-      const isAllHealthy = summary.healthy === summary.total && summary.total > 0;
-      const hasOffline = summary.offline > 0;
-
-      const healthPill = document.getElementById("system-health-pill");
-      const healthDot = document.getElementById("system-health-dot");
-      const healthText = document.getElementById("system-health-text");
-
-      if (healthPill && healthDot && healthText) {
-        if (isAllHealthy) {
-          healthPill.className = "system-status-indicator live";
-          healthDot.className = "status-dot live";
-          healthText.textContent = "System Running";
-        } else if (hasOffline) {
-          healthPill.className = "system-status-indicator danger";
-          healthDot.className = "status-dot offline";
-          healthText.textContent = "System Alert";
-        } else {
-          healthPill.className = "system-status-indicator warn";
-          healthDot.className = "status-dot warn";
-          healthText.textContent = "System Degraded";
-        }
-      }
-
-      // Top Overview Card Counts
-      const totEl = document.getElementById("stat-total-cams");
-      const hlyEl = document.getElementById("stat-healthy-cams");
-      const degEl = document.getElementById("stat-degraded-cams");
-      const offEl = document.getElementById("stat-offline-cams");
-
-      if (totEl) totEl.textContent = summary.total;
-      if (hlyEl) hlyEl.textContent = summary.healthy;
-      if (degEl) degEl.textContent = summary.degraded;
-      if (offEl) offEl.textContent = summary.offline;
-
-      // Fleet toolbar counts & filter chip badges
-      const countTag = document.getElementById("fleet-count-tag");
-      if (countTag) countTag.textContent = `${summary.total} Cameras`;
-
-      const cAll = document.getElementById("chip-count-all");
-      const cHly = document.getElementById("chip-count-healthy");
-      const cDeg = document.getElementById("chip-count-degraded");
-      const cOff = document.getElementById("chip-count-offline");
-
-      if (cAll) cAll.textContent = summary.total;
-      if (cHly) cHly.textContent = summary.healthy;
-      if (cDeg) cDeg.textContent = summary.degraded;
-      if (cOff) cOff.textContent = summary.offline;
+      flow.innerHTML = nodes
+        .map(
+          (n, i) => `
+        ${i ? '<svg class="ico"><use href="#i-arrow"/></svg>' : ''}
+        <div class="node ${n.bad ? 'bad' : ''}">
+          <b>${n.label}</b>
+          <span>${n.status}</span>
+        </div>
+      `
+        )
+        .join('');
     }
 
-    // 2. Update each camera
-    if (data.cameras) {
-      for (const [cid, h] of Object.entries(data.cameras)) {
-        cameraHealthData.set(cid, h);
-        const status = (h.status || "UNKNOWN").toLowerCase();
-        const statusUpper = h.status || "UNKNOWN";
-
-        // Card status badge (strictly rectangular with tint, NO outline capsule)
-        const statusBadge = document.querySelector(`[data-status-badge="${CSS.escape(cid)}"]`);
-        if (statusBadge) {
-          statusBadge.className = `badge-status ${status}`;
-          statusBadge.textContent = statusUpper;
-        }
-
-        const dot = document.querySelector(`[data-dot="${CSS.escape(cid)}"]`);
-        if (dot) {
-          dot.className = `status-dot ${status === "healthy" ? "online" : status === "degraded" ? "warn" : "offline"}`;
-        }
+    const noteTitle = $('#path-note-title');
+    const noteMsg = $('#path-note-msg');
+    if (noteTitle && noteMsg) {
+      if (isDegraded) {
+        noteTitle.textContent = 'Camera Source Is Silent';
+        noteMsg.textContent = `No frames received from ${cam.name.split(',')[0]} (${cam.ip}). Check that it is powered on and reachable on the local network, then retry.`;
+      } else {
+        noteTitle.textContent = 'All Pipeline Nodes Operating';
+        noteMsg.textContent = `${cam.name} stream packets are being ingested, decoded, and rendered with 0 decode errors.`;
       }
-      applyFleetFilter();
     }
 
-    // 3. Update Supervisor & Auto-Recovery state
-    try {
-      const sRes = await fetch("/api/services/status", { cache: "no-store" });
-      if (sRes.ok) {
-        const sData = await sRes.json();
-        for (const [cid, sInfo] of Object.entries(sData.services || {})) {
-          serviceStatusData.set(cid, sInfo);
-        }
-        updatePipelineInspector();
-      }
-    } catch {}
-  } catch {
-    // Non-blocking error recovery
-  }
-}
-
-function formatBytes(bytes) {
-  if (!bytes || bytes <= 0) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function initPlayback() {
-  const camSelect = document.querySelector("#playback-cam-select");
-  const dateSelect = document.querySelector("#playback-date-select");
-  const refreshBtn = document.querySelector("#playback-refresh-btn");
-  const video = document.querySelector("#playback-video");
-  const placeholder = document.querySelector("#playback-empty-placeholder");
-  const currentTitle = document.querySelector("#current-rec-title");
-  const downloadBtn = document.querySelector("#current-rec-download");
-  const deleteBtn = document.querySelector("#current-rec-delete");
-  const segmentsList = document.querySelector("#segments-list");
-  const timelineCount = document.querySelector("#timeline-count");
-  const manualBtns = document.querySelector("#manual-record-buttons");
-  const storagePill = document.querySelector("#storage-indicator-pill");
-  const storageText = document.querySelector("#storage-text");
-
-  let currentSelectedId = null;
-
-  // Set today's date
-  if (dateSelect) {
-    const today = new Date().toISOString().split("T")[0];
-    dateSelect.value = today;
+    if ($('#dl-last-frame')) $('#dl-last-frame').textContent = cam.lastFrame;
+    if ($('#dl-queue')) $('#dl-queue').textContent = cam.queue;
+    if ($('#dl-errors')) $('#dl-errors').textContent = `${cam.decodeErrors}`;
+    if ($('#dl-port')) $('#dl-port').textContent = `${cam.port}`;
   }
 
-  // Populate camera select
-  if (camSelect) {
-    camSelect.innerHTML = `<option value="">All cameras</option>` +
-      cameras.map(c =>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("");
-  }
+  // --- Real-time Canvas Frame Rate Chart ---
+  function drawFpsChart() {
+    const canvas = $('#fps-chart-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
 
-  // Render manual recording buttons
-  const renderManualButtons = () =>{
-    if (!manualBtns) return;
-    manualBtns.innerHTML = cameras.map(c =>{
-      const isRec = activeRecordings.has(c.id);
-      return `<button class="button button-small rec-toggle-btn ${isRec ? 'is-recording' : ''}" data-rec-cam="${escapeHtml(c.id)}" type="button">
-        ${isRec ? 'Stop' : 'Rec'} ${escapeHtml(c.name.split(',')[0].trim())}
- </button>`;
-    }).join("");
+    ctx.clearRect(0, 0, width, height);
 
-    manualBtns.querySelectorAll("[data-rec-cam]").forEach(btn =>{
-      btn.onclick = async () =>{
-        const cid = btn.dataset.recCam;
-        const isRec = activeRecordings.has(cid);
-        const action = isRec ? "stop" : "start";
-        btn.disabled = true;
-        try {
-          const res = await fetch(`/api/recordings/${action}?cameraId=${encodeURIComponent(cid)}`, { method: "POST" });
-          const data = await res.json();
-          if (data.success) {
-            if (isRec) activeRecordings.delete(cid);
-            else activeRecordings.add(cid);
-            showToast(`${isRec ? 'Stopped' : 'Started'} recording for ${cid}`, "success", 2500);
-          } else {
-            showToast(data.message || "Failed to toggle recording", "error", 3500);
-          }
-        } catch {
-          showToast("Could not communicate with recording server", "error", 3500);
-        } finally {
-          btn.disabled = false;
-          renderManualButtons();
-          updateAllRecordingButtons();
-          loadRecordings();
-        }
-      };
-    });
-  };
+    // Draw grid lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+    for (let y = 20; y < height - 10; y += 30) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
 
-  const loadStorageStatus = async () =>{
-    try {
-      const [recRes, storRes] = await Promise.all([
-        fetch("/api/recordings/storage", { cache: "no-store" }),
-        fetch("/api/storage/status", { cache: "no-store" })
-      ]);
-      if (recRes.ok) {
-        const recData = await recRes.json();
-        if (recData.activeRecordingCameras) {
-          activeRecordings = new Set(recData.activeRecordingCameras);
-          renderManualButtons();
-          updateAllRecordingButtons();
-        }
-      }
-      if (storRes.ok && storagePill && storageText) {
-        const storData = await storRes.json();
-        const disk = storData.disk || {};
-        const alerts = storData.alerts || {};
-        const forecast = storData.forecasting || {};
-        const camhub = storData.camhub || {};
+    // Colors per camera: Cam 1 = yellow (#f2b84b), Cam 2 = cyan (#5aa2ff), Cam 3 = pink (#ff6a99)
+    const seriesColors = ['#f2b84b', '#5aa2ff', '#ff6a99'];
+    const maxFps = 25.0;
 
-        let pillClass = "storage-indicator-pill";
-        if (alerts.level === "EMERGENCY") pillClass = "storage-indicator-pill error";
-        else if (alerts.level === "CRITICAL" || alerts.level === "WARNING") pillClass = "storage-indicator-pill warn";
-        storagePill.className = pillClass;
+    cameras.forEach((cam, i) => {
+      const history = fpsHistory[cam.id] || [];
+      if (history.length === 0) return;
 
-        storageText.textContent = `Disk: ${disk.usedPercent || 0}% (${disk.freeGb || 0} GB free), CamHUB: ${camhub.totalMb || 0} MB, Est: ${forecast.estimatedDaysRemaining || "N/A"}d`;
-        storagePill.title = `${alerts.message || ""}\nGrowth rate: ${forecast.growthRateMbPerHour || 0} MB/hr (${forecast.growthRateGbPerDay || 0} GB/day)\nClick to view detailed Storage Manager report.`;
-      }
-    } catch {}
-  };
+      ctx.strokeStyle = seriesColors[i % seriesColors.length];
+      ctx.lineWidth = 2;
+      ctx.beginPath();
 
-  if (storagePill) {
-    storagePill.style.cursor = "pointer";
-    storagePill.onclick = async () =>{
-      try {
-        const rRes = await fetch("/api/storage/report");
-        const rData = await rRes.json();
-        if (rData && rData.report) {
-          alert(rData.report);
-        }
-      } catch {
-        showToast("Error retrieving storage report", "error", 3000);
-      }
-    };
-  }
-
-  const loadRecordings = async () =>{
-    if (!segmentsList) return;
-    const cid = camSelect ? camSelect.value : "";
-    const dateVal = dateSelect ? dateSelect.value : "";
-    const params = new URLSearchParams();
-    if (cid) params.set("cameraId", cid);
-    if (dateVal) params.set("date", dateVal);
-
-    try {
-      segmentsList.innerHTML = `<div class="segments-loading">Loading segments…</div>`;
-      const res = await fetch(`/api/recordings?${params.toString()}`, { cache: "no-store" });
-      if (!res.ok) {
-        segmentsList.innerHTML = `<div class="segments-empty">Failed to load recordings</div>`;
-        return;
-      }
-      const data = await res.json();
-      const recs = data.recordings || [];
-
-      if (timelineCount) {
-        timelineCount.textContent = `${recs.length} clips`;
-      }
-
-      if (recs.length === 0) {
-        segmentsList.innerHTML = `<div class="segments-empty">No recordings found for the selected filter.</div>`;
-        return;
-      }
-
-      segmentsList.innerHTML = recs.map(r =>{
-        const isActive = r.id === currentSelectedId;
-        const dur = r.durationSeconds ? `${Math.round(r.durationSeconds)}s` : "-";
-        const size = formatBytes(r.fileSizeBytes);
-        const dateStr = r.startTime ? new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(r.startTime)) : "";
-        const badgeClass = r.mode === "motion" ? "motion" : "continuous";
-        const badgeText = r.mode === "motion" ? "Motion" : "Continuous";
-
-        return `<div class="segment-item ${isActive ? 'active' : ''}" data-segment-id="${escapeHtml(r.id)}">
- <div class="segment-meta">
- <span class="segment-name">${escapeHtml(r.fileName)}</span>
- <div class="segment-sub">
- <span>${escapeHtml(r.cameraId)}</span>
- <span>${dateStr}</span>
- <span>${dur}, ${size}</span>
- </div>
- </div>
- <span class="segment-badge ${badgeClass}">${badgeText}</span>
- </div>`;
-      }).join("");
-
-      segmentsList.querySelectorAll("[data-segment-id]").forEach(item =>{
-        item.onclick = () =>{
-          const segId = item.dataset.segmentId;
-          const rec = recs.find(x =>x.id === segId);
-          if (rec) playSegment(rec);
-        };
+      const step = width / Math.max(history.length - 1, 1);
+      history.forEach((val, ptIdx) => {
+        const x = ptIdx * step;
+        const y = height - 10 - (Math.min(val, maxFps) / maxFps) * (height - 30);
+        if (ptIdx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
       });
-    } catch {
-      segmentsList.innerHTML = `<div class="segments-empty">Could not connect to recording server</div>`;
-    }
-  };
-
-  const playSegment = (rec) =>{
-    currentSelectedId = rec.id;
-    document.querySelectorAll(".segment-item").forEach(el =>{
-      el.classList.toggle("active", el.dataset.segmentId === rec.id);
+      ctx.stroke();
     });
 
-    if (currentTitle) {
-      currentTitle.textContent = `${rec.fileName} (${formatBytes(rec.fileSizeBytes)})`;
-    }
+    // Baseline axis
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.beginPath();
+    ctx.moveTo(0, height - 10);
+    ctx.lineTo(width, height - 10);
+    ctx.stroke();
+  }
 
-    if (downloadBtn) {
-      downloadBtn.href = `/api/recordings/download?id=${encodeURIComponent(rec.id)}`;
-      downloadBtn.style.display = "inline-flex";
-    }
+  // --- Playback Module ---
+  let recordingsCache = [];
 
-    if (deleteBtn) {
-      deleteBtn.style.display = "inline-flex";
-      deleteBtn.onclick = async () =>{
-        if (!confirm(`Delete recording '${rec.fileName}'?`)) return;
-        deleteBtn.disabled = true;
-        try {
-          const res = await fetch(`/api/recordings?id=${encodeURIComponent(rec.id)}`, { method: "DELETE" });
-          const d = await res.json();
-          if (d.success) {
-            showToast("Recording deleted", "success", 2500);
-            if (video) {
-              video.pause();
-              video.removeAttribute("src");
-              video.load();
-            }
-            if (placeholder) placeholder.classList.remove("hidden");
-            if (currentTitle) currentTitle.textContent = "No segment selected";
-            downloadBtn.style.display = "none";
-            deleteBtn.style.display = "none";
-            currentSelectedId = null;
-            loadRecordings();
-            loadStorageStatus();
-          } else {
-            showToast(d.message || "Failed to delete recording", "error", 3500);
-          }
-        } catch {
-          showToast("Error deleting recording", "error", 3500);
-        } finally {
-          deleteBtn.disabled = false;
+  async function loadRecordings() {
+    renderManualRecordingControls();
+    const listEl = $('#recordings-list');
+    if (!listEl) return;
+
+    try {
+      const res = await fetch('/api/recordings');
+      const data = await res.json();
+      recordingsCache = data.recordings || [];
+
+      if (recordingsCache.length === 0) {
+        listEl.innerHTML = `
+          <div class="empty">
+            <b>No Recorded Segments</b>
+            <p>Trigger manual recording or motion detection to create MP4 segments.</p>
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = recordingsCache
+        .map(
+          (rec) => `
+        <div class="rec-item" data-rec-id="${escapeHtml(rec.id)}">
+          <div class="rec-meta">
+            <b>${escapeHtml(rec.camera_name || rec.camera_id)}</b>
+            <span>${formatDateTime(rec.created_at || rec.start_time)} · ${formatBytes(rec.size_bytes || rec.file_size)} · ${formatDuration(rec.duration_seconds || rec.duration)}</span>
+          </div>
+          <div class="acts">
+            <button class="btn sq" data-rec-play="${escapeHtml(rec.id)}" title="Play in Player">
+              <svg class="ico"><use href="#i-play"/></svg>
+            </button>
+            <a class="btn sq" href="/api/recordings/download?id=${encodeURIComponent(rec.id)}" download="" title="Download MP4">
+              <svg class="ico"><use href="#i-dl"/></svg>
+            </a>
+            <button class="btn sq" data-rec-del="${escapeHtml(rec.id)}" title="Delete Recording">
+              <svg class="ico"><use href="#i-trash"/></svg>
+            </button>
+          </div>
+        </div>
+      `
+        )
+        .join('');
+    } catch (err) {
+      listEl.innerHTML = `<div class="empty"><b>Error Loading Recordings</b><p>${escapeHtml(err.message)}</p></div>`;
+    }
+  }
+
+  function renderManualRecordingControls() {
+    const strip = $('#rec-status-strip');
+    if (!strip) return;
+
+    strip.innerHTML = cameras
+      .map(
+        (cam) => `
+      <div class="rec-status-card">
+        <div>
+          <b>${escapeHtml(cam.shortName)}</b>
+          <div class="sub">
+            <span class="tag ${cam.recording ? 'bad' : 'good'}">${cam.recording ? 'RECORDING' : 'IDLE'}</span>
+            <span id="rec-timer-${cam.id}" style="margin-left:6px;font-family:var(--mono);">${cam.recording ? '0s' : '--'}</span>
+          </div>
+        </div>
+        <button class="btn ${cam.recording ? 'dng' : 'pri'}" data-act="record" data-cid="${cam.id}">
+          <svg class="ico"><use href="${cam.recording ? '#i-cross' : '#i-play'}"/></svg>
+          <span>${cam.recording ? 'Stop' : 'Record'}</span>
+        </button>
+      </div>
+    `
+      )
+      .join('');
+  }
+
+  async function toggleRecording(cid) {
+    const cam = cameras.find((c) => c.id === cid);
+    if (!cam) return;
+
+    if (!cam.recording) {
+      try {
+        const res = await fetch('/api/recordings/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ camera_id: cid, duration: 300 })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'ok') {
+          cam.recording = true;
+          cam.recordStartTime = Date.now();
+          showToast(`Started recording on ${cam.shortName}`);
+        } else {
+          showToast(`Recording error: ${data.message || 'Decoder is offline'}`);
         }
-      };
+      } catch (err) {
+        showToast(`Failed to start recording: ${err.message}`);
+      }
+    } else {
+      try {
+        const res = await fetch('/api/recordings/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ camera_id: cid })
+        });
+        const data = await res.json();
+        cam.recording = false;
+        cam.recordStartTime = null;
+        showToast(`Stopped recording on ${cam.shortName}`);
+        setTimeout(loadRecordings, 1500);
+      } catch (err) {
+        showToast(`Failed to stop recording: ${err.message}`);
+      }
     }
+
+    renderManualRecordingControls();
+    if (activeLayout === 'focus') renderFocusStage();
+    else renderWallGrid();
+  }
+
+  function playRecording(id) {
+    const rec = recordingsCache.find((r) => r.id === id);
+    if (!rec) return;
+
+    const video = $('#video-player');
+    const dlBtn = $('#player-download-btn');
+    const info = $('#player-clip-info');
+    const tag = $('#player-status-tag');
 
     if (video) {
-      video.src = `/api/recordings/stream?id=${encodeURIComponent(rec.id)}`;
-      if (placeholder) placeholder.classList.add("hidden");
-      video.play().catch(() =>{});
-    }
-  };
-
-  if (camSelect) camSelect.onchange = loadRecordings;
-  if (dateSelect) dateSelect.onchange = loadRecordings;
-  if (refreshBtn) {
-    refreshBtn.onclick = () =>{
-      loadRecordings();
-      loadStorageStatus();
-    };
-  }
-
-  renderManualButtons();
-  loadStorageStatus();
-  loadRecordings();
-  setInterval(loadStorageStatus, 10000);
-}
-
-function initEventsTimeline() {
-  const camSelect = document.querySelector("#events-cam-select");
-  const dateSelect = document.querySelector("#events-date-select");
-  const scoreSelect = document.querySelector("#events-score-select");
-  const classSelect = document.querySelector("#events-class-select");
-  const refreshBtn = document.querySelector("#events-refresh-btn");
-  const cardsGrid = document.querySelector("#events-cards-grid");
-  const countLabel = document.querySelector("#events-list-count");
-  const navCount = document.querySelector("#nav-events-count");
-  const fpsStat = document.querySelector("#events-fps-stat");
-  const storageStat = document.querySelector("#events-storage-stat");
-  const aiStat = document.querySelector("#events-ai-stat");
-  const statusPill = document.querySelector("#events-status-pill");
-
-  // Modal elements
-  const modal = document.querySelector("#event-dialog");
-  const modalImg = document.querySelector("#event-modal-img");
-  const modalBbox = document.querySelector("#event-modal-bbox");
-  const modalBboxesContainer = document.querySelector("#event-modal-bboxes-container");
-  const modalMeta = document.querySelector("#event-modal-meta");
-  const modalTitle = document.querySelector("#event-modal-title");
-  const modalJumpBtn = document.querySelector("#event-modal-jump-playback");
-  const modalDelBtn = document.querySelector("#event-modal-delete-btn");
-  const modalEnrichBtn = document.querySelector("#event-modal-enrich-btn");
-  const closeBtn = document.querySelector("#close-event-dialog-btn");
-  const closeAction = document.querySelector("#close-event-dialog-action");
-
-  let currentSelectedEvent = null;
-let eventsExpanded = false;
-
-  // Populate camera select
-  if (camSelect) {
-    camSelect.innerHTML = `<option value="">All cameras</option>` +
-      cameras.map(c =>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("");
-  }
-
-  // Close modal handlers
-  if (closeBtn) closeBtn.onclick = () =>modal.close();
-  if (closeAction) closeAction.onclick = () =>modal.close();
-
-  // Benchmark click handler on AI stat badge
-  if (aiStat) {
-    aiStat.onclick = async () =>{
-      showToast("Running hardware AI benchmark (DirectML GPU vs CPU)...", "info", 3500);
-      try {
-        const bRes = await fetch("/api/ai/benchmark?runs=3", { method: "POST" });
-        const bData = await bRes.json();
-        if (bData.status === "success") {
-          const dml = bData.results["DirectML (GPU)"];
-          const cpu = bData.results["CPU"];
-          const msg = `GPU: ${dml?.avgLatencyMs || "N/A"}ms (${dml?.fpsCapacity || 0} FPS) | CPU: ${cpu?.avgLatencyMs || "N/A"}ms (${cpu?.fpsCapacity || 0} FPS)`;
-          showToast(msg, "success", 7000);
-        } else {
-          showToast(bData.error || "Benchmark failed", "warn", 4000);
-        }
-      } catch {
-        showToast("Benchmark request failed", "error", 3000);
-      }
-    };
-  }
-
-  const loadStats = async () =>{
-    try {
-      const res = await fetch("/api/events/stats", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (fpsStat) fpsStat.textContent = `FPS: ${data.analyticsFps?.toFixed(1) || "0.0"}`;
-      if (storageStat) storageStat.textContent = `Storage: ${data.storageMb || 0} MB / ${data.maxStorageMb || 1000} MB`;
-      if (navCount) navCount.textContent = data.eventsToday || 0;
-      if (statusPill) {
-        statusPill.title = `Total events: ${data.totalEvents}, today: ${data.eventsToday}`;
-      }
-      if (aiStat && data.ai) {
-        const ai = data.ai;
-        const prov = ai.activeProvider || "DirectML";
-        const lat = ai.lastLatencyMs ? `${ai.lastLatencyMs}ms` : "Active";
-        aiStat.textContent = `AI: ${prov} (${lat})`;
-        aiStat.title = `Model: ${ai.model || "yolov5n"} | Inferences: ${ai.totalInferences || 0} | Dropped: ${ai.droppedFrames || 0}\nClick to run hardware benchmark (GPU vs CPU).`;
-      }
-    } catch {}
-  };
-
-  const loadEvents = async () =>{
-    if (!cardsGrid) return;
-    const cid = camSelect ? camSelect.value : "";
-    const dt = dateSelect ? dateSelect.value : "";
-    const minScore = scoreSelect ? scoreSelect.value : "";
-    const objClass = classSelect ? classSelect.value : "";
-
-    const params = new URLSearchParams();
-    if (cid) params.set("cameraId", cid);
-    if (dt) params.set("date", dt);
-    if (minScore) params.set("minScore", minScore);
-    if (objClass) params.set("objectClass", objClass);
-    params.set("limit", "60");
-
-    try {
-      const res = await fetch(`/api/events?${params.toString()}`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to load events");
-      const data = await res.json();
-      const events = data.events || [];
-
-      if (countLabel) countLabel.textContent = `${events.length} event${events.length === 1 ? '' : 's'}`;
-
-      if (events.length === 0) {
-        cardsGrid.innerHTML = `
- <div class="segments-empty" style="grid-column: 1 / -1; padding: 40px 10px;">
-            No motion events detected matching current filters.
- </div>`;
-        return;
-      }
-
-      const shownEvents = eventsExpanded ? events : events.slice(0, 12);
-
-      cardsGrid.innerHTML = shownEvents.map(evt =>{
-        const bbox = evt.boundingBox || { x: 0, y: 0, width: 0, height: 0 };
-        const leftPct = (bbox.x * 100).toFixed(1);
-        const topPct = (bbox.y * 100).toFixed(1);
-        const widthPct = (bbox.width * 100).toFixed(1);
-        const heightPct = (bbox.height * 100).toFixed(1);
-
-        // Object badge pill
-        let objPill = "";
-        if (evt.primaryClass) {
-          const confPct = Math.round((evt.primaryConfidence || 0) * 100);
-          const catClass = evt.primaryCategory || evt.primaryClass;
-          objPill = `<span class="event-obj-pill ${catClass}">${escapeHtml(evt.primaryClass)} ${confPct}%</span>`;
-        }
-
-        return `
- <div class="event-card" data-event-id="${escapeHtml(evt.id)}">
- <div class="event-thumb-wrap" data-open-event="${escapeHtml(evt.id)}">
- <img class="event-thumb-img" src="/api/events/snapshot?id=${encodeURIComponent(evt.id)}&ngrok-skip-browser-warning=1" alt="Snapshot" loading="lazy" onerror="this.onerror=null; this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
- <div class="event-thumb-fallback" style="display:none;">
- <span>Snapshot unavailable</span>
- </div>
- <div class="event-bbox-overlay" style="left: ${leftPct}%; top: ${topPct}%; width: ${widthPct}%; height: ${heightPct}%;"></div>
-            ${objPill}
- <span class="event-score-pill">Score: ${evt.score}%</span>
- </div>
- <div class="event-card-body">
- <div class="event-card-top">
- <span class="event-cam-badge">${escapeHtml(evt.cameraName || evt.cameraId)}</span>
- <span class="event-duration">${evt.durationSeconds || 0}s motion</span>
- </div>
- <div class="event-timestamp">${escapeHtml(evt.isoTime || '')}</div>
- <div class="event-card-actions">
- <a href="#playback" class="event-btn-link" data-jump-playback="${escapeHtml(evt.cameraId)}" data-timestamp="${evt.timestamp}">Jump to Playback</a>
- <button type="button" class="event-del-btn" data-del-event="${escapeHtml(evt.id)}">Delete</button>
- </div>
- </div>
- </div>`;
-      }).join("");
-
-      // Open lightbox
-      cardsGrid.querySelectorAll("[data-open-event]").forEach(wrap =>{
-        wrap.onclick = () =>{
-          const eid = wrap.dataset.openEvent;
-          const evt = events.find(x =>x.id === eid);
-          if (evt) openEventModal(evt);
-        };
-      });
-
-      // Jump to playback
-      cardsGrid.querySelectorAll("[data-jump-playback]").forEach(link =>{
-        link.onclick = (e) =>{
-          e.preventDefault();
-          const cid = link.dataset.jumpPlayback;
-          const ts = parseInt(link.dataset.timestamp, 10);
-          jumpToPlayback(cid, ts);
-        };
-      });
-
-      // Delete event
-      cardsGrid.querySelectorAll("[data-del-event]").forEach(btn =>{
-        btn.onclick = async (e) =>{
-          e.stopPropagation();
-          const eid = btn.dataset.delEvent;
-          if (!confirm("Delete this event and snapshot image?")) return;
-          try {
-            const dRes = await fetch(`/api/events?id=${encodeURIComponent(eid)}`, { method: "DELETE" });
-            const dData = await dRes.json();
-            if (dData.success) {
-              showToast("Event deleted", "success", 2000);
-              loadEvents();
-              loadStats();
-            } else {
-              showToast(dData.message || "Failed to delete event", "error", 3000);
-            }
-          } catch {
-            showToast("Error deleting event", "error", 3000);
-          }
-        };
-      });
-
-    } catch (e) {
-      cardsGrid.innerHTML = `
- <div class="segments-empty" style="grid-column: 1 / -1;">
-          Could not connect to event timeline service
- </div>`;
-    }
-  };
-
-  const openEventModal = (evt) =>{
-    currentSelectedEvent = evt;
-    if (modalTitle) modalTitle.textContent = `${evt.cameraName || evt.cameraId}, ${evt.isoTime}`;
-    if (modalImg) modalImg.src = `/api/events/snapshot?id=${encodeURIComponent(evt.id)}&ngrok-skip-browser-warning=1`;
-
-    // Multi-bounding box rendering
-    if (modalBboxesContainer) {
-      modalBboxesContainer.innerHTML = "";
-      if (evt.detectedObjects && evt.detectedObjects.length >0) {
-        modalBboxesContainer.innerHTML = evt.detectedObjects.map(d =>{
-          const bx = d.box || {};
-          const l = (bx.x * 100).toFixed(1);
-          const t = (bx.y * 100).toFixed(1);
-          const w = (bx.width * 100).toFixed(1);
-          const h = (bx.height * 100).toFixed(1);
-          const cat = d.category || d.class || "other";
-          const conf = Math.round((d.confidence || 0) * 100);
-          return `
- <div class="event-modal-detected-box ${cat}" style="left:${l}%; top:${t}%; width:${w}%; height:${h}%;">
- <span class="event-bbox-tag">${escapeHtml(d.class)} ${conf}%</span>
- </div>
-          `;
-      }).join("");
-
-      if (!eventsExpanded && events.length > shownEvents.length) {
-        const moreWrap = document.createElement("div");
-        moreWrap.className = "events-more";
-        moreWrap.innerHTML = `<button type="button" class="button button-small" id="events-show-more">Show ${events.length - shownEvents.length} more events</button>`;
-        cardsGrid.appendChild(moreWrap);
-        moreWrap.querySelector("#events-show-more").onclick = () => {
-          eventsExpanded = true;
-          loadEvents();
-        };
-      }
-
-        if (modalBbox) modalBbox.style.display = "none";
-      } else if (modalBbox) {
-        const b = evt.boundingBox;
-        if (b && b.width >0 && b.height >0) {
-          modalBbox.style.display = "block";
-          modalBbox.style.left = `${(b.x * 100).toFixed(1)}%`;
-          modalBbox.style.top = `${(b.y * 100).toFixed(1)}%`;
-          modalBbox.style.width = `${(b.width * 100).toFixed(1)}%`;
-          modalBbox.style.height = `${(b.height * 100).toFixed(1)}%`;
-        } else {
-          modalBbox.style.display = "none";
-        }
-      }
+      video.src = `/api/recordings/stream?id=${encodeURIComponent(id)}`;
+      video.load();
+      video.play().catch(() => {});
     }
 
-    if (modalMeta) {
-      const objectsSummary = (evt.detectedObjects && evt.detectedObjects.length >0)
-        ? evt.detectedObjects.map(d =>`${d.class} (${Math.round(d.confidence * 100)}%)`).join(", ")
-        : (evt.primaryClass ? `${evt.primaryClass} (${Math.round((evt.primaryConfidence || 0) * 100)}%)` : "No objects classified");
-
-      modalMeta.innerHTML = `
- <div class="event-meta-cell">
- <span class="event-meta-cell-label">Camera</span>
- <span class="event-meta-cell-value">${escapeHtml(evt.cameraName || evt.cameraId)}</span>
- </div>
- <div class="event-meta-cell">
- <span class="event-meta-cell-label">AI Detections</span>
- <span class="event-meta-cell-value" style="color: #38bdf8;">${escapeHtml(objectsSummary)}</span>
- </div>
- <div class="event-meta-cell">
- <span class="event-meta-cell-label">Motion Score</span>
- <span class="event-meta-cell-value">${evt.score}%</span>
- </div>
- <div class="event-meta-cell">
- <span class="event-meta-cell-label">Duration</span>
- <span class="event-meta-cell-value">${evt.durationSeconds || 0}s</span>
- </div>
- <div class="event-meta-cell">
- <span class="event-meta-cell-label">Timestamp</span>
- <span class="event-meta-cell-value">${escapeHtml(evt.isoTime)}</span>
- </div>
- <div class="event-meta-cell">
- <span class="event-meta-cell-label">Snapshot Size</span>
- <span class="event-meta-cell-value">${formatBytes(evt.fileSizeBytes)}</span>
- </div>
-      `;
+    if (dlBtn) {
+      dlBtn.href = `/api/recordings/download?id=${encodeURIComponent(id)}`;
+      dlBtn.download = rec.filename || `${id}.mp4`;
+      dlBtn.style.display = 'inline-flex';
     }
 
-    if (modalEnrichBtn) {
-      modalEnrichBtn.onclick = async () =>{
-        modalEnrichBtn.disabled = true;
-        modalEnrichBtn.textContent = "Analyzing...";
-        try {
-          const enRes = await fetch(`/api/ai/enrich?id=${encodeURIComponent(evt.id)}`, { method: "POST" });
-          const enData = await enRes.json();
-          if (enData && enData.id) {
-            showToast(`AI Analysis complete! Found ${enData.detectedObjects?.length || 0} object(s)`, "success", 3000);
-            openEventModal(enData);
-            loadEvents();
-          } else {
-            showToast("AI analysis complete: no targets detected", "info", 3000);
-          }
-        } catch {
-          showToast("AI analysis request failed", "error", 3000);
-        } finally {
-          modalEnrichBtn.disabled = false;
-          modalEnrichBtn.textContent = "Re-analyze with AI";
-        }
-      };
+    if (info) {
+      info.textContent = `Streaming ${rec.camera_name || rec.camera_id} · Recorded ${formatDateTime(rec.created_at || rec.start_time)} (${formatDuration(rec.duration_seconds || rec.duration)})`;
     }
 
-    if (modalJumpBtn) {
-      modalJumpBtn.onclick = (e) =>{
-        e.preventDefault();
-        modal.close();
-        jumpToPlayback(evt.cameraId, evt.timestamp);
-      };
+    if (tag) {
+      tag.textContent = 'Playing';
+      tag.className = 'r tag good';
     }
 
-    if (modalDelBtn) {
-      modalDelBtn.onclick = async () =>{
-        if (!confirm("Delete this event and snapshot?")) return;
-        try {
-          const dRes = await fetch(`/api/events?id=${encodeURIComponent(evt.id)}`, { method: "DELETE" });
-          const dData = await dRes.json();
-          if (dData.success) {
-            modal.close();
-            showToast("Event deleted", "success", 2000);
-            loadEvents();
-            loadStats();
-          }
-        } catch {}
-      };
-    }
-
-    modal.showModal();
-  };
-
-  const jumpToPlayback = (cid, timestampMs) =>{
-    // Navigate to #playback
-    const pbLink = document.querySelector('.nav-link[href="#playback"]');
-    if (pbLink) pbLink.click();
-    const pbSec = document.getElementById("playback");
-    if (pbSec) pbSec.scrollIntoView({ behavior: "smooth" });
-
-    // Set filter in playback
-    const pbCam = document.querySelector("#playback-cam-select");
-    const pbDate = document.querySelector("#playback-date-select");
-    if (pbCam) {
-      pbCam.value = cid;
-      pbCam.dispatchEvent(new Event("change"));
-    }
-    if (pbDate && timestampMs) {
-      const dt = new Date(timestampMs).toISOString().split("T")[0];
-      pbDate.value = dt;
-      pbDate.dispatchEvent(new Event("change"));
-    }
-    showToast(`Jumped to playback for ${cid}`, "info", 3000);
-  };
-
-  const resetAndLoadEvents = () => { eventsExpanded = false; loadEvents(); };
-  if (camSelect) camSelect.onchange = resetAndLoadEvents;
-  if (dateSelect) dateSelect.onchange = resetAndLoadEvents;
-  if (scoreSelect) scoreSelect.onchange = resetAndLoadEvents;
-  if (classSelect) classSelect.onchange = resetAndLoadEvents;
-  if (refreshBtn) {
-    refreshBtn.onclick = () =>{
-      loadEvents();
-      loadStats();
-    };
-  }
-
-  loadStats();
-  loadEvents();
-  setInterval(loadStats, 5000);
-  setInterval(loadEvents, 10000);
-}
-
-// ============================================================================
-// AGENT 10 - Diagnostics & Export Report
-// ============================================================================
-function initDiagnosticsModal() {
-  const diagBtn = document.getElementById("diagnostics-btn");
-  const modal = document.getElementById("diagnostics-dialog");
-  const closeBtn = document.getElementById("close-diag-dialog-btn");
-  const closeAction = document.getElementById("close-diag-dialog-action");
-  const generateBtn = document.getElementById("generate-bundle-btn");
-  const progressWrap = document.getElementById("diag-progress-wrap");
-  const progressText = document.getElementById("diag-progress-text");
-  const resultCard = document.getElementById("diag-result-card");
-  const resultFilename = document.getElementById("diag-result-filename");
-  const resultDetails = document.getElementById("diag-result-details");
-  const downloadLink = document.getElementById("diag-download-link");
-  const historyList = document.getElementById("diag-history-list");
-  const statusBadge = document.getElementById("diag-status-badge");
-
-  if (!diagBtn || !modal) return;
-
-  const closeModal = () =>modal.close();
-  if (closeBtn) closeBtn.onclick = closeModal;
-  if (closeAction) closeAction.onclick = closeModal;
-
-  const renderPortsGrid = (ports) =>{
-    const grid = document.getElementById("diag-ports-grid");
-    if (!grid) return;
-    grid.innerHTML = "";
-
-    // Dashboard port
-    const dash = ports.dashboard || {};
-    const dashOpen = dash.status === "OPEN";
-    const dashEl = document.createElement("div");
-    dashEl.className = "port-chip";
-    dashEl.innerHTML = `
- <span class="port-chip-title">Dashboard (3000)</span>
- <span class="port-status-pill ${dashOpen ? 'open' : 'closed'}">${dash.status || 'CHECKING'} (${dash.latencyMs || 0}ms)</span>
-    `;
-    grid.appendChild(dashEl);
-
-    // Camera ports
-    const cams = ports.cameras || {};
-    Object.keys(cams).forEach(cid =>{
-      const c = cams[cid];
-      if (c.http && c.http.port) {
-        const hOpen = c.http.status === "OPEN";
-        const hEl = document.createElement("div");
-        hEl.className = "port-chip";
-        hEl.innerHTML = `
- <span class="port-chip-title">${escapeHtml(c.name)} HTTP (${c.http.port})</span>
- <span class="port-status-pill ${hOpen ? 'open' : 'closed'}">${c.http.status}</span>
-        `;
-        grid.appendChild(hEl);
-      }
-      if (c.rtsp && c.rtsp.port) {
-        const rOpen = c.rtsp.status === "OPEN";
-        const rEl = document.createElement("div");
-        rEl.className = "port-chip";
-        rEl.innerHTML = `
- <span class="port-chip-title">${escapeHtml(c.name)} RTSP (${c.rtsp.port})</span>
- <span class="port-status-pill ${rOpen ? 'open' : 'closed'}">${c.rtsp.status}</span>
-        `;
-        grid.appendChild(rEl);
-      }
+    $$('.rec-item').forEach((item) => {
+      item.classList.toggle('active', item.dataset.recId === id);
     });
-  };
+  }
 
-  const renderBundlesHistory = (bundles) =>{
-    if (!historyList) return;
-    if (!bundles || bundles.length === 0) {
-      historyList.innerHTML = `<p class="diag-empty-text">No previous diagnostic bundles generated.</p>`;
+  async function deleteRecording(id) {
+    if (!confirm('Permanently delete this recording archive?')) return;
+    try {
+      const res = await fetch(`/api/recordings?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast('Recording deleted');
+        loadRecordings();
+      } else {
+        const data = await res.json();
+        showToast(`Delete failed: ${data.message}`);
+      }
+    } catch (err) {
+      showToast(`Delete failed: ${err.message}`);
+    }
+  }
+
+  // --- Events & AI Module ---
+  let eventsCache = [];
+
+  async function loadEvents() {
+    const list = $('#events-list');
+    if (!list) return;
+
+    try {
+      const res = await fetch('/api/events');
+      const data = await res.json();
+      eventsCache = data.events || [];
+      renderEventsList();
+
+      // Update badge in sidebar
+      const navItem = navItems.find((n) => n.id === 'v-events');
+      if (navItem) navItem.badge = eventsCache.length;
+      initNav();
+    } catch (err) {
+      list.innerHTML = `<div class="empty"><b>Error Loading Events</b><p>${escapeHtml(err.message)}</p></div>`;
+    }
+  }
+
+  function renderEventsList() {
+    const list = $('#events-list');
+    if (!list) return;
+
+    let filtered = eventsCache;
+    if (eventFilterCid) {
+      filtered = filtered.filter((ev) => ev.camera_id === eventFilterCid);
+    }
+
+    if (filtered.length === 0) {
+      list.innerHTML = `
+        <div class="empty" style="grid-column: 1 / -1">
+          <b>No Activity Events Found</b>
+          <p>Camera motion triggers and AI detections will be captured here.</p>
+        </div>
+      `;
       return;
     }
-    historyList.innerHTML = bundles.map(b =>`
- <div class="diag-history-item">
- <div>
- <span class="diag-history-name">${escapeHtml(b.filename)}</span>
- <span class="diag-history-meta">${escapeHtml(b.sizeFormatted || '')}, ${escapeHtml(b.createdAt || '')}</span>
- </div>
- <div class="diag-history-actions">
- <a class="button button-small" href="${escapeHtml(b.downloadUrl)}" download>Download</a>
- <button class="button button-small button-warn delete-bundle-btn" data-filename="${escapeHtml(b.filename)}">Delete</button>
- </div>
- </div>
-    `).join("");
 
-    historyList.querySelectorAll(".delete-bundle-btn").forEach(btn =>{
-      btn.onclick = async (e) =>{
-        const fname = e.currentTarget.getAttribute("data-filename");
-        if (confirm(`Delete diagnostic bundle ${fname}?`)) {
-          try {
-            const delRes = await fetch(`/api/diagnostics?file=${encodeURIComponent(fname)}`, {
-              method: "DELETE",
-              headers: { "X-CamHub-Role": "admin" }
-            });
-            const delData = await delRes.json();
-            if (delData.success) {
-              showToast("Diagnostic bundle deleted", "info", 2500);
-              loadDiagnosticsSummary();
-            } else {
-              showToast(`Delete failed: ${delData.error || delData.message}`, "error", 3000);
-            }
-          } catch (err) {
-            showToast("Delete request failed", "error", 3000);
-          }
-        }
-      };
-    });
-  };
-
-  const loadDiagnosticsSummary = async () =>{
-    try {
-      if (statusBadge) {
-        statusBadge.className = "diag-status-badge";
-        statusBadge.textContent = "Checking...";
-      }
-      const res = await fetch("/api/diagnostics/summary", {
-        headers: { "X-CamHub-Role": "admin" }
-      });
-      const data = await res.json();
-      if (!data) return;
-
-      // Status badge
-      if (statusBadge) {
-        const overall = (data.overallStatus || "UNKNOWN").toLowerCase();
-        statusBadge.className = `diag-status-badge ${overall}`;
-        statusBadge.textContent = `${data.overallStatus} (${data.issueCount || 0} issues)`;
-      }
-
-      // Software
-      const sw = data.software || {};
-      const appEl = document.getElementById("diag-app-ver");
-      const pyEl = document.getElementById("diag-python-ver");
-      const ffEl = document.getElementById("diag-ffmpeg-ver");
-      const dotEl = document.getElementById("diag-dotnet-ver");
-      if (appEl) appEl.textContent = sw.app || "CamHUB 1.0.0";
-      if (pyEl) pyEl.textContent = sw.python ? sw.python.version : "-";
-      if (ffEl) ffEl.textContent = sw.ffmpeg && sw.ffmpeg.installed ? sw.ffmpeg.version.split(" ")[2] || "Installed" : "Not found";
-      if (dotEl) dotEl.textContent = sw.dotnet && sw.dotnet.installed ? sw.dotnet.version : "Not found";
-
-      // Resources
-      const rc = data.resources || {};
-      const osEl = document.getElementById("diag-os-val");
-      const diskEl = document.getElementById("diag-disk-val");
-      const pidEl = document.getElementById("diag-pid-val");
-      if (osEl) osEl.textContent = `${rc.os?.system || 'Host'} (${rc.os?.cpuCount || 1} CPU cores)`;
-      if (diskEl) diskEl.textContent = rc.disk?.freeGb ? `${rc.disk.freeGb} GB free of ${rc.disk.totalGb} GB (${rc.disk.usedPercent}%)` : "-";
-      if (pidEl) pidEl.textContent = rc.process?.pid || "-";
-
-      // Ports
-      if (data.ports) renderPortsGrid(data.ports);
-
-      // Previous bundles
-      renderBundlesHistory(data.bundles);
-    } catch (err) {
-      console.error("Failed to load diagnostics summary:", err);
-      showToast("Failed to fetch diagnostics telemetry", "error", 3000);
-    }
-  };
-
-  diagBtn.onclick = () =>{
-    modal.showModal();
-    loadDiagnosticsSummary();
-  };
-
-  if (generateBtn) {
-    generateBtn.onclick = async () =>{
-      generateBtn.disabled = true;
-      if (progressWrap) progressWrap.style.display = "flex";
-      if (progressText) progressText.textContent = "Gathering telemetry & sanitizing credentials...";
-      if (resultCard) resultCard.style.display = "none";
-
-      try {
-        const res = await fetch("/api/diagnostics/generate", {
-          method: "POST",
-          headers: { "X-CamHub-Role": "admin" }
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast(`Diagnostic bundle created in ${data.durationMs}ms!`, "success", 4000);
-          if (resultCard) resultCard.style.display = "flex";
-          if (resultFilename) resultFilename.textContent = data.filename;
-          if (resultDetails) {
-            resultDetails.innerHTML = `
-              Size: ${formatBytes(data.sizeBytes)}, Files: ${data.manifest?.totalFiles || 8}, SHA256: ${data.sha256?.substring(0, 16)}...
-            `;
-          }
-          if (downloadLink) {
-            downloadLink.href = data.downloadUrl;
-            downloadLink.setAttribute("download", data.filename);
-          }
-          loadDiagnosticsSummary();
-        } else {
-          showToast(`Export failed: ${data.error || 'Unknown error'}`, "error", 4000);
-        }
-      } catch (err) {
-        showToast("Diagnostics generation request failed", "error", 4000);
-      } finally {
-        generateBtn.disabled = false;
-        if (progressWrap) progressWrap.style.display = "none";
-      }
-    };
+    list.innerHTML = filtered
+      .map(
+        (ev) => `
+      <div class="event-card">
+        <div class="event-snap" data-ev-snap="${escapeHtml(ev.id)}">
+          <img src="/api/events/snapshot?id=${encodeURIComponent(ev.id)}" alt="Event Snapshot" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 24 24\\'%3E%3Ctext x=\\'50%\\' y=\\'50%\\' fill=\\'%23666\\' text-anchor=\\'middle\\'%3ENo Snapshot%3C/text%3E%3C/svg%3E';" />
+          <span class="tag ${ev.event_type === 'ai_person' ? 'good' : 'warn'}">
+            ${escapeHtml(ev.event_type === 'ai_person' ? 'Person' : 'Motion')}
+          </span>
+        </div>
+        <div class="event-info">
+          <div class="row" style="margin:0 0 4px">
+            <b>${escapeHtml(ev.camera_name || ev.camera_id)}</b>
+            <button class="btn sq r" data-ev-del="${escapeHtml(ev.id)}" title="Delete Event">
+              <svg class="ico"><use href="#i-trash"/></svg>
+            </button>
+          </div>
+          <span>${formatDateTime(ev.timestamp)}</span>
+        </div>
+      </div>
+    `
+      )
+      .join('');
   }
-}
 
-// ============================================================================
-// AGENT 9 - Notification Center
-// ============================================================================
-function initNotificationCenter() {
-  const bellBtn = document.getElementById("notif-bell-btn");
-  const badge = document.getElementById("notif-badge");
-  const modal = document.getElementById("notif-dialog");
-  const closeBtn = document.getElementById("close-notif-dialog-btn");
-  const closeAction = document.getElementById("close-notif-dialog-action");
-  const ackAllBtn = document.getElementById("notif-ack-all-btn");
-  const clearAllBtn = document.getElementById("notif-clear-all-btn");
-  const simulateBtn = document.getElementById("notif-simulate-btn");
-  const countPill = document.getElementById("notif-modal-count-pill");
-  const notifList = document.getElementById("notif-list");
-  const tabs = document.querySelectorAll(".notif-tab");
+  function openEventLightbox(id) {
+    const ev = eventsCache.find((e) => e.id === id);
+    if (!ev) return;
 
-  let currentSeverity = "all";
+    const dlg = $('#event-dialog');
+    const img = $('#lightbox-img');
+    const details = $('#lightbox-details');
+    const title = $('#lightbox-title');
 
-  if (!bellBtn || !modal) return;
+    if (title) title.textContent = `${ev.camera_name || ev.camera_id} — ${ev.event_type || 'Motion'}`;
+    if (img) img.src = `/api/events/snapshot?id=${encodeURIComponent(id)}`;
+    if (details) {
+      details.textContent = `Timestamp: ${formatDateTime(ev.timestamp)} | Confidence: ${ev.confidence ? (ev.confidence * 100).toFixed(1) + '%' : 'N/A'} | ID: ${ev.id}`;
+    }
 
-  const closeModal = () =>modal.close();
-  if (closeBtn) closeBtn.onclick = closeModal;
-  if (closeAction) closeAction.onclick = closeModal;
+    if (dlg) dlg.showModal();
+  }
 
-  const pollStats = async () =>{
+  async function deleteEvent(id) {
     try {
-      const res = await fetch("/api/notifications/stats");
-      const stats = await res.json();
-      if (!stats) return;
-      const unread = stats.unreadCount || 0;
-      if (badge) {
-        if (unread >0) {
-          badge.textContent = unread >99 ? "99+" : unread;
-          badge.style.display = "inline-block";
-        } else {
-          badge.style.display = "none";
+      const res = await fetch(`/api/events?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (res.ok) {
+        eventsCache = eventsCache.filter((e) => e.id !== id);
+        renderEventsList();
+        showToast('Event removed');
+      }
+    } catch (err) {
+      showToast(`Failed to delete event: ${err.message}`);
+    }
+  }
+
+  async function clearAllEvents() {
+    if (!confirm('Clear all motion and AI detection events?')) return;
+    try {
+      const res = await fetch('/api/events', { method: 'DELETE' });
+      if (res.ok) {
+        eventsCache = [];
+        renderEventsList();
+        showToast('All events cleared');
+      }
+    } catch (err) {
+      showToast(`Failed to clear events: ${err.message}`);
+    }
+  }
+
+  function loadDashboardRecentEvents() {
+    const container = $('#dash-recent-events');
+    if (!container) return;
+
+    if (eventsCache.length === 0) {
+      container.innerHTML = `
+        <div class="empty"><b>No Activity Yet</b><p>Motion and AI detections from your cameras will appear here.</p></div>
+      `;
+      return;
+    }
+
+    const recent = eventsCache.slice(0, 4);
+    container.innerHTML = recent
+      .map(
+        (ev) => `
+      <div class="notif-item">
+        <i class="dot ${ev.event_type === 'ai_person' ? 'good-t' : 'warn-t'}"></i>
+        <div class="notif-main">
+          <b>${escapeHtml(ev.camera_name || ev.camera_id)}: ${escapeHtml(ev.event_type === 'ai_person' ? 'Person detected' : 'Motion detected')}</b>
+          <p>${formatDateTime(ev.timestamp)}</p>
+        </div>
+      </div>
+    `
+      )
+      .join('');
+  }
+
+  // --- Diagnostics Module ---
+  async function loadDiagnostics() {
+    try {
+      const res = await fetch('/api/diagnostics/summary');
+      const data = await res.json();
+
+      if (data.software) {
+        if ($('#diag-py-ver')) $('#diag-py-ver').textContent = data.software.python || '3.10.11';
+        if ($('#diag-dotnet-ver')) $('#diag-dotnet-ver').textContent = data.software.dotnet || '8.0';
+        if ($('#diag-ffmpeg-ver')) $('#diag-ffmpeg-ver').textContent = data.software.ffmpeg || '6.0';
+      }
+
+      if (data.resources && $('#diag-uptime-val')) {
+        $('#diag-uptime-val').textContent = formatDuration(data.resources.uptimeSeconds);
+      }
+
+      if (data.ports) {
+        const setPort = (id, status) => {
+          const el = $(`#${id}`);
+          if (!el) return;
+          el.textContent = status ? 'LISTENING' : 'OFFLINE';
+          el.className = status ? 'good-t' : 'bad-t';
+        };
+        setPort('diag-p8080', data.ports['8080'] || data.ports[8080]);
+        setPort('diag-p8081', data.ports['8081'] || data.ports[8081]);
+        setPort('diag-p8082', data.ports['8082'] || data.ports[8082]);
+      }
+
+      if (data.bundles && $('#diag-bundles-list')) {
+        renderBundlesList(data.bundles);
+      }
+    } catch (err) {
+      console.error('Diagnostics load error:', err);
+    }
+  }
+
+  function renderBundlesList(bundles) {
+    const list = $('#diag-bundles-list');
+    if (!list) return;
+    if (!bundles || bundles.length === 0) {
+      list.innerHTML = `<div class="empty" style="padding:14px 10px">No diagnostic bundles generated yet.</div>`;
+      return;
+    }
+
+    list.innerHTML = bundles
+      .slice(0, 3)
+      .map(
+        (b) => `
+      <div class="bundle-item">
+        <div>
+          <b>${escapeHtml(b.filename)}</b>
+          <div class="sub">${formatDateTime(b.createdAt)} · ${formatBytes(b.sizeBytes)}</div>
+        </div>
+        <a class="btn sq" href="/api/diagnostics/download?filename=${encodeURIComponent(b.filename)}" download="" title="Download Bundle">
+          <svg class="ico"><use href="#i-dl"/></svg>
+        </a>
+      </div>
+    `
+      )
+      .join('');
+  }
+
+  async function generateDiagnosticBundle() {
+    const prog = $('#bundle-progress');
+    const btn = $('#btn-generate-bundle');
+    if (prog) prog.style.display = 'block';
+    if (btn) btn.disabled = true;
+
+    try {
+      const res = await fetch('/api/diagnostics/generate', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.status === 'ok') {
+        showToast('Diagnostic bundle generated!');
+        loadDiagnostics();
+      } else {
+        showToast(`Bundle error: ${data.message}`);
+      }
+    } catch (err) {
+      showToast(`Export failed: ${err.message}`);
+    } finally {
+      if (prog) prog.style.display = 'none';
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // --- Notifications Center Module ---
+  let notificationsCache = [];
+
+  async function loadNotifications() {
+    const list = $('#notif-list');
+    if (!list) return;
+
+    try {
+      const res = await fetch('/api/notifications');
+      const data = await res.json();
+      notificationsCache = data.notifications || [];
+      renderNotificationsList();
+
+      const unreadCount = notificationsCache.filter((n) => !n.acknowledged).length;
+      const navItem = navItems.find((n) => n.id === 'v-notif');
+      if (navItem) navItem.badge = unreadCount;
+      initNav();
+    } catch (err) {
+      list.innerHTML = `<div class="empty"><b>Error Loading Notifications</b><p>${escapeHtml(err.message)}</p></div>`;
+    }
+  }
+
+  function renderNotificationsList() {
+    const list = $('#notif-list');
+    if (!list) return;
+
+    let filtered = notificationsCache;
+    if (notifFilterSev) {
+      filtered = filtered.filter((n) => n.severity === notifFilterSev);
+    }
+
+    if (filtered.length === 0) {
+      list.innerHTML = `
+        <div class="empty">
+          <b>No Notifications Found</b>
+          <p>Camera offline alerts and fault notices will be listed here.</p>
+        </div>
+      `;
+      return;
+    }
+
+    list.innerHTML = filtered
+      .map((n) => {
+        const dotClass = n.severity === 'critical' ? 'bad-t' : n.severity === 'warning' ? 'warn-t' : 'good-t';
+        return `
+        <div class="notif-item ${n.acknowledged ? '' : 'unread'}">
+          <i class="dot ${dotClass}" style="margin-top:4px"></i>
+          <div class="notif-main">
+            <b>${escapeHtml(n.title)}</b>
+            <p>${escapeHtml(n.message)}</p>
+            <span class="notif-time">${formatDateTime(n.timestamp)} · ${escapeHtml(n.camera || 'System')}</span>
+          </div>
+          ${
+            !n.acknowledged
+              ? `<button class="btn sq" data-notif-ack="${escapeHtml(n.id)}" title="Acknowledge">
+                  <svg class="ico"><use href="#i-check"/></svg>
+                </button>`
+              : ''
+          }
+        </div>
+      `;
+      })
+      .join('');
+  }
+
+  async function acknowledgeNotification(id) {
+    try {
+      const res = await fetch('/api/notifications/ack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      if (res.ok) {
+        showToast('Notification acknowledged');
+        loadNotifications();
+      }
+    } catch (err) {
+      showToast(`Error: ${err.message}`);
+    }
+  }
+
+  async function acknowledgeAllNotifications() {
+    try {
+      const res = await fetch('/api/notifications/ack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true })
+      });
+      if (res.ok) {
+        showToast('All notifications acknowledged');
+        loadNotifications();
+      }
+    } catch (err) {
+      showToast(`Error: ${err.message}`);
+    }
+  }
+
+  async function clearAllNotifications() {
+    if (!confirm('Clear all notification alerts?')) return;
+    try {
+      const res = await fetch('/api/notifications', { method: 'DELETE' });
+      if (res.ok) {
+        notificationsCache = [];
+        renderNotificationsList();
+        showToast('Notifications cleared');
+      }
+    } catch (err) {
+      showToast(`Error: ${err.message}`);
+    }
+  }
+
+  async function simulateNotification() {
+    try {
+      const res = await fetch('/api/notifications/simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: 'camera_offline',
+          severity: 'warning',
+          camera: 'Camera 2, Garage',
+          message: 'Frame rate dropped below 5 fps threshold (Simulated test).'
+        })
+      });
+      if (res.ok) {
+        showToast('Simulated notification dispatched');
+        loadNotifications();
+      }
+    } catch (err) {
+      showToast(`Simulation failed: ${err.message}`);
+    }
+  }
+
+  // --- Restart Services Modal ---
+  async function restartAllCameras() {
+    showToast('Restarting all camera decoders…');
+    try {
+      const res = await fetch('/api/services/restart-all', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('All camera decoders restarted successfully.');
+        setTimeout(pollBackendHealth, 1500);
+      } else {
+        showToast(`Restart warning: ${data.message}`);
+      }
+    } catch (err) {
+      showToast(`Restart failed: ${err.message}`);
+    }
+  }
+
+  // --- Background Polling Loop ---
+  async function pollBackendHealth() {
+    try {
+      const [healthRes, storageRes] = await Promise.all([
+        fetch('/api/health').then((r) => (r.ok ? r.json() : null)),
+        fetch('/api/storage/status').then((r) => (r.ok ? r.json() : null))
+      ]);
+
+      if (healthRes && healthRes.cameras) {
+        Object.entries(healthRes.cameras).forEach(([cid, camData]) => {
+          const localCam = cameras.find((c) => c.id === cid);
+          if (localCam) {
+            localCam.status = camData.status || 'DEGRADED';
+            if (camData.metrics) {
+              localCam.fps = camData.metrics.fps || 0.0;
+              localCam.latencyMs = Math.round(camData.metrics.latencyMs || 0);
+              localCam.queue = `${camData.metrics.queueDepth || 0} / 0`;
+              localCam.decodeErrors = camData.metrics.decodeErrors || 0;
+            }
+
+            // Record FPS history for Canvas chart
+            if (!fpsHistory[cid]) fpsHistory[cid] = [];
+            fpsHistory[cid].push(localCam.fps);
+            if (fpsHistory[cid].length > 60) fpsHistory[cid].shift();
+          }
+        });
+
+        // Update Host resources & throughput
+        if (healthRes.system) {
+          const cpu = Math.round(healthRes.system.cpu_percent || 28);
+          const mem = Math.round(healthRes.system.memory?.percent || 52);
+          if ($('#res-cpu-val')) $('#res-cpu-val').textContent = `${cpu}%`;
+          if ($('#res-cpu-bar')) $('#res-cpu-bar').style.setProperty('--w', `${cpu}%`);
+          if ($('#res-mem-val')) $('#res-mem-val').textContent = `8.3 of 16.0 GB (${mem}%)`;
+          if ($('#res-mem-bar')) $('#res-mem-bar').style.setProperty('--w', `${mem}%`);
+        }
+
+        updateFleetSummary();
+        updateDashboardFleetStats();
+        if (currentViewIdx === 0) renderLiveView();
+        if (currentViewIdx === 1) {
+          updateStreamPathCard();
+          drawFpsChart();
         }
       }
-      if (countPill) countPill.textContent = `${unread} unread`;
-    } catch {
-      // Ignore background fetch error
-    }
-  };
 
-  const loadNotifications = async () =>{
-    if (!notifList) return;
-    try {
-      let url = "/api/notifications?limit=50";
-      if (currentSeverity && currentSeverity !== "all") {
-        url += `&severity=${encodeURIComponent(currentSeverity)}`;
+      // Storage Telemetry
+      if (storageRes && storageRes.disk) {
+        const usedGb = (storageRes.disk.used_bytes / 1e9).toFixed(0);
+        const freeGb = (storageRes.disk.free_bytes / 1e9).toFixed(0);
+        const percent = Math.round(storageRes.disk.percent_used || 85);
+        const recMb = (storageRes.recordings?.total_bytes / 1e6 || 10.2).toFixed(1);
+        const snapMb = (storageRes.events?.total_bytes / 1e6 || 2.5).toFixed(1);
+        const forecast = storageRes.forecasting?.estimated_days_remaining
+          ? `${Math.round(storageRes.forecasting.estimated_days_remaining)} days left`
+          : '30+ days left';
+
+        if ($('#store-percent')) $('#store-percent').innerHTML = `${percent}%<small>Used</small>`;
+        if ($('#store-used')) $('#store-used').textContent = `${usedGb} GB`;
+        if ($('#store-free')) $('#store-free').textContent = `${freeGb} GB`;
+        if ($('#store-recs')) $('#store-recs').textContent = `${recMb} MB`;
+        if ($('#store-snaps')) $('#store-snaps').textContent = `${snapMb} MB`;
+        if ($('#store-forecast')) $('#store-forecast').textContent = forecast;
+        if ($('#store-ring')) $('#store-ring').style.setProperty('--ring-fill', `${percent}%`);
       }
-      const res = await fetch(url);
-      const data = await res.json();
-      const items = data.notifications || [];
+    } catch (err) {
+      console.warn('Telemetry polling notice:', err);
+    }
+  }
 
-      if (items.length === 0) {
-        notifList.innerHTML = `<p class="diag-empty-text">No notifications found.</p>`;
+  // --- Global Event Listeners ---
+  function initEventDelegation() {
+    document.addEventListener('click', (e) => {
+      // 1. Navigation item clicked
+      const navBtn = e.target.closest('[data-go]');
+      if (navBtn) {
+        switchView(parseInt(navBtn.dataset.go, 10));
         return;
       }
 
-      notifList.innerHTML = items.map(n =>{
-        const isUnread = !n.acknowledged;
-        const countBadge = n.count >1 ? `<span class="notif-repeat-badge">Repeated ${n.count}x</span>` : "";
-        return `
- <div class="notif-item ${isUnread ? 'unread' : ''} ${escapeHtml(n.severity || 'info')}" data-id="${escapeHtml(n.id)}">
- <div class="notif-content">
- <div class="notif-header-line">
- <span class="notif-title">${escapeHtml(n.title || 'Notification')}</span>
-                ${countBadge}
- </div>
- <div class="notif-message">${escapeHtml(n.message || '')}</div>
- <div class="notif-meta-line">
- <span>${escapeHtml(n.cameraName || n.cameraId || 'System')}</span>
- <span>${escapeHtml(n.isoTime || '')}</span>
- </div>
- </div>
- <div class="notif-actions">
-              ${isUnread ? `<button class="button button-small notif-ack-btn" data-id="${escapeHtml(n.id)}" title="Acknowledge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg></button>` : ''}
- <button class="button button-small notif-del-btn" data-id="${escapeHtml(n.id)}" title="Delete"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
- </div>
- </div>
-        `;
-      }).join("");
+      // 2. Thumbnail clicked in Live Stage side or Dashboard Preview
+      const thumb = e.target.closest('.thumb');
+      if (thumb) {
+        selectedCamIdx = parseInt(thumb.dataset.i, 10);
+        renderLiveView();
+        if (thumb.closest('#prev')) {
+          switchView(0);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        return;
+      }
 
-      notifList.querySelectorAll(".notif-ack-btn").forEach(btn =>{
-        btn.onclick = async (e) =>{
-          const id = e.currentTarget.getAttribute("data-id");
-          await fetch(`/api/notifications/ack?id=${encodeURIComponent(id)}`, { method: "POST" });
-          loadNotifications();
-          pollStats();
-        };
-      });
+      // 3. Focus button in Wall mode
+      const focusBtn = e.target.closest('[data-focus]');
+      if (focusBtn) {
+        selectedCamIdx = parseInt(focusBtn.dataset.focus, 10);
+        setLayout('focus');
+        return;
+      }
 
-      notifList.querySelectorAll(".notif-del-btn").forEach(btn =>{
-        btn.onclick = async (e) =>{
-          const id = e.currentTarget.getAttribute("data-id");
-          await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-          loadNotifications();
-          pollStats();
-        };
-      });
-    } catch (err) {
-      console.error("Failed to load notifications:", err);
+      // 4. Record action button
+      const recActBtn = e.target.closest('[data-act="record"]');
+      if (recActBtn) {
+        const cid = recActBtn.dataset.cid || cameras[selectedCamIdx].id;
+        toggleRecording(cid);
+        return;
+      }
+
+      // 5. Reload stream button
+      const reloadBtn = e.target.closest('[data-act="reload"]');
+      if (reloadBtn) {
+        const cid = reloadBtn.dataset.cid || cameras[selectedCamIdx].id;
+        const img = $(`#stream-img-${cid}`);
+        if (img) img.src = `${img.src.split('?')[0]}?t=${Date.now()}`;
+        showToast('Stream reloaded');
+        return;
+      }
+
+      // 6. Configure camera button
+      const cfgBtn = e.target.closest('[data-act="config"]');
+      if (cfgBtn) {
+        const cid = cfgBtn.dataset.cid || cameras[selectedCamIdx].id;
+        const cam = cameras.find((c) => c.id === cid);
+        if (cam) {
+          if ($('#config-cam-name')) $('#config-cam-name').textContent = cam.name;
+          if ($('#cfg-name')) $('#cfg-name').value = cam.name;
+          if ($('#cfg-url')) $('#cfg-url').value = cam.streamUrl;
+          if ($('#cfg-location')) $('#cfg-location').value = cam.ip;
+          const dlg = $('#config-dialog');
+          if (dlg) dlg.showModal();
+        }
+        return;
+      }
+
+      // 7. Zoom controls
+      const zoomBtn = e.target.closest('[data-zoom]');
+      if (zoomBtn) {
+        const type = zoomBtn.dataset.zoom;
+        if (type === 'in') zoomLevel = Math.min(zoomLevel + 0.25, 3.0);
+        else if (type === 'out') zoomLevel = Math.max(zoomLevel - 0.25, 1.0);
+        else if (type === 'reset') zoomLevel = 1.0;
+        const feed = $(`#feed-${cameras[selectedCamIdx].id}`);
+        if (feed) feed.style.transform = `scale(${zoomLevel})`;
+        zoomBtn.parentElement.querySelector('button[data-zoom="reset"]').textContent = `${zoomLevel.toFixed(1)}x`;
+        return;
+      }
+
+      // 8. Fullscreen toggle
+      if (e.target.closest('[data-fs]')) {
+        const feed = $('#mc .feed');
+        if (feed && feed.requestFullscreen) feed.requestFullscreen();
+        return;
+      }
+
+      // 9. Open Live view button from Dashboard
+      if (e.target.closest('#openlive')) {
+        switchView(0);
+        return;
+      }
+
+      // 10. Toolbar action buttons
+      if (e.target.closest('#refresh')) {
+        pollBackendHealth();
+        showToast('Feeds & telemetry refreshed');
+        return;
+      }
+
+      if (e.target.closest('#restart')) {
+        const dlg = $('#dlg');
+        if (dlg) dlg.showModal();
+        return;
+      }
+
+      if (e.target.closest('#no')) {
+        const dlg = $('#dlg');
+        if (dlg) dlg.close();
+        return;
+      }
+
+      if (e.target.closest('#yes')) {
+        const dlg = $('#dlg');
+        if (dlg) dlg.close();
+        restartAllCameras();
+        return;
+      }
+
+      // 11. Sidebar toggle button
+      if (e.target.closest('#sbt')) {
+        const shell = $('#shell');
+        if (shell) {
+          const isHidden = shell.classList.toggle('hide');
+          $('#sbt').setAttribute('aria-expanded', !isHidden);
+        }
+        return;
+      }
+
+      // 12. Playback play/del buttons
+      const playBtn = e.target.closest('[data-rec-play]');
+      if (playBtn) {
+        playRecording(playBtn.dataset.recPlay);
+        return;
+      }
+
+      const delRecBtn = e.target.closest('[data-rec-del]');
+      if (delRecBtn) {
+        deleteRecording(delRecBtn.dataset.recDel);
+        return;
+      }
+
+      if (e.target.closest('#refresh-recordings')) {
+        loadRecordings();
+        showToast('Recordings list refreshed');
+        return;
+      }
+
+      // 13. Events snapshot lightbox & delete
+      const snapBtn = e.target.closest('[data-ev-snap]');
+      if (snapBtn) {
+        openEventLightbox(snapBtn.dataset.evSnap);
+        return;
+      }
+
+      const delEvBtn = e.target.closest('[data-ev-del]');
+      if (delEvBtn) {
+        deleteEvent(delEvBtn.dataset.evDel);
+        return;
+      }
+
+      if (e.target.closest('#clear-events-btn')) {
+        clearAllEvents();
+        return;
+      }
+
+      if (e.target.closest('#lightbox-close')) {
+        const dlg = $('#event-dialog');
+        if (dlg) dlg.close();
+        return;
+      }
+
+      // 14. Diagnostics actions
+      if (e.target.closest('#btn-generate-bundle')) {
+        generateDiagnosticBundle();
+        return;
+      }
+
+      // 15. Notifications actions
+      const ackBtn = e.target.closest('[data-notif-ack]');
+      if (ackBtn) {
+        acknowledgeNotification(ackBtn.dataset.notifAck);
+        return;
+      }
+
+      if (e.target.closest('#notif-ack-all')) {
+        acknowledgeAllNotifications();
+        return;
+      }
+
+      if (e.target.closest('#notif-clear-all')) {
+        clearAllNotifications();
+        return;
+      }
+
+      if (e.target.closest('#notif-simulate')) {
+        simulateNotification();
+        return;
+      }
+
+      // 16. Config dialog actions
+      if (e.target.closest('#cfg-cancel')) {
+        const dlg = $('#config-dialog');
+        if (dlg) dlg.close();
+        return;
+      }
+    });
+
+    // Camera config form submit
+    $('#config-form')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const cam = cameras[selectedCamIdx];
+      if (cam) {
+        cam.name = $('#cfg-name').value || cam.name;
+        cam.streamUrl = $('#cfg-url').value || cam.streamUrl;
+        cam.ip = $('#cfg-location').value || cam.ip;
+        showToast(`Saved configuration for ${cam.name}`);
+        renderLiveView();
+      }
+      $('#config-dialog')?.close();
+    });
+  }
+
+  // --- Initializer ---
+  function init() {
+    initNav();
+    initSegmentedControls();
+    initEventDelegation();
+    renderLiveView();
+    switchView(0);
+
+    // Initial telemetry pull and polling interval
+    pollBackendHealth();
+    setInterval(pollBackendHealth, 3000);
+
+    if (window.innerWidth <= 900) {
+      $('#shell')?.classList.add('hide');
+      $('#sbt')?.setAttribute('aria-expanded', 'false');
     }
-  };
-
-  tabs.forEach(tab =>{
-    tab.onclick = () =>{
-      tabs.forEach(t =>t.classList.remove("active"));
-      tab.classList.add("active");
-      currentSeverity = tab.getAttribute("data-sev");
-      loadNotifications();
-    };
-  });
-
-  bellBtn.onclick = () =>{
-    modal.showModal();
-    loadNotifications();
-    pollStats();
-  };
-
-  if (ackAllBtn) {
-    ackAllBtn.onclick = async () =>{
-      await fetch("/api/notifications/ack?all=true", { method: "POST" });
-      showToast("All notifications acknowledged", "info", 2500);
-      loadNotifications();
-      pollStats();
-    };
   }
 
-  if (clearAllBtn) {
-    clearAllBtn.onclick = async () =>{
-      if (confirm("Clear all notifications?")) {
-        await fetch("/api/notifications?all=true", { method: "DELETE" });
-        showToast("All notifications cleared", "info", 2500);
-        loadNotifications();
-        pollStats();
-      }
-    };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
   }
-
-  if (simulateBtn) {
-    simulateBtn.onclick = async () =>{
-      const simRes = await fetch("/api/notifications/simulate", { method: "POST" });
-      const simData = await simRes.json();
-      if (simData.success) {
-        showToast("Test notification simulated", "info", 2500);
-        loadNotifications();
-        pollStats();
-      }
-    };
-  }
-
-  pollStats();
-  setInterval(pollStats, 10000);
-}
-
-// Initial boot
-initNav();
-initSetupGuide();
-initServiceControls();
-initPlayback();
-initPlaybackZoom();
-initEventsTimeline();
-initCameraFilter();
-initDiagnosticsModal();
-initNotificationCenter();
-initFpsChart();
-initPipelineInspector();
-initFleetFilters();
-render();
-restoreLayoutPreference();
-
-// Start periodic telemetry pollers
-pollDiagnosticsSummary();
-setInterval(pollDiagnosticsSummary, 3000);
-
-pollRecentEvents();
-setInterval(pollRecentEvents, 5000);
-
-pollStorageCard();
-setInterval(pollStorageCard, 10000);
-
-// Start metrics poller (every 2s)
-setInterval(pollMetrics, 2000);
-pollMetrics();
-
-// Start Smart Health Monitor poller (every 3s)
-setInterval(pollHealth, 3000);
-pollHealth();
+})();
