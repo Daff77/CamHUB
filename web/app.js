@@ -24,7 +24,10 @@
       fps: 0.0,
       targetFps: 15.0,
       latencyMs: 0,
-      aspect: '16:9',
+      aspect: '16:27',
+      resolution: '1920×3240',
+      aspectRatio: '16 / 27',
+      aspectVal: 0.5926,
       queue: '0 / 0',
       decodeErrors: 0,
       lastFrame: '--',
@@ -51,6 +54,9 @@
       targetFps: 15.0,
       latencyMs: 0,
       aspect: '16:9',
+      resolution: '1920×1080',
+      aspectRatio: '16 / 9',
+      aspectVal: 1.7778,
       queue: '0 / 0',
       decodeErrors: 0,
       lastFrame: '--',
@@ -77,6 +83,9 @@
       targetFps: 15.0,
       latencyMs: 0,
       aspect: '16:9',
+      resolution: '1920×1080',
+      aspectRatio: '16 / 9',
+      aspectVal: 1.7778,
       queue: '0 / 0',
       decodeErrors: 0,
       lastFrame: '--',
@@ -218,24 +227,87 @@
       ${A(c, 'restart-cam', 'Retry connection', 'sm')}
     </div>
   `;
-  const stats = (c) => `<div class="stats"><div><b>${c.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${c.latencyMs} ms</b><span>latency</span></div><div><b>${c.aspect}</b><span>ratio</span></div><div><b>${c.w}</b><span>web</span></div></div>`;
+
+  // --- Dynamic Aspect Ratio & Fit Mode ---
+  let fitMode = 'contain';
+  try {
+    fitMode = localStorage.getItem('camhub_fit_mode') || 'contain';
+  } catch (_) {}
+
+  function gcd(a, b) {
+    return b === 0 ? a : gcd(b, a % b);
+  }
+
+  function calcRatio(w, h) {
+    if (!w || !h) return { text: '16:9', css: '16 / 9', val: 1.7778 };
+    const d = gcd(w, h);
+    const rw = Math.round(w / d);
+    const rh = Math.round(h / d);
+    return { text: `${rw}:${rh}`, css: `${rw} / ${rh}`, val: w / h };
+  }
+
+  window.applyCameraRatio = function(img, cid) {
+    if (!img) return;
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (!w || !h || w < 20 || h < 20) return;
+    const ratio = calcRatio(w, h);
+    const cam = cams.find((x) => x.id === cid);
+    if (cam) {
+      cam.aspect = ratio.text;
+      cam.aspectRatio = ratio.css;
+      cam.aspectVal = ratio.val;
+      cam.resolution = `${w}×${h}`;
+    }
+    const video = img.closest('.video');
+    if (video) {
+      video.style.setProperty('--cam-aspect', ratio.css);
+      video.style.setProperty('--cam-ratio', String(ratio.val));
+    }
+    const card = img.closest('.card') || img.closest('.thumb');
+    if (card) {
+      const res = card.querySelector('.res-tag');
+      if (res) res.textContent = `${w}×${h}`;
+      const rat = card.querySelector('.ratio-val');
+      if (rat) rat.textContent = ratio.text;
+    }
+  };
+
+  function applyFitMode(mode) {
+    fitMode = mode;
+    try { localStorage.setItem('camhub_fit_mode', mode); } catch (_) {}
+    document.querySelectorAll('.video').forEach((v) => {
+      if (mode === 'cover') {
+        v.classList.add('fill');
+      } else {
+        v.classList.remove('fill');
+      }
+    });
+    const fitButtons = document.querySelectorAll('#fit-modes button');
+    fitButtons.forEach((b) => {
+      b.setAttribute('aria-pressed', b.dataset.fit === mode ? 'true' : 'false');
+    });
+  }
+
+  const stats = (c) => `<div class="stats"><div><b>${c.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${c.latencyMs} ms</b><span>latency</span></div><div><b class="ratio-val">${c.aspect}</b><span>ratio</span></div><div><b>${c.w}</b><span>web</span></div></div>`;
   const acts = (c, f) => `<div class="acts">${A(c, 'record', c.recording ? 'Stop' : 'Record', 'sm rec adm')}${A(c, 'restart-cam', 'Reload', 'sm adm')}${A(c, c.running ? 'stop-cam' : 'start-cam', c.running ? 'Stop' : 'Start', 'sm adm')}${A(c, 'config', 'Configure', 'sm adm')}${f}</div>`;
 
   const card = (c, i) => {
     const s = ST[c.s] || ST.degraded;
     const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
+    const fillCls = fitMode === 'cover' ? ' fill' : '';
     return `
       <article class="card cam">
-        <div class="video" id="feed-${c.id}">
+        <div class="video${fillCls}" id="feed-${c.id}" style="--cam-aspect: ${c.aspectRatio || '16 / 9'}; --cam-ratio: ${c.aspectVal || 1.7778};">
           ${bar(c, s)}
           <img class="mjpeg-stream" id="stream-img-${c.id}" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
             onerror="this.style.display='none'; const m=document.getElementById('msg-${c.id}'); if(m) m.style.display='flex';" 
-            onload="this.style.display='block'; const m=document.getElementById('msg-${c.id}'); if(m) m.style.display='none';" 
+            onload="this.style.display='block'; const m=document.getElementById('msg-${c.id}'); if(m) m.style.display='none'; window.applyCameraRatio && window.applyCameraRatio(this, '${c.id}');" 
             style="${isHealthy ? 'display:block;' : 'display:none;'}">
           ${msg(c, `msg-${c.id}`)}
         </div>
         <div class="cmeta">
-          <div class="ip">${c.ip} · ${c.d}</div>
+          <div class="ip">${c.ip} · ${c.d} <span class="res-tag">${c.resolution || ''}</span></div>
           ${stats(c)}
           ${acts(c, `<button class="btn sm" data-focus="${i}">Focus</button>`)}
         </div>
@@ -246,15 +318,16 @@
   const mini = (c, i) => {
     const s = ST[c.s] || ST.degraded;
     const snapUrl = c.snapshotUrl || `/proxy/snapshot/${c.id}`;
+    const fillCls = fitMode === 'cover' ? ' fill' : '';
     return `
-      <div class="video">
+      <div class="video${fillCls}" style="--cam-aspect: ${c.aspectRatio || '16 / 9'}; --cam-ratio: ${c.aspectVal || 1.7778};">
         <div class="vbar">
           <span><i class="dot ${s[1]}"></i>CAM ${p2(i + 1)}</span>
           <em>${s[2]}</em>
         </div>
         <img src="${snapUrl}?t=${Date.now()}" alt="${escapeHtml(c.n)}" 
           onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='block';" 
-          onload="this.style.display='block'; if(this.nextElementSibling) this.nextElementSibling.style.display='none';" />
+          onload="this.style.display='block'; if(this.nextElementSibling) this.nextElementSibling.style.display='none'; window.applyCameraRatio && window.applyCameraRatio(this, '${c.id}');" />
         <svg class="ico nosig" style="width:30px;height:30px;opacity:.45;display:none;"><use href="#i-cam"/></svg>
       </div>
       <div class="tl">
@@ -271,18 +344,20 @@
     const c = cams[sel] || cams[0], s = ST[c.s] || ST.degraded;
     const stage = $('#stage');
     const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
+    const fillCls = fitMode === 'cover' ? ' fill' : '';
     if (stage) {
       stage.innerHTML = `
         <div class="card cam">
-          <div class="video big" id="mc" style="transform:scale(${zoomLevel});transform-origin:center center;">
+          <div class="video big${fillCls}" id="mc" style="--cam-aspect: ${c.aspectRatio || '16 / 9'}; --cam-ratio: ${c.aspectVal || 1.7778}; transform:scale(${zoomLevel});transform-origin:center center;">
             ${bar(c, s)}
             <img class="mjpeg-stream" id="stream-img-main" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
               onerror="this.style.display='none'; const m=document.getElementById('msg-main'); if(m) m.style.display='flex';" 
-              onload="this.style.display='block'; const m=document.getElementById('msg-main'); if(m) m.style.display='none';"
+              onload="this.style.display='block'; const m=document.getElementById('msg-main'); if(m) m.style.display='none'; window.applyCameraRatio && window.applyCameraRatio(this, '${c.id}');"
               style="${isHealthy ? 'display:block;' : 'display:none;'}">
             ${msg(c, 'msg-main')}
             <div class="vfoot">
               <span class="ts"></span>
+              <span class="res-tag">${c.resolution || ''}</span>
               <div class="zoom">
                 <button class="btn" data-zoom="in" aria-label="Zoom in">+</button>
                 <button class="btn" data-zoom="reset" aria-label="Reset zoom">${zoomLevel.toFixed(1)}x</button>
@@ -295,7 +370,7 @@
             <div class="mrow">
               <div>
                 <b class="nm">${escapeHtml(c.n)}</b>
-                <div class="ip">${c.ip} · ${c.d} · Port ${c.p}</div>
+                <div class="ip">${c.ip} · ${c.d} · Port ${c.p} <span class="res-tag">${c.resolution || ''}</span></div>
               </div>
               ${acts(c, '')}
             </div>
@@ -317,6 +392,7 @@
 
     const camsGrid = $('#cams');
     if (camsGrid) camsGrid.innerHTML = cams.map(card).join('');
+    applyFitMode(fitMode);
     tick();
   }
 
@@ -333,8 +409,10 @@
     if (stageMeta) {
       const statsBox = stageMeta.querySelector('.stats');
       if (statsBox) {
-        statsBox.innerHTML = `<div><b>${c.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${c.latencyMs} ms</b><span>latency</span></div><div><b>${c.aspect}</b><span>ratio</span></div><div><b>${c.w}</b><span>web</span></div>`;
+        statsBox.innerHTML = `<div><b>${c.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${c.latencyMs} ms</b><span>latency</span></div><div><b class="ratio-val">${c.aspect}</b><span>ratio</span></div><div><b>${c.w}</b><span>web</span></div>`;
       }
+      const resTag = stageMeta.querySelector('.res-tag');
+      if (resTag && c.resolution) resTag.textContent = c.resolution;
       const checksBox = stageMeta.querySelector('.signal-checks');
       if (checksBox) {
         checksBox.innerHTML = `
@@ -355,8 +433,10 @@
         if (vbar) vbar.innerHTML = `<span><i class="dot ${cs[1]}"></i>${escapeHtml(cam.n)}</span><em>${cs[2]}</em>`;
         const statsBox = cardEl.querySelector('.stats');
         if (statsBox) {
-          statsBox.innerHTML = `<div><b>${cam.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${cam.latencyMs} ms</b><span>latency</span></div><div><b>${cam.aspect}</b><span>ratio</span></div><div><b>${cam.w}</b><span>web</span></div>`;
+          statsBox.innerHTML = `<div><b>${cam.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${cam.latencyMs} ms</b><span>latency</span></div><div><b class="ratio-val">${cam.aspect}</b><span>ratio</span></div><div><b>${cam.w}</b><span>web</span></div>`;
         }
+        const resTag = cardEl.querySelector('.res-tag');
+        if (resTag && cam.resolution) resTag.textContent = cam.resolution;
       }
     });
   }
@@ -1607,6 +1687,7 @@
 
   initTabs();
   seg('#layouts', (b) => layout(b.dataset.l));
+  seg('#fit-modes', (b) => applyFitMode(b.dataset.fit));
   seg('#pick', (b) => {
     pick = +b.dataset.i;
     path();
