@@ -17,26 +17,26 @@ const defaultHost = (typeof window !== "undefined" && window.location && window.
 let activeRecordings = new Set();
 
 function updateAllRecordingButtons() {
-  document.querySelectorAll("[data-tile-rec]").forEach((btn) => {
+  document.querySelectorAll("[data-tile-rec]").forEach((btn) =>{
     const cid = btn.dataset.tileRec;
     const isRec = activeRecordings.has(cid);
     btn.classList.toggle("is-recording", isRec);
     const textEl = btn.querySelector(".tile-rec-text");
     if (textEl) textEl.textContent = isRec ? "Recording" : "Record";
   });
-  document.querySelectorAll(".rec-toggle-btn").forEach((btn) => {
+  document.querySelectorAll(".rec-toggle-btn").forEach((btn) =>{
     const cid = btn.getAttribute("data-rec-cam");
     const isRec = activeRecordings.has(cid);
     btn.classList.toggle("is-recording", isRec);
-    btn.textContent = `${isRec ? '■ Stop' : '● Rec'} ${cid}`;
+    btn.textContent = `${isRec ? 'Stop' : 'Rec'} ${cid}`;
   });
 }
 
 const DEFAULT_CAMERAS = [
   {
     id: "v380-1",
-    name: "Camera 1 · Indoor",
-    location: "192.168.100.24 · ID 124095217 · Port 8080",
+    name: "Camera 1, Indoor",
+    location: "192.168.100.24, ID 124095217, Port 8080",
     brand: "V380 Pro / V380Decoder-Latest",
     url: `http://${defaultHost}:8080/stream.mjpg`,
     snapshotUrl: `http://${defaultHost}:8080/snapshot`,
@@ -45,8 +45,8 @@ const DEFAULT_CAMERAS = [
   },
   {
     id: "v380-2",
-    name: "Camera 2 · Garage",
-    location: "192.168.100.4 · ID 97357757 · Port 8081",
+    name: "Camera 2, Garage",
+    location: "192.168.100.4, ID 97357757, Port 8081",
     brand: "V380 Pro / V380Decoder-Fork",
     url: `http://${defaultHost}:8081/stream.mjpg`,
     snapshotUrl: `http://${defaultHost}:8081/snapshot`,
@@ -55,8 +55,8 @@ const DEFAULT_CAMERAS = [
   },
   {
     id: "okam-3",
-    name: "Camera 3 · O Kam Pro",
-    location: "192.168.100.6 · Port 10554 · VStarcam",
+    name: "Camera 3, O Kam Pro",
+    location: "192.168.100.6, Port 10554, VStarcam",
     brand: "O Kam Pro / VStarcam",
     url: `http://${defaultHost}:8082/stream.mjpg`,
     snapshotUrl: `http://${defaultHost}:8082/snapshot`,
@@ -76,12 +76,12 @@ function getSelectedCameraIds() {
     const raw = localStorage.getItem(SELECTED_CAMERAS_KEY);
     if (raw) {
       const arr = JSON.parse(raw);
-      if (Array.isArray(arr) && arr.length > 0) {
+      if (Array.isArray(arr) && arr.length >0) {
         return new Set(arr);
       }
     }
   } catch {}
-  return new Set(cameras.map((c) => c.id));
+  return new Set(cameras.map((c) =>c.id));
 }
 
 let selectedCameraIds = getSelectedCameraIds();
@@ -147,9 +147,9 @@ function loadCameras() {
     if (raw) {
       const saved = JSON.parse(raw);
       if (Array.isArray(saved)) {
-        return DEFAULT_CAMERAS.map((def, idx) => {
+        return DEFAULT_CAMERAS.map((def, idx) =>{
           const legacyId = ["v380-a", "v380-b", "okam-c"][idx];
-          const matched = saved.find(item => item.id === def.id || item.id === legacyId);
+          const matched = saved.find(item =>item.id === def.id || item.id === legacyId);
           if (matched) {
             const isGenericDefault = !matched.location || matched.location.includes("Point") || matched.location.includes("Local network");
             let url = matched.url !== undefined && matched.url !== "" ? matched.url : def.url;
@@ -180,7 +180,7 @@ function loadCameras() {
   } catch (error) {
     console.warn("CamHub config could not be loaded; using defaults.", error);
   }
-  return DEFAULT_CAMERAS.map((camera) => ({ ...camera }));
+  return DEFAULT_CAMERAS.map((camera) =>({ ...camera }));
 }
 
 function saveCameras() {
@@ -188,7 +188,7 @@ function saveCameras() {
 }
 
 function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+  return String(value ?? "").replace(/[&<>"']/g, (char) =>({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
   })[char]);
 }
@@ -260,8 +260,8 @@ function setConnection(id, status, message = "") {
 }
 
 function updateSummary() {
-  const visibleCameras = cameras.filter((c) => isCameraSelected(c.id));
-  const onlineCount = visibleCameras.filter((camera) => connectionStates.get(camera.id)?.status === "online").length;
+  const visibleCameras = cameras.filter((c) =>isCameraSelected(c.id));
+  const onlineCount = visibleCameras.filter((camera) =>connectionStates.get(camera.id)?.status === "online").length;
   const sentenceEl = document.querySelector("#status-sentence");
   const navCountEl = document.querySelector("#nav-camera-count");
   const timeStr = getFormattedTime();
@@ -310,7 +310,7 @@ function resolveCameraMetricsUrl(camera) {
 }
 
 function startStream(id) {
-  const camera = cameras.find((item) => item.id === id);
+  const camera = cameras.find((item) =>item.id === id);
   if (!camera) return;
 
   clearWatchdog(id);
@@ -329,14 +329,14 @@ function startStream(id) {
   img.onerror = null;
 
   // Watchdog timer (8s)
-  const timer = setTimeout(() => {
+  const timer = setTimeout(() =>{
     if (connectionStates.get(id)?.status === "connecting") {
       setConnection(id, "offline", "Connection timed out (8s). No frames received from decoder.");
     }
   }, 8000);
   watchdogs.set(id, timer);
 
-  img.onload = () => {
+  img.onload = () =>{
     clearWatchdog(id);
     setConnection(id, "online");
 
@@ -358,7 +358,7 @@ function startStream(id) {
     }
   };
 
-  img.onerror = () => {
+  img.onerror = () =>{
     clearWatchdog(id);
     const activeUrl = resolveCameraStreamUrl(camera);
     const portMatch = activeUrl.match(/:(\d+)/);
@@ -375,22 +375,27 @@ function startStream(id) {
 function render() {
   const timeStr = getFormattedTime();
 
-  const visibleCameras = cameras.filter((camera) => isCameraSelected(camera.id));
+  const visibleCameras = cameras.filter((camera) =>isCameraSelected(camera.id));
 
   if (visibleCameras.length === 0) {
     grid.innerHTML = `
-      <div class="no-cameras-selected">
-        <div class="no-cam-icon">📹</div>
-        <h3 class="no-cam-title">No cameras selected</h3>
-        <p class="no-cam-desc">All camera feeds are currently hidden. Choose one or more cameras using the selection bar above to display them.</p>
-        <button class="button button-accent button-small" id="empty-state-show-all" type="button">Show all cameras</button>
-      </div>`;
+ <div class="no-cameras-selected">
+        <div class="no-cam-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 7.5A1.5 1.5 0 0 1 3.5 6h9A1.5 1.5 0 0 1 14 7.5v9A1.5 1.5 0 0 1 12.5 18h-9A1.5 1.5 0 0 1 2 16.5z"></path>
+            <path d="M14 10.5 22 6v12l-8-4.5"></path>
+          </svg>
+        </div>
+ <h3 class="no-cam-title">No cameras selected</h3>
+ <p class="no-cam-desc">All camera feeds are currently hidden. Choose one or more cameras using the selection bar above to display them.</p>
+ <button class="button button-accent button-small" id="empty-state-show-all" type="button">Show all cameras</button>
+ </div>`;
     const emptyBtn = document.getElementById("empty-state-show-all");
     if (emptyBtn) {
-      emptyBtn.onclick = () => selectAllCameras(true);
+      emptyBtn.onclick = () =>selectAllCameras(true);
     }
   } else {
-    grid.innerHTML = visibleCameras.map((camera) => {
+    grid.innerHTML = visibleCameras.map((camera) =>{
       const isUnconfigured = !camera.url;
       const stateObj = connectionStates.get(camera.id);
       const status = stateObj?.status || (camera.url ? "connecting" : "unconfigured");
@@ -404,93 +409,87 @@ function render() {
       const healthUpper = h?.status || "UNKNOWN";
 
       return `
-        <article class="camera-card ${isUnconfigured ? 'is-unconfigured' : ''}" data-camera="${escapeHtml(camera.id)}">
-          <div class="video-container" data-video-wrap="${escapeHtml(camera.id)}">
-            <div class="tile-scrim">
-              <div class="tile-status-bar">
-                <div class="tile-title-group">
-                  <span class="status-dot ${statusClass}" data-dot="${escapeHtml(camera.id)}"></span>
-                  <h3 class="tile-title">${escapeHtml(camera.name)}</h3>
+ <article class="camera-card ${isUnconfigured ? 'is-unconfigured' : ''}" data-camera="${escapeHtml(camera.id)}">
+ <div class="video-container" data-video-wrap="${escapeHtml(camera.id)}">
+ <div class="tile-scrim">
+ <div class="tile-status-bar">
+ <div class="tile-title-group">
+ <span class="status-dot ${statusClass}" data-dot="${escapeHtml(camera.id)}"></span>
+ <h3 class="tile-title">${escapeHtml(camera.name)}</h3>
                   <span class="status-text" data-status-text="${escapeHtml(camera.id)}">${statusWord}</span>
-                  <span class="health-tile-badge ${healthStatus}" data-tile-health="${escapeHtml(camera.id)}">${healthUpper}</span>
                 </div>
-                <div class="tile-micro-group">
-                  <span class="ratio-badge" data-ratio="${escapeHtml(camera.id)}" style="display:none;"></span>
-                  <span class="tile-micro" data-micro="${escapeHtml(camera.id)}">${timeStr}</span>
-                </div>
-              </div>
-            </div>
+ <div class="tile-micro-group">
+ <span class="ratio-badge" data-ratio="${escapeHtml(camera.id)}" style="display:none;"></span>
+ <span class="tile-micro" data-micro="${escapeHtml(camera.id)}">${timeStr}</span>
+ </div>
+ </div>
+ </div>
 
-            <!-- Zoom & Pan Indicator Badge -->
-            <div class="zoom-pan-hint" data-zoom-hint="${escapeHtml(camera.id)}" style="display:none;">
-              <span data-zoom-hint-text="${escapeHtml(camera.id)}">🔍 1.0x · Drag to pan</span>
-              <button type="button" class="zoom-hint-reset" data-zoom-reset="${escapeHtml(camera.id)}" title="Reset to 1.0x">✕</button>
-            </div>
+ <!-- Zoom & Pan Indicator Badge -->
+ <div class="zoom-pan-hint" data-zoom-hint="${escapeHtml(camera.id)}" style="display:none;">
+ <span data-zoom-hint-text="${escapeHtml(camera.id)}">1.0x, Drag to pan</span>
+ <button type="button" class="zoom-hint-reset" data-zoom-reset="${escapeHtml(camera.id)}" title="Reset to 1.0x">✕</button>
+ </div>
 
-            <!-- Floating CCTV Zoom Bar -->
-            <div class="tile-zoom-bar" data-zoom-bar="${escapeHtml(camera.id)}">
-              <button class="tile-zoom-btn" data-zoom-in="${escapeHtml(camera.id)}" type="button" title="Zoom in (+)">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              </button>
-              <button class="tile-zoom-btn zoom-level-badge" data-zoom-reset="${escapeHtml(camera.id)}" type="button" title="Click to reset zoom (1.0x)">
-                <span data-zoom-val="${escapeHtml(camera.id)}">1.0x</span>
-              </button>
-              <button class="tile-zoom-btn" data-zoom-out="${escapeHtml(camera.id)}" type="button" title="Zoom out (-)">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              </button>
-              <button class="tile-zoom-btn" data-zoom-fullscreen="${escapeHtml(camera.id)}" type="button" title="Toggle fullscreen">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
-              </button>
-            </div>
+ <!-- Floating CCTV Zoom Bar -->
+ <div class="tile-zoom-bar" data-zoom-bar="${escapeHtml(camera.id)}">
+ <button class="tile-zoom-btn" data-zoom-in="${escapeHtml(camera.id)}" type="button" title="Zoom in (+)">
+ <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+ </button>
+ <button class="tile-zoom-btn zoom-level-badge" data-zoom-reset="${escapeHtml(camera.id)}" type="button" title="Click to reset zoom (1.0x)">
+ <span data-zoom-val="${escapeHtml(camera.id)}">1.0x</span>
+ </button>
+ <button class="tile-zoom-btn" data-zoom-out="${escapeHtml(camera.id)}" type="button" title="Zoom out (-)">
+ <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+ </button>
+ <button class="tile-zoom-btn" data-zoom-fullscreen="${escapeHtml(camera.id)}" type="button" title="Toggle fullscreen">
+ <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+ </button>
+ </div>
 
-            <img
+ <img
               class="camera-feed ${status === 'online' ? '' : 'is-hidden'}"
               data-feed="${escapeHtml(camera.id)}"
               alt="Live feed: ${escapeHtml(camera.name)}"
             />
 
-            <div class="feed-placeholder ${status === 'online' ? 'is-hidden' : ''}" data-placeholder="${escapeHtml(camera.id)}">
-              <div class="placeholder-content">
-                <p class="placeholder-message" data-placeholder-message="${escapeHtml(camera.id)}">${escapeHtml(placeholderMsg)}</p>
+ <div class="feed-placeholder ${status === 'online' ? 'is-hidden' : ''}" data-placeholder="${escapeHtml(camera.id)}">
+ <div class="placeholder-content">
+ <p class="placeholder-message" data-placeholder-message="${escapeHtml(camera.id)}">${escapeHtml(placeholderMsg)}</p>
                 ${isUnconfigured
                   ? `<button class="button button-accent button-small" data-placeholder-config="${escapeHtml(camera.id)}" type="button">Set up protocol</button>`
                   : `<button class="button button-small" data-retry-btn="${escapeHtml(camera.id)}" type="button" style="${status === 'offline' ? 'display:inline-flex;' : 'display:none;'}">Retry connection</button>`
                 }
-              </div>
-            </div>
-          </div>
+ </div>
+ </div>
+ </div>
 
-          <div class="tile-footer">
-            <div class="tile-footer-top">
-              <div class="tile-details">
-                <span class="details-text" title="${escapeHtml(camera.location)}">${escapeHtml(camera.location)}</span>
-              </div>
+ <div class="tile-footer">
+ <div class="tile-footer-top">
+ <div class="tile-details">
+ <span class="details-text" title="${escapeHtml(camera.location)}">${escapeHtml(camera.location)}</span>
+ </div>
               <div class="tile-actions">
-                <div class="zoom-actions-group" title="Digital zoom controls">
-                  <button class="button button-small" data-zoom-in-btn="${escapeHtml(camera.id)}" type="button" title="Zoom in">🔍 +</button>
-                  <button class="button button-small" data-zoom-reset-btn="${escapeHtml(camera.id)}" type="button" title="Reset zoom (1.0x)"><span data-zoom-action-val="${escapeHtml(camera.id)}">1.0x</span></button>
-                  <button class="button button-small" data-zoom-out-btn="${escapeHtml(camera.id)}" type="button" title="Zoom out">－</button>
-                </div>
                 <button class="button button-small tile-rec-btn ${activeRecordings.has(camera.id) ? 'is-recording' : ''}" data-tile-rec="${escapeHtml(camera.id)}" type="button" title="Toggle local recording">
-                  <span class="tile-rec-dot"></span>
-                  <span class="tile-rec-text">${activeRecordings.has(camera.id) ? 'Recording' : 'Record'}</span>
-                </button>
-                <button class="button button-small" data-refresh="${escapeHtml(camera.id)}" type="button" title="Reload feed">Reload</button>
-                <button class="button button-small" data-configure="${escapeHtml(camera.id)}" type="button" title="Configure camera">Configure</button>
-                <button class="button button-small button-focus" data-focus="${escapeHtml(camera.id)}" type="button" title="Expand to full row">Focus</button>
-              </div>
-            </div>
-            <div class="tile-telemetry" data-tile-telemetry="${escapeHtml(camera.id)}">
-              <span class="telemetry-item">FPS: <span class="telemetry-val live" data-telemetry-fps="${escapeHtml(camera.id)}">—</span></span>
-              <span>·</span>
-              <span class="telemetry-item">Latency: <span class="telemetry-val accent" data-telemetry-lat="${escapeHtml(camera.id)}">—</span></span>
-              <span>·</span>
-              <span class="telemetry-item">Ratio: <span class="telemetry-val" data-telemetry-res="${escapeHtml(camera.id)}">—</span></span>
-              <span>·</span>
-              <span class="telemetry-item">Clients: <span class="telemetry-val" data-telemetry-clients="${escapeHtml(camera.id)}">—</span></span>
-            </div>
-          </div>
-        </article>`;
+ <span class="tile-rec-dot"></span>
+ <span class="tile-rec-text">${activeRecordings.has(camera.id) ? 'Recording' : 'Record'}</span>
+ </button>
+ <button class="button button-small" data-refresh="${escapeHtml(camera.id)}" type="button" title="Reload feed">Reload</button>
+ <button class="button button-small" data-configure="${escapeHtml(camera.id)}" type="button" title="Configure camera">Configure</button>
+ <button class="button button-small button-focus" data-focus="${escapeHtml(camera.id)}" type="button" title="Expand to full row">Focus</button>
+ </div>
+ </div>
+ <div class="tile-telemetry" data-tile-telemetry="${escapeHtml(camera.id)}">
+ <span class="telemetry-item">FPS: <span class="telemetry-val live" data-telemetry-fps="${escapeHtml(camera.id)}">-</span></span>
+ <span> </span>
+ <span class="telemetry-item">Latency: <span class="telemetry-val accent" data-telemetry-lat="${escapeHtml(camera.id)}">-</span></span>
+ <span> </span>
+ <span class="telemetry-item">Ratio: <span class="telemetry-val" data-telemetry-res="${escapeHtml(camera.id)}">-</span></span>
+ <span> </span>
+ <span class="telemetry-item">Clients: <span class="telemetry-val" data-telemetry-clients="${escapeHtml(camera.id)}">-</span></span>
+ </div>
+ </div>
+ </article>`;
     }).join("");
   }
 
@@ -498,7 +497,7 @@ function render() {
   updateSummary();
   attachEvents();
 
-  cameras.forEach((camera) => {
+  cameras.forEach((camera) =>{
     if (isCameraSelected(camera.id)) {
       startStream(camera.id);
     } else {
@@ -517,12 +516,12 @@ function trackClientRender(id) {
     clientRenderMetrics.set(id, m);
   }
   m.frames.push(now);
-  while (m.frames.length > 0 && m.frames[0] < now - 2000) {
+  while (m.frames.length >0 && m.frames[0] < now - 2000) {
     m.frames.shift();
   }
   if (m.frames.length >= 2) {
     const durSec = (m.frames[m.frames.length - 1] - m.frames[0]) / 1000;
-    if (durSec > 0) {
+    if (durSec >0) {
       m.fps = Math.round(((m.frames.length - 1) / durSec) * 10) / 10;
     }
   }
@@ -531,127 +530,127 @@ function trackClientRender(id) {
 function renderAnalyticsCards() {
   if (!analyticsCards) return;
 
-  analyticsCards.innerHTML = cameras.map((camera) => {
+  analyticsCards.innerHTML = cameras.map((camera) =>{
     const isUnconfigured = !camera.url;
     return `
-      <article class="metric-card" data-metric-card="${escapeHtml(camera.id)}">
-        <div class="metric-card-head">
-          <div class="metric-card-title">
-            <span class="status-dot ${isUnconfigured ? 'unconfigured' : 'connecting'}" data-metric-dot="${escapeHtml(camera.id)}"></span>
+ <article class="metric-card" data-metric-card="${escapeHtml(camera.id)}">
+ <div class="metric-card-head">
+ <div class="metric-card-title">
+ <span class="status-dot ${isUnconfigured ? 'unconfigured' : 'connecting'}" data-metric-dot="${escapeHtml(camera.id)}"></span>
             ${escapeHtml(camera.name)}
-          </div>
-          <div style="display:flex; align-items:center; gap:6px;">
-            <span class="health-badge-pill" data-health-badge="${escapeHtml(camera.id)}">UNKNOWN</span>
-            <span class="metric-card-chip">${escapeHtml(camera.hint || 'LAN')}</span>
-          </div>
-        </div>
+ </div>
+ <div style="display:flex; align-items:center; gap:6px;">
+ <span class="health-badge-pill" data-health-badge="${escapeHtml(camera.id)}">UNKNOWN</span>
+ <span class="metric-card-chip">${escapeHtml(camera.hint || 'LAN')}</span>
+ </div>
+ </div>
 
-        <!-- Pipeline Stage Flow -->
-        <div class="pipeline-section">
-          <div class="pipeline-title">Pipeline Stage Flow</div>
-          <div class="pipeline-flow" data-pipeline-flow="${escapeHtml(camera.id)}">
-            <div class="stage-step">
-              <span class="stage-name">Target</span>
-              <span class="stage-fps" data-stage-target="${escapeHtml(camera.id)}">15.0 fps</span>
-            </div>
-            <span class="stage-arrow">→</span>
-            <div class="stage-step">
-              <span class="stage-name">LAN Ingest</span>
-              <span class="stage-fps live" data-stage-source="${escapeHtml(camera.id)}">— fps</span>
-            </div>
-            <span class="stage-arrow">→</span>
-            <div class="stage-step">
-              <span class="stage-name">Decoder</span>
-              <span class="stage-fps live" data-stage-decoder="${escapeHtml(camera.id)}">— fps</span>
-            </div>
-            <span class="stage-arrow">→</span>
-            <div class="stage-step">
-              <span class="stage-name">MJPEG</span>
-              <span class="stage-fps live" data-stage-mjpeg="${escapeHtml(camera.id)}">— fps</span>
-            </div>
-            <span class="stage-arrow">→</span>
-            <div class="stage-step">
-              <span class="stage-name">Browser</span>
-              <span class="stage-fps live" data-stage-browser="${escapeHtml(camera.id)}">— fps</span>
-            </div>
-          </div>
-        </div>
+ <!-- Pipeline stages -->
+ <div class="pipeline-section">
+ <div class="pipeline-title">Pipeline stages</div>
+ <div class="pipeline-flow" data-pipeline-flow="${escapeHtml(camera.id)}">
+ <div class="stage-step">
+ <span class="stage-name">Target</span>
+ <span class="stage-fps" data-stage-target="${escapeHtml(camera.id)}">15.0 fps</span>
+ </div>
+ <span class="stage-arrow">→</span>
+ <div class="stage-step">
+ <span class="stage-name">LAN Ingest</span>
+ <span class="stage-fps live" data-stage-source="${escapeHtml(camera.id)}">- fps</span>
+ </div>
+ <span class="stage-arrow">→</span>
+ <div class="stage-step">
+ <span class="stage-name">Decoder</span>
+ <span class="stage-fps live" data-stage-decoder="${escapeHtml(camera.id)}">- fps</span>
+ </div>
+ <span class="stage-arrow">→</span>
+ <div class="stage-step">
+ <span class="stage-name">MJPEG</span>
+ <span class="stage-fps live" data-stage-mjpeg="${escapeHtml(camera.id)}">- fps</span>
+ </div>
+ <span class="stage-arrow">→</span>
+ <div class="stage-step">
+ <span class="stage-name">Browser</span>
+ <span class="stage-fps live" data-stage-browser="${escapeHtml(camera.id)}">- fps</span>
+ </div>
+ </div>
+ </div>
 
-        <!-- Bottleneck Diagnosis Box -->
-        <div class="diagnosis-box" data-diagnosis-box="${escapeHtml(camera.id)}">
-          <div class="diagnosis-head">
-            <span class="diagnosis-pill" data-diagnosis-pill="${escapeHtml(camera.id)}">Analyzing…</span>
-            <span class="diagnosis-stage" data-diagnosis-stage="${escapeHtml(camera.id)}"></span>
-          </div>
-          <p class="diagnosis-desc" data-diagnosis-desc="${escapeHtml(camera.id)}">Gathering pipeline telemetry data…</p>
-        </div>
+ <!-- Bottleneck Diagnosis Box -->
+ <div class="diagnosis-box" data-diagnosis-box="${escapeHtml(camera.id)}">
+ <div class="diagnosis-head">
+ <span class="diagnosis-pill" data-diagnosis-pill="${escapeHtml(camera.id)}">Analyzing…</span>
+ <span class="diagnosis-stage" data-diagnosis-stage="${escapeHtml(camera.id)}"></span>
+ </div>
+ <p class="diagnosis-desc" data-diagnosis-desc="${escapeHtml(camera.id)}">Gathering pipeline telemetry data…</p>
+ </div>
 
-        <!-- Detailed Metric Grid -->
-        <div class="metric-grid">
-          <div class="metric-item">
-            <span class="metric-label">Pipeline latency</span>
-            <span class="metric-value latency" data-val-latency="${escapeHtml(camera.id)}">— ms</span>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">Active subscribers</span>
-            <span class="metric-value" data-val-clients="${escapeHtml(camera.id)}">—</span>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">Queue / Dropped</span>
-            <span class="metric-value" data-val-drops="${escapeHtml(camera.id)}">Q: 0 · Drop: 0</span>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">Decode errors</span>
-            <span class="metric-value" data-val-errors="${escapeHtml(camera.id)}">0</span>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">Total frames</span>
-            <span class="metric-value" data-val-frames="${escapeHtml(camera.id)}">—</span>
-          </div>
-          <div class="metric-item">
-            <span class="metric-label">Stream resolution</span>
-            <span class="metric-value" data-val-resolution="${escapeHtml(camera.id)}">—</span>
-          </div>
-        </div>
+ <!-- Detailed Metric Grid -->
+ <div class="metric-grid">
+ <div class="metric-item">
+ <span class="metric-label">Pipeline latency</span>
+ <span class="metric-value latency" data-val-latency="${escapeHtml(camera.id)}">- ms</span>
+ </div>
+ <div class="metric-item">
+ <span class="metric-label">Active subscribers</span>
+ <span class="metric-value" data-val-clients="${escapeHtml(camera.id)}">-</span>
+ </div>
+ <div class="metric-item">
+ <span class="metric-label">Queue / Dropped</span>
+ <span class="metric-value" data-val-drops="${escapeHtml(camera.id)}">Q: 0, Drop: 0</span>
+ </div>
+ <div class="metric-item">
+ <span class="metric-label">Decode errors</span>
+ <span class="metric-value" data-val-errors="${escapeHtml(camera.id)}">0</span>
+ </div>
+ <div class="metric-item">
+ <span class="metric-label">Total frames</span>
+ <span class="metric-value" data-val-frames="${escapeHtml(camera.id)}">-</span>
+ </div>
+ <div class="metric-item">
+ <span class="metric-label">Stream resolution</span>
+ <span class="metric-value" data-val-resolution="${escapeHtml(camera.id)}">-</span>
+ </div>
+ </div>
 
-        <!-- Sparkline FPS Stability -->
-        <div class="sparkline-wrap">
-          <div class="sparkline-label">
-            <span>FPS stability (last 30s)</span>
-            <span data-val-fps-current="${escapeHtml(camera.id)}">—</span>
-          </div>
-          <svg class="sparkline-svg" data-sparkline="${escapeHtml(camera.id)}" viewBox="0 0 320 44" preserveAspectRatio="none">
-            <line x1="0" y1="22" x2="320" y2="22" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="2 2" />
-          </svg>
-        </div>
+ <!-- Sparkline FPS Stability -->
+ <div class="sparkline-wrap">
+ <div class="sparkline-label">
+ <span>FPS stability (last 30s)</span>
+ <span data-val-fps-current="${escapeHtml(camera.id)}">-</span>
+ </div>
+ <svg class="sparkline-svg" data-sparkline="${escapeHtml(camera.id)}" viewBox="0 0 320 44" preserveAspectRatio="none">
+ <line x1="0" y1="22" x2="320" y2="22" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="2 2" />
+ </svg>
+ </div>
 
-        <!-- Smart Health Monitor Section -->
-        <div class="health-monitor-section" data-health-section="${escapeHtml(camera.id)}">
-          <div class="health-section-head">
-            <div class="health-status-group">
-              <span class="health-state-dot" data-health-dot="${escapeHtml(camera.id)}"></span>
-              <span class="health-state-title" data-health-state="${escapeHtml(camera.id)}">STATUS: UNKNOWN</span>
-            </div>
-            <div class="health-time-group">
-              <span class="health-duration" data-health-duration="${escapeHtml(camera.id)}">—</span>
-              <span class="health-checked" data-health-checked="${escapeHtml(camera.id)}">Checked: —</span>
-            </div>
-          </div>
-          <p class="health-reason" data-health-reason="${escapeHtml(camera.id)}">Evaluating camera signals…</p>
-          <div class="health-signals" data-health-signals="${escapeHtml(camera.id)}">
-            <span class="signal-tag" data-sig-port="${escapeHtml(camera.id)}">Port: —</span>
-            <span class="signal-tag" data-sig-feed="${escapeHtml(camera.id)}">Feed: —</span>
-            <span class="signal-tag" data-sig-frozen="${escapeHtml(camera.id)}">Frozen: —</span>
-            <span class="signal-tag" data-sig-fps="${escapeHtml(camera.id)}">FPS: —</span>
-          </div>
+ <!-- Smart Health Monitor Section -->
+ <div class="health-monitor-section" data-health-section="${escapeHtml(camera.id)}">
+ <div class="health-section-head">
+ <div class="health-status-group">
+ <span class="health-state-dot" data-health-dot="${escapeHtml(camera.id)}"></span>
+ <span class="health-state-title" data-health-state="${escapeHtml(camera.id)}">STATUS: UNKNOWN</span>
+ </div>
+ <div class="health-time-group">
+ <span class="health-duration" data-health-duration="${escapeHtml(camera.id)}">-</span>
+ <span class="health-checked" data-health-checked="${escapeHtml(camera.id)}">Checked: -</span>
+ </div>
+ </div>
+ <p class="health-reason" data-health-reason="${escapeHtml(camera.id)}">Evaluating camera signals…</p>
+ <div class="health-signals" data-health-signals="${escapeHtml(camera.id)}">
+ <span class="signal-tag" data-sig-port="${escapeHtml(camera.id)}">Port: -</span>
+ <span class="signal-tag" data-sig-feed="${escapeHtml(camera.id)}">Feed: -</span>
+ <span class="signal-tag" data-sig-frozen="${escapeHtml(camera.id)}">Frozen: -</span>
+ <span class="signal-tag" data-sig-fps="${escapeHtml(camera.id)}">FPS: -</span>
+ </div>
 
-          <!-- Process Supervisor & Auto-Recovery Status -->
-          <div class="supervisor-line" data-supervisor-line="${escapeHtml(camera.id)}">
-            <span class="supervisor-pill" data-sup-pill="${escapeHtml(camera.id)}">Supervisor: STOPPED</span>
-            <button class="button button-small button-reset-breaker" data-reset-breaker="${escapeHtml(camera.id)}" type="button" style="display:none;">Reset Circuit Breaker</button>
-          </div>
-        </div>
-      </article>`;
+ <!-- Process Supervisor & Auto-Recovery Status -->
+ <div class="supervisor-line" data-supervisor-line="${escapeHtml(camera.id)}">
+ <span class="supervisor-pill" data-sup-pill="${escapeHtml(camera.id)}">Supervisor: STOPPED</span>
+ <button class="button button-small button-reset-breaker" data-reset-breaker="${escapeHtml(camera.id)}" type="button" style="display:none;">Reset Circuit Breaker</button>
+ </div>
+ </div>
+ </article>`;
   }).join("");
 }
 
@@ -666,7 +665,7 @@ function updateSparkline(id, history) {
   const minVal = 0;
   const range = maxVal - minVal || 1;
 
-  const points = history.map((val, idx) => {
+  const points = history.map((val, idx) =>{
     const x = pad + (idx / (history.length - 1)) * (width - pad * 2);
     const y = height - pad - ((val - minVal) / range) * (height - pad * 2);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
@@ -676,9 +675,9 @@ function updateSparkline(id, history) {
   const polygonPts = `${points[0].split(",")[0]},${height - pad} ${polylinePts} ${points[points.length - 1].split(",")[0]},${height - pad}`;
 
   svg.innerHTML = `
-    <line x1="0" y1="${height / 2}" x2="${width}" y2="${height / 2}" stroke="rgba(255,255,255,0.08)" stroke-width="1" stroke-dasharray="3 3" />
-    <polygon points="${polygonPts}" fill="rgba(111, 207, 151, 0.12)" />
-    <polyline points="${polylinePts}" fill="none" stroke="var(--live)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+ <line x1="0" y1="${height / 2}" x2="${width}" y2="${height / 2}" stroke="rgba(255,255,255,0.08)" stroke-width="1" stroke-dasharray="3 3" />
+ <polygon points="${polygonPts}" fill="rgba(111, 207, 151, 0.12)" />
+ <polyline points="${polylinePts}" fill="none" stroke="var(--live)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   `;
 }
 
@@ -698,7 +697,7 @@ function monitorDisplayFps(now) {
 requestAnimationFrame(monitorDisplayFps);
 
 async function pollMetrics() {
-  await Promise.allSettled(cameras.map(async (camera) => {
+  await Promise.allSettled(cameras.map(async (camera) =>{
     const activeMetricsUrl = resolveCameraMetricsUrl(camera);
     if (!activeMetricsUrl) return;
     try {
@@ -710,7 +709,7 @@ async function pollMetrics() {
       fetchUrl.searchParams.set("clientFps", estFps.toFixed(1));
 
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 2000);
+      const timer = setTimeout(() =>controller.abort(), 2000);
       const res = await fetch(fetchUrl.toString(), {
         cache: "no-store",
         headers: { "ngrok-skip-browser-warning": "1" },
@@ -729,7 +728,7 @@ async function pollMetrics() {
       }
       const primaryFps = data.stages?.sourceFps ?? data.sourceFps ?? 0;
       history.push(primaryFps);
-      if (history.length > 30) history.shift();
+      if (history.length >30) history.shift();
 
       // Update per-tile telemetry strip
       const fpsEl = document.querySelector(`[data-telemetry-fps="${CSS.escape(camera.id)}"]`);
@@ -738,15 +737,15 @@ async function pollMetrics() {
       const latMs = data.latency?.decodeLatencyMs ?? data.xcodeLatencyMs ?? 0;
       if (fpsEl) fpsEl.textContent = `${primaryFps.toFixed(1)} fps`;
       if (latEl) latEl.textContent = `${Math.round(latMs)} ms`;
-      if (clientsEl) clientsEl.textContent = `${data.activeRtspSessions ?? 0} RTSP · ${data.activeMjpegClients ?? 0} Web`;
+      if (clientsEl) clientsEl.textContent = `${data.activeRtspSessions ?? 0} RTSP, ${data.activeMjpegClients ?? 0} Web`;
 
-      // Update Pipeline Stage Flow
+      // Update Pipeline stages
       const stages = data.stages || {};
-      const targetFps = stages.cameraDeclaredFps > 0 ? stages.cameraDeclaredFps : 15.0;
+      const targetFps = stages.cameraDeclaredFps >0 ? stages.cameraDeclaredFps : 15.0;
       const srcFpsVal = stages.sourceFps ?? data.sourceFps ?? 0;
       const xcodeFpsVal = stages.decoderOutFps ?? data.xcodeOutFps ?? 0;
       const mjpegFpsVal = stages.mjpegOutFps ?? data.mjpegFps ?? 0;
-      const browserFpsVal = stages.browserRenderFps > 0 ? stages.browserRenderFps : (isHidden ? 0.0 : mjpegFpsVal);
+      const browserFpsVal = stages.browserRenderFps >0 ? stages.browserRenderFps : (isHidden ? 0.0 : mjpegFpsVal);
 
       function setStageFps(sel, val, target) {
         const el = document.querySelector(`[${sel}="${CSS.escape(camera.id)}"]`);
@@ -806,12 +805,12 @@ async function pollMetrics() {
 
       if (latVal) latVal.textContent = `${Math.round(latMs)} ms`;
       if (framesVal) framesVal.textContent = Number(data.totalSourceFrames || 0).toLocaleString();
-      if (clientsVal) clientsVal.textContent = `${data.activeRtspSessions ?? 0} RTSP · ${data.activeMjpegClients ?? 0} Web`;
+      if (clientsVal) clientsVal.textContent = `${data.activeRtspSessions ?? 0} RTSP, ${data.activeMjpegClients ?? 0} Web`;
 
       const health = data.health || {};
       const totalDrops = (health.droppedDecoderIn || 0) + (health.droppedMjpegIn || 0);
-      if (dropsVal) dropsVal.textContent = `Q: ${health.queueDepth ?? 0} · Drop: ${totalDrops}`;
-      if (errorsVal) errorsVal.textContent = `${health.decodingErrors ?? 0} err · ${health.reconnectCount ?? 0} rcn`;
+      if (dropsVal) dropsVal.textContent = `Q: ${health.queueDepth ?? 0}, Drop: ${totalDrops}`;
+      if (errorsVal) errorsVal.textContent = `${health.decodingErrors ?? 0} err, ${health.reconnectCount ?? 0} rcn`;
       if (curFps) curFps.textContent = `${primaryFps.toFixed(1)} fps`;
       if (mDot) mDot.className = "status-dot online";
 
@@ -833,37 +832,37 @@ async function pollMetrics() {
 }
 
 function attachEvents() {
-  document.querySelectorAll("[data-configure]").forEach((button) => {
-    button.onclick = (e) => {
+  document.querySelectorAll("[data-configure]").forEach((button) =>{
+    button.onclick = (e) =>{
       e.stopPropagation();
       openConfig(button.dataset.configure);
     };
   });
 
-  document.querySelectorAll("[data-placeholder-config]").forEach((button) => {
-    button.onclick = (e) => {
+  document.querySelectorAll("[data-placeholder-config]").forEach((button) =>{
+    button.onclick = (e) =>{
       e.stopPropagation();
       openConfig(button.dataset.placeholderConfig);
     };
   });
 
-  document.querySelectorAll("[data-refresh]").forEach((button) => {
-    button.onclick = (e) => {
+  document.querySelectorAll("[data-refresh]").forEach((button) =>{
+    button.onclick = (e) =>{
       e.stopPropagation();
       startStream(button.dataset.refresh);
     };
   });
 
-  document.querySelectorAll("[data-retry-btn]").forEach((button) => {
-    button.onclick = (e) => {
+  document.querySelectorAll("[data-retry-btn]").forEach((button) =>{
+    button.onclick = (e) =>{
       e.stopPropagation();
       startStream(button.dataset.retryBtn);
     };
   });
 
   // Focus mode
-  document.querySelectorAll("[data-focus]").forEach((btn) => {
-    btn.onclick = (e) => {
+  document.querySelectorAll("[data-focus]").forEach((btn) =>{
+    btn.onclick = (e) =>{
       e.stopPropagation();
       const card = btn.closest(".camera-card");
       if (card) {
@@ -873,13 +872,13 @@ function attachEvents() {
     };
   });
 
-  document.querySelectorAll("[data-video-wrap]").forEach((wrap) => {
-    wrap.onclick = (e) => {
+  document.querySelectorAll("[data-video-wrap]").forEach((wrap) =>{
+    wrap.onclick = (e) =>{
       if (e.target.closest("button") || e.target.closest(".tile-zoom-bar") || e.target.closest(".zoom-pan-hint")) return;
       if (panHasMoved) return; // Ignore card focus when user dragged/panned
       const cid = wrap.dataset.videoWrap;
       const z = getZoomState(cid);
-      if (z && z.scale > 1.05) return; // Ignore card focus when zoomed in
+      if (z && z.scale >1.05) return; // Ignore card focus when zoomed in
       const card = wrap.closest(".camera-card");
       if (card) {
         const isFocused = card.classList.toggle("is-focused");
@@ -892,9 +891,9 @@ function attachEvents() {
   });
 
   // Layout View Switcher (2col, auto, 1col)
-  document.querySelectorAll("[data-layout]").forEach((btn) => {
-    btn.onclick = () => {
-      document.querySelectorAll("[data-layout]").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll("[data-layout]").forEach((btn) =>{
+    btn.onclick = () =>{
+      document.querySelectorAll("[data-layout]").forEach((b) =>b.classList.remove("active"));
       btn.classList.add("active");
       const mode = btn.dataset.layout;
       grid.classList.remove("density-2col", "density-auto", "density-1col");
@@ -907,10 +906,10 @@ function attachEvents() {
 }
 
 function restoreLayoutPreference() {
-  const saved = localStorage.getItem("camhub.view.density") || "2col";
+  const saved = localStorage.getItem("camhub.view.density") || "auto";
   const btn = document.querySelector(`[data-layout="${saved}"]`);
   if (btn) {
-    document.querySelectorAll("[data-layout]").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll("[data-layout]").forEach((b) =>b.classList.remove("active"));
     btn.classList.add("active");
     grid.classList.remove("density-2col", "density-auto", "density-1col");
     grid.classList.add(`density-${saved}`);
@@ -930,11 +929,11 @@ function ensureGlobalZoomListeners() {
   if (globalZoomListenersAttached) return;
   globalZoomListenersAttached = true;
 
-  window.addEventListener("mousemove", (e) => {
+  window.addEventListener("mousemove", (e) =>{
     if (!activePanningCamId) return;
     const dx = e.clientX - panStartX;
     const dy = e.clientY - panStartY;
-    if (Math.hypot(dx, dy) > 4) {
+    if (Math.hypot(dx, dy) >4) {
       panHasMoved = true;
     }
     const z = getZoomState(activePanningCamId);
@@ -943,13 +942,13 @@ function ensureGlobalZoomListeners() {
     applyZoom(activePanningCamId, false);
   });
 
-  window.addEventListener("mouseup", () => {
+  window.addEventListener("mouseup", () =>{
     if (!activePanningCamId) return;
     const cid = activePanningCamId;
     const wrap = document.querySelector(`[data-video-wrap="${CSS.escape(cid)}"]`);
     if (wrap) wrap.classList.remove("is-panning");
     activePanningCamId = null;
-    setTimeout(() => {
+    setTimeout(() =>{
       panHasMoved = false;
     }, 100);
   });
@@ -985,11 +984,11 @@ function applyZoom(id, smooth = false) {
 
   const formattedScale = `${z.scale.toFixed(1)}x`;
 
-  if (z.scale > 1.02) {
+  if (z.scale >1.02) {
     wrap.classList.add("is-zoomed");
     if (valBadge) valBadge.classList.add("is-active");
     if (hint) hint.style.display = "inline-flex";
-    if (hintText) hintText.textContent = `🔍 ${formattedScale} · Drag to pan`;
+    if (hintText) hintText.textContent = ` ${formattedScale}, Drag to pan`;
   } else {
     wrap.classList.remove("is-zoomed", "is-panning");
     if (valBadge) valBadge.classList.remove("is-active");
@@ -1014,7 +1013,7 @@ function zoomCamera(id, deltaScale, focalX = 0, focalY = 0) {
 
   if (newScale === oldScale) return;
 
-  if (newScale > 1.0 && oldScale > 0) {
+  if (newScale >1.0 && oldScale >0) {
     const factor = newScale / oldScale;
     z.x = (z.x - focalX) * factor + focalX;
     z.y = (z.y - focalY) * factor + focalY;
@@ -1039,28 +1038,28 @@ function attachZoomEvents() {
   ensureGlobalZoomListeners();
 
   // Bottom card footer zoom buttons
-  document.querySelectorAll("[data-zoom-in-btn]").forEach((btn) => {
-    btn.onclick = (e) => {
+  document.querySelectorAll("[data-zoom-in-btn]").forEach((btn) =>{
+    btn.onclick = (e) =>{
       e.stopPropagation();
       zoomCamera(btn.dataset.zoomInBtn, 0.5);
     };
   });
 
-  document.querySelectorAll("[data-zoom-out-btn]").forEach((btn) => {
-    btn.onclick = (e) => {
+  document.querySelectorAll("[data-zoom-out-btn]").forEach((btn) =>{
+    btn.onclick = (e) =>{
       e.stopPropagation();
       zoomCamera(btn.dataset.zoomOutBtn, -0.5);
     };
   });
 
-  document.querySelectorAll("[data-zoom-reset-btn]").forEach((btn) => {
-    btn.onclick = (e) => {
+  document.querySelectorAll("[data-zoom-reset-btn]").forEach((btn) =>{
+    btn.onclick = (e) =>{
       e.stopPropagation();
       resetZoom(btn.dataset.zoomResetBtn);
     };
   });
 
-  document.querySelectorAll("[data-video-wrap]").forEach((wrap) => {
+  document.querySelectorAll("[data-video-wrap]").forEach((wrap) =>{
     const id = wrap.dataset.videoWrap;
     if (!id) return;
 
@@ -1073,19 +1072,19 @@ function attachZoomEvents() {
     const resetBtns = wrap.querySelectorAll(`[data-zoom-reset="${CSS.escape(id)}"]`);
     const fsBtn = wrap.querySelector(`[data-zoom-fullscreen="${CSS.escape(id)}"]`);
 
-    if (inBtn) inBtn.onclick = (e) => { e.stopPropagation(); zoomCamera(id, 0.5); };
-    if (outBtn) outBtn.onclick = (e) => { e.stopPropagation(); zoomCamera(id, -0.5); };
-    resetBtns.forEach((btn) => {
-      btn.onclick = (e) => { e.stopPropagation(); resetZoom(id); };
+    if (inBtn) inBtn.onclick = (e) =>{ e.stopPropagation(); zoomCamera(id, 0.5); };
+    if (outBtn) outBtn.onclick = (e) =>{ e.stopPropagation(); zoomCamera(id, -0.5); };
+    resetBtns.forEach((btn) =>{
+      btn.onclick = (e) =>{ e.stopPropagation(); resetZoom(id); };
     });
 
     if (fsBtn) {
-      fsBtn.onclick = (e) => {
+      fsBtn.onclick = (e) =>{
         e.stopPropagation();
         if (!document.fullscreenElement) {
-          wrap.requestFullscreen().catch(() => {});
+          wrap.requestFullscreen().catch(() =>{});
         } else {
-          document.exitFullscreen().catch(() => {});
+          document.exitFullscreen().catch(() =>{});
         }
       };
     }
@@ -1093,7 +1092,7 @@ function attachZoomEvents() {
     // Wheel Zoom (centered around cursor position, non-passive to prevent page scrolling)
     wrap.addEventListener(
       "wheel",
-      (e) => {
+      (e) =>{
         e.preventDefault();
         const rect = wrap.getBoundingClientRect();
         const focalX = e.clientX - rect.left - rect.width / 2;
@@ -1104,13 +1103,13 @@ function attachZoomEvents() {
       { passive: false }
     );
 
-    // Double-click to toggle 1.0x <-> 2.5x
-    wrap.ondblclick = (e) => {
+    // Double-click to toggle 1.0x <->2.5x
+    wrap.ondblclick = (e) =>{
       if (e.target.closest("button") || e.target.closest(".tile-zoom-bar") || e.target.closest(".zoom-pan-hint")) return;
       e.preventDefault();
       e.stopPropagation();
       const z = getZoomState(id);
-      if (z.scale > 1.05) {
+      if (z.scale >1.05) {
         resetZoom(id);
       } else {
         const rect = wrap.getBoundingClientRect();
@@ -1121,7 +1120,7 @@ function attachZoomEvents() {
     };
 
     // Mouse Drag initiation
-    wrap.onmousedown = (e) => {
+    wrap.onmousedown = (e) =>{
       if (e.target.closest("button") || e.target.closest(".tile-zoom-bar") || e.target.closest(".zoom-pan-hint")) return;
       const z = getZoomState(id);
       if (z.scale <= 1.02) return;
@@ -1141,10 +1140,10 @@ function attachZoomEvents() {
     let touchStartX = 0, touchStartY = 0;
     let touchOrigX = 0, touchOrigY = 0;
 
-    wrap.ontouchstart = (e) => {
+    wrap.ontouchstart = (e) =>{
       if (e.touches.length === 1) {
         const z = getZoomState(id);
-        if (z.scale > 1.02) {
+        if (z.scale >1.02) {
           activePanningCamId = id;
           touchStartX = e.touches[0].clientX;
           touchStartY = e.touches[0].clientY;
@@ -1160,7 +1159,7 @@ function attachZoomEvents() {
       }
     };
 
-    wrap.ontouchmove = (e) => {
+    wrap.ontouchmove = (e) =>{
       if (e.touches.length === 1 && activePanningCamId === id) {
         e.preventDefault();
         const z = getZoomState(id);
@@ -1179,7 +1178,7 @@ function attachZoomEvents() {
       }
     };
 
-    wrap.ontouchend = () => {
+    wrap.ontouchend = () =>{
       if (activePanningCamId === id) {
         activePanningCamId = null;
         wrap.classList.remove("is-panning");
@@ -1189,8 +1188,8 @@ function attachZoomEvents() {
   });
 
   // Tile Record Toggle Buttons
-  document.querySelectorAll("[data-tile-rec]").forEach((btn) => {
-    btn.onclick = async (e) => {
+  document.querySelectorAll("[data-tile-rec]").forEach((btn) =>{
+    btn.onclick = async (e) =>{
       e.stopPropagation();
       const cid = btn.dataset.tileRec;
       const isRec = activeRecordings.has(cid);
@@ -1231,7 +1230,7 @@ function initPlaybackZoom() {
   let pScale = 1.0;
   let pX = 0, pY = 0;
 
-  const applyPbZoom = (smooth = false) => {
+  const applyPbZoom = (smooth = false) =>{
     const rect = wrapper.getBoundingClientRect();
     const maxX = Math.max(0, (rect.width * (pScale - 1)) / 2);
     const maxY = Math.max(0, (rect.height * (pScale - 1)) / 2);
@@ -1243,7 +1242,7 @@ function initPlaybackZoom() {
     video.style.transform = `translate(${pX}px, ${pY}px) scale(${pScale})`;
 
     if (valBadge) valBadge.textContent = `${pScale.toFixed(1)}x`;
-    if (pScale > 1.02) {
+    if (pScale >1.02) {
       wrapper.classList.add("is-zoomed");
     } else {
       wrapper.classList.remove("is-zoomed", "is-panning");
@@ -1252,18 +1251,18 @@ function initPlaybackZoom() {
     }
   };
 
-  const zoomPb = (delta) => {
+  const zoomPb = (delta) =>{
     pScale = Math.max(1.0, Math.min(5.0, Math.round((pScale + delta) * 10) / 10));
     applyPbZoom(true);
   };
 
-  if (inBtn) inBtn.onclick = () => zoomPb(0.5);
-  if (outBtn) outBtn.onclick = () => zoomPb(-0.5);
-  if (resetBtn) resetBtn.onclick = () => { pScale = 1.0; pX = 0; pY = 0; applyPbZoom(true); };
+  if (inBtn) inBtn.onclick = () =>zoomPb(0.5);
+  if (outBtn) outBtn.onclick = () =>zoomPb(-0.5);
+  if (resetBtn) resetBtn.onclick = () =>{ pScale = 1.0; pX = 0; pY = 0; applyPbZoom(true); };
 
   wrapper.addEventListener(
     "wheel",
-    (e) => {
+    (e) =>{
       if (e.target.closest("button") || e.target.closest("input")) return;
       e.preventDefault();
       zoomPb(e.deltaY < 0 ? 0.3 : -0.3);
@@ -1275,7 +1274,7 @@ function initPlaybackZoom() {
   let startX = 0, startY = 0;
   let origX = 0, origY = 0;
 
-  wrapper.onmousedown = (e) => {
+  wrapper.onmousedown = (e) =>{
     if (e.target.closest("button") || e.target.closest(".tile-zoom-bar") || pScale <= 1.0) return;
     isPbDragging = true;
     startX = e.clientX;
@@ -1288,14 +1287,14 @@ function initPlaybackZoom() {
 
   if (!playbackZoomInitialized) {
     playbackZoomInitialized = true;
-    window.addEventListener("mousemove", (e) => {
+    window.addEventListener("mousemove", (e) =>{
       if (!isPbDragging) return;
       pX = origX + (e.clientX - startX);
       pY = origY + (e.clientY - startY);
       applyPbZoom(false);
     });
 
-    window.addEventListener("mouseup", () => {
+    window.addEventListener("mouseup", () =>{
       if (!isPbDragging) return;
       isPbDragging = false;
       wrapper.classList.remove("is-panning");
@@ -1316,7 +1315,7 @@ function toggleCameraSelection(id) {
 
 function selectAllCameras(selectAll = true) {
   if (selectAll) {
-    selectedCameraIds = new Set(cameras.map((c) => c.id));
+    selectedCameraIds = new Set(cameras.map((c) =>c.id));
   } else {
     selectedCameraIds.clear();
   }
@@ -1327,7 +1326,7 @@ function selectAllCameras(selectAll = true) {
 
 function selectHealthyCamerasOnly() {
   selectedCameraIds.clear();
-  cameras.forEach((c) => {
+  cameras.forEach((c) =>{
     const h = cameraHealthData.get(c.id);
     const status = (h?.status || "UNKNOWN").toUpperCase();
     if (status === "HEALTHY") {
@@ -1335,7 +1334,7 @@ function selectHealthyCamerasOnly() {
     }
   });
   if (selectedCameraIds.size === 0) {
-    selectedCameraIds = new Set(cameras.map((c) => c.id));
+    selectedCameraIds = new Set(cameras.map((c) =>c.id));
     showToast("No healthy cameras found at the moment", "warn", 3000);
   } else {
     showToast(`Showing ${selectedCameraIds.size} healthy camera(s)`, "info", 2500);
@@ -1369,7 +1368,7 @@ function updateCameraFilterUI() {
 
   // Render quick chips
   if (chipsContainer) {
-    chipsContainer.innerHTML = cameras.map((c) => {
+    chipsContainer.innerHTML = cameras.map((c) =>{
       const isSel = isCameraSelected(c.id);
       const h = cameraHealthData.get(c.id);
       const st = (h?.status || "UNKNOWN").toLowerCase();
@@ -1382,19 +1381,17 @@ function updateCameraFilterUI() {
           type="button"
           class="camera-filter-chip ${isSel ? 'active' : 'inactive'}"
           data-cam-chip="${escapeHtml(c.id)}"
+          aria-pressed="${isSel ? 'true' : 'false'}"
           title="${escapeHtml(reason)}"
         >
-          <span class="chip-check-icon">${isSel ? '✓' : '＋'}</span>
           <span class="chip-status-dot ${st}"></span>
           <span class="chip-name">${escapeHtml(c.name)}</span>
-          ${fps ? `<span class="chip-fps">${fps}</span>` : ''}
-          <span class="chip-status-badge ${st}">${stUpper}</span>
         </button>
       `;
     }).join("");
 
-    chipsContainer.querySelectorAll("[data-cam-chip]").forEach((btn) => {
-      btn.onclick = () => {
+    chipsContainer.querySelectorAll("[data-cam-chip]").forEach((btn) =>{
+      btn.onclick = () =>{
         toggleCameraSelection(btn.dataset.camChip);
       };
     });
@@ -1402,7 +1399,7 @@ function updateCameraFilterUI() {
 
   // Render dropdown list
   if (dropdownList) {
-    dropdownList.innerHTML = cameras.map((c) => {
+    dropdownList.innerHTML = cameras.map((c) =>{
       const isSel = isCameraSelected(c.id);
       const h = cameraHealthData.get(c.id);
       const st = (h?.status || "UNKNOWN").toLowerCase();
@@ -1411,25 +1408,25 @@ function updateCameraFilterUI() {
       const fps = h?.metrics?.fps !== undefined ? `${h.metrics.fps} fps` : "";
 
       return `
-        <label class="filter-item-row" title="${escapeHtml(reason)}">
-          <input
+ <label class="filter-item-row" title="${escapeHtml(reason)}">
+ <input
             type="checkbox"
             class="filter-item-check"
             data-cam-check="${escapeHtml(c.id)}"
             ${isSel ? 'checked' : ''}
           />
-          <span class="chip-status-dot ${st}"></span>
-          <div class="filter-item-info">
-            <span class="filter-item-name">${escapeHtml(c.name)}</span>
-            <span class="filter-item-sub">${escapeHtml(c.location || c.id)}${fps ? ` · ${fps}` : ''}</span>
-          </div>
-          <span class="chip-status-badge ${st}">${stUpper}</span>
-        </label>
+ <span class="chip-status-dot ${st}"></span>
+ <div class="filter-item-info">
+ <span class="filter-item-name">${escapeHtml(c.name)}</span>
+ <span class="filter-item-sub">${escapeHtml(c.location || c.id)}${fps ? `, ${fps}` : ''}</span>
+ </div>
+ <span class="chip-status-badge ${st}">${stUpper}</span>
+ </label>
       `;
     }).join("");
 
-    dropdownList.querySelectorAll("[data-cam-check]").forEach((chk) => {
-      chk.onchange = () => {
+    dropdownList.querySelectorAll("[data-cam-check]").forEach((chk) =>{
+      chk.onchange = () =>{
         toggleCameraSelection(chk.dataset.camCheck);
       };
     });
@@ -1445,14 +1442,14 @@ function initCameraFilter() {
   const resetBtn = document.querySelector("#cam-sel-reset-btn");
 
   if (toggleBtn && dropdown) {
-    toggleBtn.onclick = (e) => {
+    toggleBtn.onclick = (e) =>{
       e.stopPropagation();
       const isVisible = dropdown.style.display !== "none";
       dropdown.style.display = isVisible ? "none" : "flex";
       toggleBtn.setAttribute("aria-expanded", String(!isVisible));
     };
 
-    document.addEventListener("click", (e) => {
+    document.addEventListener("click", (e) =>{
       if (!dropdown.contains(e.target) && !toggleBtn.contains(e.target)) {
         dropdown.style.display = "none";
         toggleBtn.setAttribute("aria-expanded", "false");
@@ -1460,16 +1457,16 @@ function initCameraFilter() {
     });
   }
 
-  if (allBtn) allBtn.onclick = () => selectAllCameras(true);
-  if (healthyBtn) healthyBtn.onclick = () => selectHealthyCamerasOnly();
-  if (noneBtn) noneBtn.onclick = () => selectAllCameras(false);
-  if (resetBtn) resetBtn.onclick = () => selectAllCameras(true);
+  if (allBtn) allBtn.onclick = () =>selectAllCameras(true);
+  if (healthyBtn) healthyBtn.onclick = () =>selectHealthyCamerasOnly();
+  if (noneBtn) noneBtn.onclick = () =>selectAllCameras(false);
+  if (resetBtn) resetBtn.onclick = () =>selectAllCameras(true);
 
   updateCameraFilterUI();
 }
 
 function openConfig(id) {
-  const camera = cameras.find((item) => item.id === id);
+  const camera = cameras.find((item) =>item.id === id);
   if (!camera) return;
 
   document.querySelector("#camera-id").value = camera.id;
@@ -1498,10 +1495,10 @@ function closeDialog() {
 if (closeDialogBtn) closeDialogBtn.onclick = closeDialog;
 if (cancelDialogBtn) cancelDialogBtn.onclick = closeDialog;
 
-configForm.addEventListener("submit", (event) => {
+configForm.addEventListener("submit", (event) =>{
   event.preventDefault();
   const id = document.querySelector("#camera-id").value;
-  const camera = cameras.find((item) => item.id === id);
+  const camera = cameras.find((item) =>item.id === id);
   if (!camera) return;
 
   const urlInput = document.querySelector("#camera-url").value.trim();
@@ -1549,16 +1546,16 @@ configForm.addEventListener("submit", (event) => {
   render();
 });
 
-document.querySelector("#refresh-all").addEventListener("click", () => {
-  cameras.forEach((camera) => {
+document.querySelector("#refresh-all").addEventListener("click", () =>{
+  cameras.forEach((camera) =>{
     if (camera.url && isCameraSelected(camera.id)) {
       startStream(camera.id);
     }
   });
 });
 
-window.addEventListener("focus", () => {
-  cameras.forEach((camera) => {
+window.addEventListener("focus", () =>{
+  cameras.forEach((camera) =>{
     if (camera.url && isCameraSelected(camera.id) && connectionStates.get(camera.id)?.status === "offline") {
       startStream(camera.id);
     }
@@ -1616,7 +1613,7 @@ dotnet run --no-build -- \`
 Remove-Variable pass2, secure2, user2 -ErrorAction SilentlyContinue`,
 
   all: `# ==========================================
-# 1. CAMERA 1 — Indoor (Port 8080)
+# 1. CAMERA 1 - Indoor (Port 8080)
 # ==========================================
 cd "$HOME\\V380Decoder-Latest"
 
@@ -1643,7 +1640,7 @@ dotnet run --no-build -- \`
 Remove-Variable pass1, secure1, user1 -ErrorAction SilentlyContinue
 
 # ==========================================
-# 2. CAMERA 2 — Garage (Port 8081)
+# 2. CAMERA 2 - Garage (Port 8081)
 # ==========================================
 cd "$HOME\\V380Decoder-Fork"
 
@@ -1670,13 +1667,13 @@ dotnet run --no-build -- \`
 Remove-Variable pass2, secure2, user2 -ErrorAction SilentlyContinue
 
 # ==========================================
-# 3. CAMERA 3 — O-Kam Pro / VStarcam (Port 8082)
+# 3. CAMERA 3 - O-Kam Pro / VStarcam (Port 8082)
 # ==========================================
 cd "C:\\DaffaP\\Project df\\CamHUB"
 python okam_adapter.py --port 8082 --rtsp "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0"`,
 
   okam: `# ==========================================
-# 3. CAMERA 3 — O-Kam Pro / VStarcam (Port 8082)
+# 3. CAMERA 3 - O-Kam Pro / VStarcam (Port 8082)
 # ==========================================
 cd "C:\\DaffaP\\Project df\\CamHUB"
 
@@ -1693,9 +1690,9 @@ function initSetupGuide() {
     codeEl.textContent = SETUP_SCRIPTS.cam1;
   }
 
-  tabButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      tabButtons.forEach((b) => b.classList.remove("active"));
+  tabButtons.forEach((btn) =>{
+    btn.addEventListener("click", () =>{
+      tabButtons.forEach((b) =>b.classList.remove("active"));
       btn.classList.add("active");
       const key = btn.dataset.scriptTab;
       if (codeEl && SETUP_SCRIPTS[key]) {
@@ -1705,14 +1702,14 @@ function initSetupGuide() {
   });
 
   if (copyBtn) {
-    copyBtn.addEventListener("click", async () => {
+    copyBtn.addEventListener("click", async () =>{
       const textToCopy = codeEl ? codeEl.textContent : "";
       if (!textToCopy) return;
       try {
         await navigator.clipboard.writeText(textToCopy);
         const originalText = copyBtn.textContent;
         copyBtn.textContent = "Copied";
-        setTimeout(() => {
+        setTimeout(() =>{
           copyBtn.textContent = originalText;
         }, 2000);
       } catch (err) {
@@ -1728,9 +1725,9 @@ function initSetupGuide() {
 
 function initNav() {
   const navLinks = document.querySelectorAll(".nav-link");
-  navLinks.forEach((link) => {
-    link.addEventListener("click", () => {
-      navLinks.forEach((l) => l.classList.remove("active"));
+  navLinks.forEach((link) =>{
+    link.addEventListener("click", () =>{
+      navLinks.forEach((l) =>l.classList.remove("active"));
       link.classList.add("active");
     });
   });
@@ -1743,12 +1740,12 @@ function initNav() {
     { id: "setup", link: document.querySelector('.nav-link[href="#setup"]') }
   ];
 
-  window.addEventListener("scroll", () => {
+  window.addEventListener("scroll", () =>{
     const scrollPos = window.scrollY + 140;
     for (let i = sections.length - 1; i >= 0; i--) {
       const el = document.getElementById(sections[i].id);
       if (el && scrollPos >= el.offsetTop) {
-        navLinks.forEach((l) => l.classList.remove("active"));
+        navLinks.forEach((l) =>l.classList.remove("active"));
         if (sections[i].link) sections[i].link.classList.add("active");
         break;
       }
@@ -1765,9 +1762,9 @@ function showToast(message, type = "info", duration = 3500) {
   toast.textContent = message;
   container.appendChild(toast);
 
-  setTimeout(() => {
+  setTimeout(() =>{
     toast.style.opacity = "0";
-    setTimeout(() => toast.remove(), 250);
+    setTimeout(() =>toast.remove(), 250);
   }, duration);
 }
 
@@ -1779,7 +1776,7 @@ function initServiceControls() {
   let allRunning = false;
   let isProcessing = false;
 
-  const updateBtnState = (running) => {
+  const updateBtnState = (running) =>{
     allRunning = running;
     if (running) {
       runBtn.classList.add("is-running");
@@ -1805,7 +1802,7 @@ function initServiceControls() {
     }
   };
 
-  const checkStatus = async () => {
+  const checkStatus = async () =>{
     if (isProcessing) return;
     try {
       const res = await fetch("/api/services/status", { cache: "no-store" });
@@ -1818,7 +1815,7 @@ function initServiceControls() {
     }
   };
 
-  runBtn.addEventListener("click", async () => {
+  runBtn.addEventListener("click", async () =>{
     if (isProcessing) return;
     isProcessing = true;
     runBtn.classList.add("is-loading");
@@ -1848,8 +1845,8 @@ function initServiceControls() {
         updateBtnState(Boolean(data.status?.allRunning ?? true));
 
         // Allow 1.2s for sockets to bind, then restart client feeds
-        setTimeout(() => {
-          cameras.forEach((cam) => startStream(cam.id));
+        setTimeout(() =>{
+          cameras.forEach((cam) =>startStream(cam.id));
           pollMetrics();
         }, 1200);
       } else {
@@ -1888,7 +1885,7 @@ const cameraHealthData = new Map();
 async function pollHealth() {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2500);
+    const timer = setTimeout(() =>controller.abort(), 2500);
     const res = await fetch("/api/health", { cache: "no-store", signal: controller.signal });
     clearTimeout(timer);
     if (!res.ok) return;
@@ -1940,7 +1937,7 @@ async function pollHealth() {
           stDur.textContent = `${label}: ${formatDuration(durSec)}`;
         }
         if (stChk) {
-          const dt = h.lastChecked ? new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(h.lastChecked)) : "—";
+          const dt = h.lastChecked ? new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(h.lastChecked)) : "-";
           stChk.textContent = `Checked: ${dt}`;
         }
         if (stReason) {
@@ -1986,7 +1983,7 @@ async function pollHealth() {
           if (supPill) {
             const st = sInfo.state || (sInfo.running ? "RUNNING" : "STOPPED");
             const pidStr = sInfo.pid ? ` (PID ${sInfo.pid})` : "";
-            const backoffStr = sInfo.nextAllowedRestartIn > 0 ? ` · Cooldown ${sInfo.nextAllowedRestartIn}s` : "";
+            const backoffStr = sInfo.nextAllowedRestartIn >0 ? `, Cooldown ${sInfo.nextAllowedRestartIn}s` : "";
             supPill.textContent = `Process: ${st}${pidStr}${backoffStr}`;
             supPill.className = `supervisor-pill state-${st.toLowerCase()}`;
           }
@@ -1994,7 +1991,7 @@ async function pollHealth() {
           if (resetBtn) {
             const isTripped = Boolean(sInfo.circuitBreakerTripped);
             resetBtn.style.display = isTripped ? "inline-flex" : "none";
-            resetBtn.onclick = async (e) => {
+            resetBtn.onclick = async (e) =>{
               e.stopPropagation();
               resetBtn.disabled = true;
               resetBtn.textContent = "Resetting…";
@@ -2052,21 +2049,21 @@ function initPlayback() {
   // Populate camera select
   if (camSelect) {
     camSelect.innerHTML = `<option value="">All cameras</option>` +
-      cameras.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("");
+      cameras.map(c =>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("");
   }
 
   // Render manual recording buttons
-  const renderManualButtons = () => {
+  const renderManualButtons = () =>{
     if (!manualBtns) return;
-    manualBtns.innerHTML = cameras.map(c => {
+    manualBtns.innerHTML = cameras.map(c =>{
       const isRec = activeRecordings.has(c.id);
       return `<button class="button button-small rec-toggle-btn ${isRec ? 'is-recording' : ''}" data-rec-cam="${escapeHtml(c.id)}" type="button">
-        ${isRec ? 'Stop' : 'Rec'} ${escapeHtml(c.name.split('·')[0].trim())}
-      </button>`;
+        ${isRec ? 'Stop' : 'Rec'} ${escapeHtml(c.name.split(',')[0].trim())}
+ </button>`;
     }).join("");
 
-    manualBtns.querySelectorAll("[data-rec-cam]").forEach(btn => {
-      btn.onclick = async () => {
+    manualBtns.querySelectorAll("[data-rec-cam]").forEach(btn =>{
+      btn.onclick = async () =>{
         const cid = btn.dataset.recCam;
         const isRec = activeRecordings.has(cid);
         const action = isRec ? "stop" : "start";
@@ -2093,7 +2090,7 @@ function initPlayback() {
     });
   };
 
-  const loadStorageStatus = async () => {
+  const loadStorageStatus = async () =>{
     try {
       const [recRes, storRes] = await Promise.all([
         fetch("/api/recordings/storage", { cache: "no-store" }),
@@ -2119,7 +2116,7 @@ function initPlayback() {
         else if (alerts.level === "CRITICAL" || alerts.level === "WARNING") pillClass = "storage-indicator-pill warn";
         storagePill.className = pillClass;
 
-        storageText.textContent = `Disk: ${disk.usedPercent || 0}% (${disk.freeGb || 0} GB free) · CamHUB: ${camhub.totalMb || 0} MB · Est: ${forecast.estimatedDaysRemaining || "N/A"}d`;
+        storageText.textContent = `Disk: ${disk.usedPercent || 0}% (${disk.freeGb || 0} GB free), CamHUB: ${camhub.totalMb || 0} MB, Est: ${forecast.estimatedDaysRemaining || "N/A"}d`;
         storagePill.title = `${alerts.message || ""}\nGrowth rate: ${forecast.growthRateMbPerHour || 0} MB/hr (${forecast.growthRateGbPerDay || 0} GB/day)\nClick to view detailed Storage Manager report.`;
       }
     } catch {}
@@ -2127,7 +2124,7 @@ function initPlayback() {
 
   if (storagePill) {
     storagePill.style.cursor = "pointer";
-    storagePill.onclick = async () => {
+    storagePill.onclick = async () =>{
       try {
         const rRes = await fetch("/api/storage/report");
         const rData = await rRes.json();
@@ -2140,7 +2137,7 @@ function initPlayback() {
     };
   }
 
-  const loadRecordings = async () => {
+  const loadRecordings = async () =>{
     if (!segmentsList) return;
     const cid = camSelect ? camSelect.value : "";
     const dateVal = dateSelect ? dateSelect.value : "";
@@ -2167,33 +2164,31 @@ function initPlayback() {
         return;
       }
 
-      segmentsList.innerHTML = recs.map(r => {
+      segmentsList.innerHTML = recs.map(r =>{
         const isActive = r.id === currentSelectedId;
-        const dur = r.durationSeconds ? `${Math.round(r.durationSeconds)}s` : "—";
+        const dur = r.durationSeconds ? `${Math.round(r.durationSeconds)}s` : "-";
         const size = formatBytes(r.fileSizeBytes);
         const dateStr = r.startTime ? new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(r.startTime)) : "";
         const badgeClass = r.mode === "motion" ? "motion" : "continuous";
-        const badgeText = r.mode === "motion" ? "Motion" : "Segment";
+        const badgeText = r.mode === "motion" ? "Motion" : "Continuous";
 
         return `<div class="segment-item ${isActive ? 'active' : ''}" data-segment-id="${escapeHtml(r.id)}">
-          <div class="segment-meta">
-            <span class="segment-name">${escapeHtml(r.fileName)}</span>
-            <div class="segment-sub">
-              <span>${escapeHtml(r.cameraId)}</span>
-              <span>·</span>
-              <span>${dateStr}</span>
-              <span>·</span>
-              <span>${dur} (${size})</span>
-            </div>
-          </div>
-          <span class="segment-badge ${badgeClass}">${badgeText}</span>
-        </div>`;
+ <div class="segment-meta">
+ <span class="segment-name">${escapeHtml(r.fileName)}</span>
+ <div class="segment-sub">
+ <span>${escapeHtml(r.cameraId)}</span>
+ <span>${dateStr}</span>
+ <span>${dur}, ${size}</span>
+ </div>
+ </div>
+ <span class="segment-badge ${badgeClass}">${badgeText}</span>
+ </div>`;
       }).join("");
 
-      segmentsList.querySelectorAll("[data-segment-id]").forEach(item => {
-        item.onclick = () => {
+      segmentsList.querySelectorAll("[data-segment-id]").forEach(item =>{
+        item.onclick = () =>{
           const segId = item.dataset.segmentId;
-          const rec = recs.find(x => x.id === segId);
+          const rec = recs.find(x =>x.id === segId);
           if (rec) playSegment(rec);
         };
       });
@@ -2202,9 +2197,9 @@ function initPlayback() {
     }
   };
 
-  const playSegment = (rec) => {
+  const playSegment = (rec) =>{
     currentSelectedId = rec.id;
-    document.querySelectorAll(".segment-item").forEach(el => {
+    document.querySelectorAll(".segment-item").forEach(el =>{
       el.classList.toggle("active", el.dataset.segmentId === rec.id);
     });
 
@@ -2219,7 +2214,7 @@ function initPlayback() {
 
     if (deleteBtn) {
       deleteBtn.style.display = "inline-flex";
-      deleteBtn.onclick = async () => {
+      deleteBtn.onclick = async () =>{
         if (!confirm(`Delete recording '${rec.fileName}'?`)) return;
         deleteBtn.disabled = true;
         try {
@@ -2253,14 +2248,14 @@ function initPlayback() {
     if (video) {
       video.src = `/api/recordings/stream?id=${encodeURIComponent(rec.id)}`;
       if (placeholder) placeholder.classList.add("hidden");
-      video.play().catch(() => {});
+      video.play().catch(() =>{});
     }
   };
 
   if (camSelect) camSelect.onchange = loadRecordings;
   if (dateSelect) dateSelect.onchange = loadRecordings;
   if (refreshBtn) {
-    refreshBtn.onclick = () => {
+    refreshBtn.onclick = () =>{
       loadRecordings();
       loadStorageStatus();
     };
@@ -2300,20 +2295,21 @@ function initEventsTimeline() {
   const closeAction = document.querySelector("#close-event-dialog-action");
 
   let currentSelectedEvent = null;
+let eventsExpanded = false;
 
   // Populate camera select
   if (camSelect) {
     camSelect.innerHTML = `<option value="">All cameras</option>` +
-      cameras.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("");
+      cameras.map(c =>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("");
   }
 
   // Close modal handlers
-  if (closeBtn) closeBtn.onclick = () => modal.close();
-  if (closeAction) closeAction.onclick = () => modal.close();
+  if (closeBtn) closeBtn.onclick = () =>modal.close();
+  if (closeAction) closeAction.onclick = () =>modal.close();
 
   // Benchmark click handler on AI stat badge
   if (aiStat) {
-    aiStat.onclick = async () => {
+    aiStat.onclick = async () =>{
       showToast("Running hardware AI benchmark (DirectML GPU vs CPU)...", "info", 3500);
       try {
         const bRes = await fetch("/api/ai/benchmark?runs=3", { method: "POST" });
@@ -2321,7 +2317,7 @@ function initEventsTimeline() {
         if (bData.status === "success") {
           const dml = bData.results["DirectML (GPU)"];
           const cpu = bData.results["CPU"];
-          const msg = `⚡ GPU: ${dml?.avgLatencyMs || "N/A"}ms (${dml?.fpsCapacity || 0} FPS) | CPU: ${cpu?.avgLatencyMs || "N/A"}ms (${cpu?.fpsCapacity || 0} FPS)`;
+          const msg = `GPU: ${dml?.avgLatencyMs || "N/A"}ms (${dml?.fpsCapacity || 0} FPS) | CPU: ${cpu?.avgLatencyMs || "N/A"}ms (${cpu?.fpsCapacity || 0} FPS)`;
           showToast(msg, "success", 7000);
         } else {
           showToast(bData.error || "Benchmark failed", "warn", 4000);
@@ -2332,7 +2328,7 @@ function initEventsTimeline() {
     };
   }
 
-  const loadStats = async () => {
+  const loadStats = async () =>{
     try {
       const res = await fetch("/api/events/stats", { cache: "no-store" });
       if (!res.ok) return;
@@ -2347,13 +2343,13 @@ function initEventsTimeline() {
         const ai = data.ai;
         const prov = ai.activeProvider || "DirectML";
         const lat = ai.lastLatencyMs ? `${ai.lastLatencyMs}ms` : "Active";
-        aiStat.textContent = `⚡ AI: ${prov} (${lat})`;
+        aiStat.textContent = `AI: ${prov} (${lat})`;
         aiStat.title = `Model: ${ai.model || "yolov5n"} | Inferences: ${ai.totalInferences || 0} | Dropped: ${ai.droppedFrames || 0}\nClick to run hardware benchmark (GPU vs CPU).`;
       }
     } catch {}
   };
 
-  const loadEvents = async () => {
+  const loadEvents = async () =>{
     if (!cardsGrid) return;
     const cid = camSelect ? camSelect.value : "";
     const dt = dateSelect ? dateSelect.value : "";
@@ -2377,13 +2373,15 @@ function initEventsTimeline() {
 
       if (events.length === 0) {
         cardsGrid.innerHTML = `
-          <div class="segments-empty" style="grid-column: 1 / -1; padding: 40px 10px;">
+ <div class="segments-empty" style="grid-column: 1 / -1; padding: 40px 10px;">
             No motion events detected matching current filters.
-          </div>`;
+ </div>`;
         return;
       }
 
-      cardsGrid.innerHTML = events.map(evt => {
+      const shownEvents = eventsExpanded ? events : events.slice(0, 12);
+
+      cardsGrid.innerHTML = shownEvents.map(evt =>{
         const bbox = evt.boundingBox || { x: 0, y: 0, width: 0, height: 0 };
         const leftPct = (bbox.x * 100).toFixed(1);
         const topPct = (bbox.y * 100).toFixed(1);
@@ -2393,59 +2391,48 @@ function initEventsTimeline() {
         // Object badge pill
         let objPill = "";
         if (evt.primaryClass) {
-          const iconMap = {
-            person: "👤",
-            car: "🚗",
-            motorcycle: "🏍️",
-            animal: "🐾",
-            cat: "🐱",
-            dog: "🐶",
-            bird: "🐦",
-            clock: "🕒"
-          };
-          const icon = iconMap[evt.primaryClass.toLowerCase()] || iconMap[evt.primaryCategory] || "🎯";
           const confPct = Math.round((evt.primaryConfidence || 0) * 100);
           const catClass = evt.primaryCategory || evt.primaryClass;
-          objPill = `<span class="event-obj-pill ${catClass}">${icon} ${escapeHtml(evt.primaryClass)} ${confPct}%</span>`;
+          objPill = `<span class="event-obj-pill ${catClass}">${escapeHtml(evt.primaryClass)} ${confPct}%</span>`;
         }
 
         return `
-        <div class="event-card" data-event-id="${escapeHtml(evt.id)}">
-          <div class="event-thumb-wrap" data-open-event="${escapeHtml(evt.id)}">
-            <img class="event-thumb-img" src="/api/events/snapshot?id=${encodeURIComponent(evt.id)}&ngrok-skip-browser-warning=1" alt="Snapshot" loading="lazy" onerror="this.onerror=null; this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
-            <div class="event-thumb-fallback" style="display:none;">
-              <span>📷 Snapshot unavailable</span>
-            </div>
-            <div class="event-bbox-overlay" style="left: ${leftPct}%; top: ${topPct}%; width: ${widthPct}%; height: ${heightPct}%;"></div>
+ <div class="event-card" data-event-id="${escapeHtml(evt.id)}">
+ <div class="event-thumb-wrap" data-open-event="${escapeHtml(evt.id)}">
+ <img class="event-thumb-img" src="/api/events/snapshot?id=${encodeURIComponent(evt.id)}&ngrok-skip-browser-warning=1" alt="Snapshot" loading="lazy" onerror="this.onerror=null; this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
+ <div class="event-thumb-fallback" style="display:none;">
+ <span>Snapshot unavailable</span>
+ </div>
+ <div class="event-bbox-overlay" style="left: ${leftPct}%; top: ${topPct}%; width: ${widthPct}%; height: ${heightPct}%;"></div>
             ${objPill}
-            <span class="event-score-pill">Score: ${evt.score}%</span>
-          </div>
-          <div class="event-card-body">
-            <div class="event-card-top">
-              <span class="event-cam-badge">${escapeHtml(evt.cameraName || evt.cameraId)}</span>
-              <span class="event-duration">${evt.durationSeconds || 0}s motion</span>
-            </div>
-            <div class="event-timestamp">${escapeHtml(evt.isoTime || '')}</div>
-            <div class="event-card-actions">
-              <a href="#playback" class="event-btn-link" data-jump-playback="${escapeHtml(evt.cameraId)}" data-timestamp="${evt.timestamp}">Jump to Playback</a>
-              <button type="button" class="event-del-btn" data-del-event="${escapeHtml(evt.id)}">Delete</button>
-            </div>
-          </div>
-        </div>`;
+ <span class="event-score-pill">Score: ${evt.score}%</span>
+ </div>
+ <div class="event-card-body">
+ <div class="event-card-top">
+ <span class="event-cam-badge">${escapeHtml(evt.cameraName || evt.cameraId)}</span>
+ <span class="event-duration">${evt.durationSeconds || 0}s motion</span>
+ </div>
+ <div class="event-timestamp">${escapeHtml(evt.isoTime || '')}</div>
+ <div class="event-card-actions">
+ <a href="#playback" class="event-btn-link" data-jump-playback="${escapeHtml(evt.cameraId)}" data-timestamp="${evt.timestamp}">Jump to Playback</a>
+ <button type="button" class="event-del-btn" data-del-event="${escapeHtml(evt.id)}">Delete</button>
+ </div>
+ </div>
+ </div>`;
       }).join("");
 
       // Open lightbox
-      cardsGrid.querySelectorAll("[data-open-event]").forEach(wrap => {
-        wrap.onclick = () => {
+      cardsGrid.querySelectorAll("[data-open-event]").forEach(wrap =>{
+        wrap.onclick = () =>{
           const eid = wrap.dataset.openEvent;
-          const evt = events.find(x => x.id === eid);
+          const evt = events.find(x =>x.id === eid);
           if (evt) openEventModal(evt);
         };
       });
 
       // Jump to playback
-      cardsGrid.querySelectorAll("[data-jump-playback]").forEach(link => {
-        link.onclick = (e) => {
+      cardsGrid.querySelectorAll("[data-jump-playback]").forEach(link =>{
+        link.onclick = (e) =>{
           e.preventDefault();
           const cid = link.dataset.jumpPlayback;
           const ts = parseInt(link.dataset.timestamp, 10);
@@ -2454,8 +2441,8 @@ function initEventsTimeline() {
       });
 
       // Delete event
-      cardsGrid.querySelectorAll("[data-del-event]").forEach(btn => {
-        btn.onclick = async (e) => {
+      cardsGrid.querySelectorAll("[data-del-event]").forEach(btn =>{
+        btn.onclick = async (e) =>{
           e.stopPropagation();
           const eid = btn.dataset.delEvent;
           if (!confirm("Delete this event and snapshot image?")) return;
@@ -2477,22 +2464,22 @@ function initEventsTimeline() {
 
     } catch (e) {
       cardsGrid.innerHTML = `
-        <div class="segments-empty" style="grid-column: 1 / -1;">
+ <div class="segments-empty" style="grid-column: 1 / -1;">
           Could not connect to event timeline service
-        </div>`;
+ </div>`;
     }
   };
 
-  const openEventModal = (evt) => {
+  const openEventModal = (evt) =>{
     currentSelectedEvent = evt;
-    if (modalTitle) modalTitle.textContent = `${evt.cameraName || evt.cameraId} · ${evt.isoTime}`;
+    if (modalTitle) modalTitle.textContent = `${evt.cameraName || evt.cameraId}, ${evt.isoTime}`;
     if (modalImg) modalImg.src = `/api/events/snapshot?id=${encodeURIComponent(evt.id)}&ngrok-skip-browser-warning=1`;
 
     // Multi-bounding box rendering
     if (modalBboxesContainer) {
       modalBboxesContainer.innerHTML = "";
-      if (evt.detectedObjects && evt.detectedObjects.length > 0) {
-        modalBboxesContainer.innerHTML = evt.detectedObjects.map(d => {
+      if (evt.detectedObjects && evt.detectedObjects.length >0) {
+        modalBboxesContainer.innerHTML = evt.detectedObjects.map(d =>{
           const bx = d.box || {};
           const l = (bx.x * 100).toFixed(1);
           const t = (bx.y * 100).toFixed(1);
@@ -2501,15 +2488,27 @@ function initEventsTimeline() {
           const cat = d.category || d.class || "other";
           const conf = Math.round((d.confidence || 0) * 100);
           return `
-            <div class="event-modal-detected-box ${cat}" style="left:${l}%; top:${t}%; width:${w}%; height:${h}%;">
-              <span class="event-bbox-tag">${escapeHtml(d.class)} ${conf}%</span>
-            </div>
+ <div class="event-modal-detected-box ${cat}" style="left:${l}%; top:${t}%; width:${w}%; height:${h}%;">
+ <span class="event-bbox-tag">${escapeHtml(d.class)} ${conf}%</span>
+ </div>
           `;
-        }).join("");
+      }).join("");
+
+      if (!eventsExpanded && events.length > shownEvents.length) {
+        const moreWrap = document.createElement("div");
+        moreWrap.className = "events-more";
+        moreWrap.innerHTML = `<button type="button" class="button button-small" id="events-show-more">Show ${events.length - shownEvents.length} more events</button>`;
+        cardsGrid.appendChild(moreWrap);
+        moreWrap.querySelector("#events-show-more").onclick = () => {
+          eventsExpanded = true;
+          loadEvents();
+        };
+      }
+
         if (modalBbox) modalBbox.style.display = "none";
       } else if (modalBbox) {
         const b = evt.boundingBox;
-        if (b && b.width > 0 && b.height > 0) {
+        if (b && b.width >0 && b.height >0) {
           modalBbox.style.display = "block";
           modalBbox.style.left = `${(b.x * 100).toFixed(1)}%`;
           modalBbox.style.top = `${(b.y * 100).toFixed(1)}%`;
@@ -2522,40 +2521,40 @@ function initEventsTimeline() {
     }
 
     if (modalMeta) {
-      const objectsSummary = (evt.detectedObjects && evt.detectedObjects.length > 0)
-        ? evt.detectedObjects.map(d => `${d.class} (${Math.round(d.confidence * 100)}%)`).join(", ")
+      const objectsSummary = (evt.detectedObjects && evt.detectedObjects.length >0)
+        ? evt.detectedObjects.map(d =>`${d.class} (${Math.round(d.confidence * 100)}%)`).join(", ")
         : (evt.primaryClass ? `${evt.primaryClass} (${Math.round((evt.primaryConfidence || 0) * 100)}%)` : "No objects classified");
 
       modalMeta.innerHTML = `
-        <div class="event-meta-cell">
-          <span class="event-meta-cell-label">Camera</span>
-          <span class="event-meta-cell-value">${escapeHtml(evt.cameraName || evt.cameraId)}</span>
-        </div>
-        <div class="event-meta-cell">
-          <span class="event-meta-cell-label">AI Detections</span>
-          <span class="event-meta-cell-value" style="color: #38bdf8;">${escapeHtml(objectsSummary)}</span>
-        </div>
-        <div class="event-meta-cell">
-          <span class="event-meta-cell-label">Motion Score</span>
-          <span class="event-meta-cell-value">${evt.score}%</span>
-        </div>
-        <div class="event-meta-cell">
-          <span class="event-meta-cell-label">Duration</span>
-          <span class="event-meta-cell-value">${evt.durationSeconds || 0}s</span>
-        </div>
-        <div class="event-meta-cell">
-          <span class="event-meta-cell-label">Timestamp</span>
-          <span class="event-meta-cell-value">${escapeHtml(evt.isoTime)}</span>
-        </div>
-        <div class="event-meta-cell">
-          <span class="event-meta-cell-label">Snapshot Size</span>
-          <span class="event-meta-cell-value">${formatBytes(evt.fileSizeBytes)}</span>
-        </div>
+ <div class="event-meta-cell">
+ <span class="event-meta-cell-label">Camera</span>
+ <span class="event-meta-cell-value">${escapeHtml(evt.cameraName || evt.cameraId)}</span>
+ </div>
+ <div class="event-meta-cell">
+ <span class="event-meta-cell-label">AI Detections</span>
+ <span class="event-meta-cell-value" style="color: #38bdf8;">${escapeHtml(objectsSummary)}</span>
+ </div>
+ <div class="event-meta-cell">
+ <span class="event-meta-cell-label">Motion Score</span>
+ <span class="event-meta-cell-value">${evt.score}%</span>
+ </div>
+ <div class="event-meta-cell">
+ <span class="event-meta-cell-label">Duration</span>
+ <span class="event-meta-cell-value">${evt.durationSeconds || 0}s</span>
+ </div>
+ <div class="event-meta-cell">
+ <span class="event-meta-cell-label">Timestamp</span>
+ <span class="event-meta-cell-value">${escapeHtml(evt.isoTime)}</span>
+ </div>
+ <div class="event-meta-cell">
+ <span class="event-meta-cell-label">Snapshot Size</span>
+ <span class="event-meta-cell-value">${formatBytes(evt.fileSizeBytes)}</span>
+ </div>
       `;
     }
 
     if (modalEnrichBtn) {
-      modalEnrichBtn.onclick = async () => {
+      modalEnrichBtn.onclick = async () =>{
         modalEnrichBtn.disabled = true;
         modalEnrichBtn.textContent = "Analyzing...";
         try {
@@ -2572,13 +2571,13 @@ function initEventsTimeline() {
           showToast("AI analysis request failed", "error", 3000);
         } finally {
           modalEnrichBtn.disabled = false;
-          modalEnrichBtn.textContent = "⚡ Re-analyze with AI";
+          modalEnrichBtn.textContent = "Re-analyze with AI";
         }
       };
     }
 
     if (modalJumpBtn) {
-      modalJumpBtn.onclick = (e) => {
+      modalJumpBtn.onclick = (e) =>{
         e.preventDefault();
         modal.close();
         jumpToPlayback(evt.cameraId, evt.timestamp);
@@ -2586,7 +2585,7 @@ function initEventsTimeline() {
     }
 
     if (modalDelBtn) {
-      modalDelBtn.onclick = async () => {
+      modalDelBtn.onclick = async () =>{
         if (!confirm("Delete this event and snapshot?")) return;
         try {
           const dRes = await fetch(`/api/events?id=${encodeURIComponent(evt.id)}`, { method: "DELETE" });
@@ -2604,7 +2603,7 @@ function initEventsTimeline() {
     modal.showModal();
   };
 
-  const jumpToPlayback = (cid, timestampMs) => {
+  const jumpToPlayback = (cid, timestampMs) =>{
     // Navigate to #playback
     const pbLink = document.querySelector('.nav-link[href="#playback"]');
     if (pbLink) pbLink.click();
@@ -2626,12 +2625,13 @@ function initEventsTimeline() {
     showToast(`Jumped to playback for ${cid}`, "info", 3000);
   };
 
-  if (camSelect) camSelect.onchange = loadEvents;
-  if (dateSelect) dateSelect.onchange = loadEvents;
-  if (scoreSelect) scoreSelect.onchange = loadEvents;
-  if (classSelect) classSelect.onchange = loadEvents;
+  const resetAndLoadEvents = () => { eventsExpanded = false; loadEvents(); };
+  if (camSelect) camSelect.onchange = resetAndLoadEvents;
+  if (dateSelect) dateSelect.onchange = resetAndLoadEvents;
+  if (scoreSelect) scoreSelect.onchange = resetAndLoadEvents;
+  if (classSelect) classSelect.onchange = resetAndLoadEvents;
   if (refreshBtn) {
-    refreshBtn.onclick = () => {
+    refreshBtn.onclick = () =>{
       loadEvents();
       loadStats();
     };
@@ -2644,7 +2644,7 @@ function initEventsTimeline() {
 }
 
 // ============================================================================
-// AGENT 10 — Diagnostics & Export Report
+// AGENT 10 - Diagnostics & Export Report
 // ============================================================================
 function initDiagnosticsModal() {
   const diagBtn = document.getElementById("diagnostics-btn");
@@ -2663,11 +2663,11 @@ function initDiagnosticsModal() {
 
   if (!diagBtn || !modal) return;
 
-  const closeModal = () => modal.close();
+  const closeModal = () =>modal.close();
   if (closeBtn) closeBtn.onclick = closeModal;
   if (closeAction) closeAction.onclick = closeModal;
 
-  const renderPortsGrid = (ports) => {
+  const renderPortsGrid = (ports) =>{
     const grid = document.getElementById("diag-ports-grid");
     if (!grid) return;
     grid.innerHTML = "";
@@ -2678,22 +2678,22 @@ function initDiagnosticsModal() {
     const dashEl = document.createElement("div");
     dashEl.className = "port-chip";
     dashEl.innerHTML = `
-      <span class="port-chip-title">Dashboard (3000)</span>
-      <span class="port-status-pill ${dashOpen ? 'open' : 'closed'}">${dash.status || 'CHECKING'} (${dash.latencyMs || 0}ms)</span>
+ <span class="port-chip-title">Dashboard (3000)</span>
+ <span class="port-status-pill ${dashOpen ? 'open' : 'closed'}">${dash.status || 'CHECKING'} (${dash.latencyMs || 0}ms)</span>
     `;
     grid.appendChild(dashEl);
 
     // Camera ports
     const cams = ports.cameras || {};
-    Object.keys(cams).forEach(cid => {
+    Object.keys(cams).forEach(cid =>{
       const c = cams[cid];
       if (c.http && c.http.port) {
         const hOpen = c.http.status === "OPEN";
         const hEl = document.createElement("div");
         hEl.className = "port-chip";
         hEl.innerHTML = `
-          <span class="port-chip-title">${escapeHtml(c.name)} HTTP (${c.http.port})</span>
-          <span class="port-status-pill ${hOpen ? 'open' : 'closed'}">${c.http.status}</span>
+ <span class="port-chip-title">${escapeHtml(c.name)} HTTP (${c.http.port})</span>
+ <span class="port-status-pill ${hOpen ? 'open' : 'closed'}">${c.http.status}</span>
         `;
         grid.appendChild(hEl);
       }
@@ -2702,35 +2702,35 @@ function initDiagnosticsModal() {
         const rEl = document.createElement("div");
         rEl.className = "port-chip";
         rEl.innerHTML = `
-          <span class="port-chip-title">${escapeHtml(c.name)} RTSP (${c.rtsp.port})</span>
-          <span class="port-status-pill ${rOpen ? 'open' : 'closed'}">${c.rtsp.status}</span>
+ <span class="port-chip-title">${escapeHtml(c.name)} RTSP (${c.rtsp.port})</span>
+ <span class="port-status-pill ${rOpen ? 'open' : 'closed'}">${c.rtsp.status}</span>
         `;
         grid.appendChild(rEl);
       }
     });
   };
 
-  const renderBundlesHistory = (bundles) => {
+  const renderBundlesHistory = (bundles) =>{
     if (!historyList) return;
     if (!bundles || bundles.length === 0) {
       historyList.innerHTML = `<p class="diag-empty-text">No previous diagnostic bundles generated.</p>`;
       return;
     }
-    historyList.innerHTML = bundles.map(b => `
-      <div class="diag-history-item">
-        <div>
-          <span class="diag-history-name">${escapeHtml(b.filename)}</span>
-          <span class="diag-history-meta">${escapeHtml(b.sizeFormatted || '')} · ${escapeHtml(b.createdAt || '')}</span>
-        </div>
-        <div class="diag-history-actions">
-          <a class="button button-small" href="${escapeHtml(b.downloadUrl)}" download>Download</a>
-          <button class="button button-small button-warn delete-bundle-btn" data-filename="${escapeHtml(b.filename)}">Delete</button>
-        </div>
-      </div>
+    historyList.innerHTML = bundles.map(b =>`
+ <div class="diag-history-item">
+ <div>
+ <span class="diag-history-name">${escapeHtml(b.filename)}</span>
+ <span class="diag-history-meta">${escapeHtml(b.sizeFormatted || '')}, ${escapeHtml(b.createdAt || '')}</span>
+ </div>
+ <div class="diag-history-actions">
+ <a class="button button-small" href="${escapeHtml(b.downloadUrl)}" download>Download</a>
+ <button class="button button-small button-warn delete-bundle-btn" data-filename="${escapeHtml(b.filename)}">Delete</button>
+ </div>
+ </div>
     `).join("");
 
-    historyList.querySelectorAll(".delete-bundle-btn").forEach(btn => {
-      btn.onclick = async (e) => {
+    historyList.querySelectorAll(".delete-bundle-btn").forEach(btn =>{
+      btn.onclick = async (e) =>{
         const fname = e.currentTarget.getAttribute("data-filename");
         if (confirm(`Delete diagnostic bundle ${fname}?`)) {
           try {
@@ -2753,7 +2753,7 @@ function initDiagnosticsModal() {
     });
   };
 
-  const loadDiagnosticsSummary = async () => {
+  const loadDiagnosticsSummary = async () =>{
     try {
       if (statusBadge) {
         statusBadge.className = "diag-status-badge";
@@ -2803,13 +2803,13 @@ function initDiagnosticsModal() {
     }
   };
 
-  diagBtn.onclick = () => {
+  diagBtn.onclick = () =>{
     modal.showModal();
     loadDiagnosticsSummary();
   };
 
   if (generateBtn) {
-    generateBtn.onclick = async () => {
+    generateBtn.onclick = async () =>{
       generateBtn.disabled = true;
       if (progressWrap) progressWrap.style.display = "flex";
       if (progressText) progressText.textContent = "Gathering telemetry & sanitizing credentials...";
@@ -2827,7 +2827,7 @@ function initDiagnosticsModal() {
           if (resultFilename) resultFilename.textContent = data.filename;
           if (resultDetails) {
             resultDetails.innerHTML = `
-              Size: ${formatBytes(data.sizeBytes)} · Files: ${data.manifest?.totalFiles || 8} · SHA256: ${data.sha256?.substring(0, 16)}...
+              Size: ${formatBytes(data.sizeBytes)}, Files: ${data.manifest?.totalFiles || 8}, SHA256: ${data.sha256?.substring(0, 16)}...
             `;
           }
           if (downloadLink) {
@@ -2849,7 +2849,7 @@ function initDiagnosticsModal() {
 }
 
 // ============================================================================
-// AGENT 9 — Notification Center
+// AGENT 9 - Notification Center
 // ============================================================================
 function initNotificationCenter() {
   const bellBtn = document.getElementById("notif-bell-btn");
@@ -2868,19 +2868,19 @@ function initNotificationCenter() {
 
   if (!bellBtn || !modal) return;
 
-  const closeModal = () => modal.close();
+  const closeModal = () =>modal.close();
   if (closeBtn) closeBtn.onclick = closeModal;
   if (closeAction) closeAction.onclick = closeModal;
 
-  const pollStats = async () => {
+  const pollStats = async () =>{
     try {
       const res = await fetch("/api/notifications/stats");
       const stats = await res.json();
       if (!stats) return;
       const unread = stats.unreadCount || 0;
       if (badge) {
-        if (unread > 0) {
-          badge.textContent = unread > 99 ? "99+" : unread;
+        if (unread >0) {
+          badge.textContent = unread >99 ? "99+" : unread;
           badge.style.display = "inline-block";
         } else {
           badge.style.display = "none";
@@ -2892,7 +2892,7 @@ function initNotificationCenter() {
     }
   };
 
-  const loadNotifications = async () => {
+  const loadNotifications = async () =>{
     if (!notifList) return;
     try {
       let url = "/api/notifications?limit=50";
@@ -2908,32 +2908,32 @@ function initNotificationCenter() {
         return;
       }
 
-      notifList.innerHTML = items.map(n => {
+      notifList.innerHTML = items.map(n =>{
         const isUnread = !n.acknowledged;
-        const countBadge = n.count > 1 ? `<span class="notif-repeat-badge">Repeated ${n.count}x</span>` : "";
+        const countBadge = n.count >1 ? `<span class="notif-repeat-badge">Repeated ${n.count}x</span>` : "";
         return `
-          <div class="notif-item ${isUnread ? 'unread' : ''} ${escapeHtml(n.severity || 'info')}" data-id="${escapeHtml(n.id)}">
-            <div class="notif-content">
-              <div class="notif-header-line">
-                <span class="notif-title">${escapeHtml(n.title || 'Notification')}</span>
+ <div class="notif-item ${isUnread ? 'unread' : ''} ${escapeHtml(n.severity || 'info')}" data-id="${escapeHtml(n.id)}">
+ <div class="notif-content">
+ <div class="notif-header-line">
+ <span class="notif-title">${escapeHtml(n.title || 'Notification')}</span>
                 ${countBadge}
-              </div>
-              <div class="notif-message">${escapeHtml(n.message || '')}</div>
-              <div class="notif-meta-line">
-                <span>${escapeHtml(n.cameraName || n.cameraId || 'System')}</span>
-                <span>${escapeHtml(n.isoTime || '')}</span>
-              </div>
-            </div>
-            <div class="notif-actions">
+ </div>
+ <div class="notif-message">${escapeHtml(n.message || '')}</div>
+ <div class="notif-meta-line">
+ <span>${escapeHtml(n.cameraName || n.cameraId || 'System')}</span>
+ <span>${escapeHtml(n.isoTime || '')}</span>
+ </div>
+ </div>
+ <div class="notif-actions">
               ${isUnread ? `<button class="button button-small notif-ack-btn" data-id="${escapeHtml(n.id)}" title="Acknowledge">✓</button>` : ''}
-              <button class="button button-small notif-del-btn" data-id="${escapeHtml(n.id)}" title="Delete">✕</button>
-            </div>
-          </div>
+ <button class="button button-small notif-del-btn" data-id="${escapeHtml(n.id)}" title="Delete">✕</button>
+ </div>
+ </div>
         `;
       }).join("");
 
-      notifList.querySelectorAll(".notif-ack-btn").forEach(btn => {
-        btn.onclick = async (e) => {
+      notifList.querySelectorAll(".notif-ack-btn").forEach(btn =>{
+        btn.onclick = async (e) =>{
           const id = e.currentTarget.getAttribute("data-id");
           await fetch(`/api/notifications/ack?id=${encodeURIComponent(id)}`, { method: "POST" });
           loadNotifications();
@@ -2941,8 +2941,8 @@ function initNotificationCenter() {
         };
       });
 
-      notifList.querySelectorAll(".notif-del-btn").forEach(btn => {
-        btn.onclick = async (e) => {
+      notifList.querySelectorAll(".notif-del-btn").forEach(btn =>{
+        btn.onclick = async (e) =>{
           const id = e.currentTarget.getAttribute("data-id");
           await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, { method: "DELETE" });
           loadNotifications();
@@ -2954,23 +2954,23 @@ function initNotificationCenter() {
     }
   };
 
-  tabs.forEach(tab => {
-    tab.onclick = () => {
-      tabs.forEach(t => t.classList.remove("active"));
+  tabs.forEach(tab =>{
+    tab.onclick = () =>{
+      tabs.forEach(t =>t.classList.remove("active"));
       tab.classList.add("active");
       currentSeverity = tab.getAttribute("data-sev");
       loadNotifications();
     };
   });
 
-  bellBtn.onclick = () => {
+  bellBtn.onclick = () =>{
     modal.showModal();
     loadNotifications();
     pollStats();
   };
 
   if (ackAllBtn) {
-    ackAllBtn.onclick = async () => {
+    ackAllBtn.onclick = async () =>{
       await fetch("/api/notifications/ack?all=true", { method: "POST" });
       showToast("All notifications acknowledged", "info", 2500);
       loadNotifications();
@@ -2979,7 +2979,7 @@ function initNotificationCenter() {
   }
 
   if (clearAllBtn) {
-    clearAllBtn.onclick = async () => {
+    clearAllBtn.onclick = async () =>{
       if (confirm("Clear all notifications?")) {
         await fetch("/api/notifications?all=true", { method: "DELETE" });
         showToast("All notifications cleared", "info", 2500);
@@ -2990,7 +2990,7 @@ function initNotificationCenter() {
   }
 
   if (simulateBtn) {
-    simulateBtn.onclick = async () => {
+    simulateBtn.onclick = async () =>{
       const simRes = await fetch("/api/notifications/simulate", { method: "POST" });
       const simData = await simRes.json();
       if (simData.success) {

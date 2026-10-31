@@ -8,9 +8,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2.2" />
+  <link rel="stylesheet" href="styles.css?v=2.3" />
 </head>
 <body>
+  <a class="skip-link" href="#overview">Skip to camera feeds</a>
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
@@ -79,43 +80,13 @@
     <main class="main-content" id="overview">
       <header class="topbar">
         <div class="topbar-main">
-          <div class="title-with-health">
-            <h1 class="page-title">Cameras</h1>
-            <div class="fleet-health-pill" id="fleet-health-pill" title="Fleet health overview">
-              <span class="fleet-health-dot" id="fleet-health-dot"></span>
-              <span class="fleet-health-text" id="fleet-health-text">Fleet: Monitoring</span>
-            </div>
-          </div>
+          <h1 class="page-title">Cameras</h1>
           <p class="status-sentence" id="status-sentence">Checking camera feeds…</p>
         </div>
         <div class="topbar-actions">
-          <div class="camera-filter-wrapper">
-            <button class="button button-small camera-filter-toggle-btn" id="camera-filter-toggle-btn" type="button" aria-haspopup="true" aria-expanded="false" title="Filter which cameras appear on dashboard">
-              <svg class="btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M4 6h16M7 12h10M10 18h4"></path>
-              </svg>
-              <span id="camera-filter-toggle-text">Cameras (3/3)</span>
-              <span class="filter-dropdown-arrow">▾</span>
-            </button>
-            <div class="camera-filter-dropdown" id="camera-filter-dropdown" style="display: none;">
-              <div class="filter-dropdown-head">
-                <span class="filter-dropdown-title">Display Cameras</span>
-                <div class="filter-dropdown-links">
-                  <button type="button" class="filter-link-btn" id="filter-all-btn">All</button>
-                  <span class="sep">·</span>
-                  <button type="button" class="filter-link-btn" id="filter-healthy-btn">Healthy</button>
-                  <span class="sep">·</span>
-                  <button type="button" class="filter-link-btn" id="filter-none-btn">None</button>
-                </div>
-              </div>
-              <div class="filter-dropdown-list" id="filter-dropdown-list">
-                <!-- Populated dynamically with checkboxes & live status -->
-              </div>
-            </div>
-          </div>
           <div class="view-switch" role="group" aria-label="Grid layout">
-            <button class="button button-small view-btn active" data-layout="2col" type="button" title="Large dual feed view">2 columns</button>
-            <button class="button button-small view-btn" data-layout="auto" type="button" title="Adaptive grid">Auto</button>
+            <button class="button button-small view-btn" data-layout="2col" type="button" title="Large dual feed view">2 columns</button>
+            <button class="button button-small view-btn active" data-layout="auto" type="button" title="Adaptive grid">Auto</button>
             <button class="button button-small view-btn" data-layout="1col" type="button" title="Single column cinema view">1 column</button>
           </div>
           <button class="button button-primary" id="run-all-cameras" type="button" title="Start all decoder and adapter services directly">
@@ -124,14 +95,14 @@
             </svg>
             <span id="run-all-text">Run all cameras</span>
           </button>
-          <button class="button" id="refresh-all" type="button">Refresh feeds</button>
-          <button class="button button-secondary" id="diagnostics-btn" type="button" title="System Diagnostics & Troubleshooting Bundle">
+          <button class="button" id="refresh-all" type="button">Refresh</button>
+          <button class="button button-icon" id="diagnostics-btn" type="button" aria-label="System diagnostics" title="System diagnostics and troubleshooting bundle">
             <svg class="btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
             </svg>
-            <span>Diagnostics</span>
+            <span class="visually-hidden">Diagnostics</span>
           </button>
-          <button class="button button-icon notif-bell-btn" id="notif-bell-btn" type="button" title="Notification Center">
+          <button class="button button-icon notif-bell-btn" id="notif-bell-btn" type="button" aria-label="Notifications" title="Notifications">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
@@ -155,11 +126,15 @@
         </div>
         <div class="cam-sel-actions">
           <span class="cam-sel-count" id="cam-sel-count">3 of 3 visible</span>
-          <button type="button" class="cam-sel-reset-btn" id="cam-sel-reset-btn" style="display: none;">Show all</button>
+          <div class="cam-sel-links">
+            <button type="button" class="cam-sel-link" id="filter-all-btn">All</button>
+            <button type="button" class="cam-sel-link" id="filter-healthy-btn">Healthy</button>
+            <button type="button" class="cam-sel-link" id="filter-none-btn">None</button>
+          </div>
         </div>
       </div>
 
-      <section class="camera-grid density-2col" id="camera-grid" aria-label="Camera feeds"></section>
+      <section class="camera-grid density-auto" id="camera-grid" aria-label="Camera feeds"></section>
 
       <section class="analytics-panel" id="analytics">
         <div class="analytics-header">
@@ -291,10 +266,10 @@
               <label for="events-class-select">Object</label>
               <select id="events-class-select" class="select-ctrl">
                 <option value="">All objects</option>
-                <option value="person">👤 Person</option>
-                <option value="car">🚗 Vehicle</option>
-                <option value="motorcycle">🏍️ Motorcycle</option>
-                <option value="animal">🐾 Animal</option>
+                <option value="person">Person</option>
+                <option value="car">Vehicle</option>
+                <option value="motorcycle">Motorcycle</option>
+                <option value="animal">Animal</option>
               </select>
             </div>
             <button class="button button-small" id="events-refresh-btn" type="button">Refresh</button>
@@ -302,10 +277,8 @@
 
           <div class="events-meta-summary">
             <span class="events-meta-item" id="events-fps-stat">FPS: 0.0</span>
-            <span class="events-meta-divider">·</span>
             <span class="events-meta-item" id="events-storage-stat">Storage: 0 MB</span>
-            <span class="events-meta-divider">·</span>
-            <span class="events-meta-item events-ai-badge" id="events-ai-stat" title="CamHUB Edge AI Engine. Click to benchmark GPU vs CPU.">⚡ AI: DirectML</span>
+            <span class="events-meta-item events-ai-badge" id="events-ai-stat" title="CamHUB edge AI engine. Click to benchmark GPU vs CPU.">AI: DirectML</span>
           </div>
         </div>
 
@@ -343,7 +316,7 @@
 
       <footer class="footer">
         <span>CamHub</span>
-        <span>Local-first monitoring · Direct MJPEG</span>
+        <span>Local-first monitoring, direct MJPEG</span>
       </footer>
     </main>
   </div>
@@ -358,12 +331,12 @@
 
       <div class="form-group">
         <label for="camera-name">Display name</label>
-        <input id="camera-name" maxlength="60" required placeholder="e.g. Camera 1 · Indoor" />
+        <input id="camera-name" maxlength="60" required placeholder="e.g. Camera 1, indoor" />
       </div>
 
       <div class="form-group">
         <label for="camera-location">Details line</label>
-        <input id="camera-location" maxlength="80" required placeholder="e.g. 192.168.100.24 · ID 124095217 · Port 8080" />
+        <input id="camera-location" maxlength="80" required placeholder="e.g. 192.168.100.24, ID 124095217, port 8080" />
       </div>
 
       <div class="form-group">
@@ -406,7 +379,7 @@
       </div>
     </div>
     <div class="dialog-actions">
-      <button class="button button-accent" id="event-modal-enrich-btn" type="button">⚡ Re-analyze with AI</button>
+      <button class="button button-accent" id="event-modal-enrich-btn" type="button">Re-analyze with AI</button>
       <a id="event-modal-jump-playback" class="button button-primary" href="#playback">Jump to Playback</a>
       <button class="button button-warn" id="event-modal-delete-btn" type="button">Delete event</button>
       <button class="button" id="close-event-dialog-action" type="button">Close</button>
@@ -481,7 +454,7 @@
           <!-- Size, sha256, duration -->
         </div>
         <div class="diag-result-actions">
-          <a class="button button-primary" id="diag-download-link" href="#" download>⬇️ Download Diagnostic Report (ZIP)</a>
+          <a class="button button-primary" id="diag-download-link" href="#" download>Download diagnostic report (ZIP)</a>
         </div>
       </div>
 
@@ -523,13 +496,14 @@
       </div>
     </div>
     <div class="dialog-actions">
-      <button class="button button-secondary" id="notif-simulate-btn" type="button">⚡ Simulate test notification</button>
+      <button class="button button-secondary" id="notif-simulate-btn" type="button">Simulate test notification</button>
       <button class="button" id="close-notif-dialog-action" type="button">Close</button>
     </div>
   </dialog>
 
   <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
-  <script src="app.js?v=2.2"></script>
+  <script src="app.js?v=2.3"></script>
 </body>
 </html>
+
