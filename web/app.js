@@ -1,125 +1,130 @@
-// CamHub Command Center - Core Frontend Application (v4.1)
-// Comprehensive integration of AGENTS 1 through 10 in a tactical dark UI.
+// CamHub Command Center — Core Frontend Application (v5.0)
+// Pure black floating HUD architecture with sliding pill navigation and full Agent 1-10 integration.
 
 (function () {
   'use strict';
 
   // --- Current User Role (Agent 7 RBAC: Admin vs Viewer) ---
-  let currentUserRole = 'Admin'; // 'Admin' | 'Viewer'
+  let currentUserRole = 'admin'; // 'admin' | 'viewer'
 
   // --- Core State & Camera Fleet Definition ---
-  const cameras = [
+  const cams = [
     {
       id: 'v380-1',
-      name: 'Camera 1, Indoor',
+      n: 'Camera 1, Indoor',
       shortName: 'Cam 1',
       ip: '192.168.100.24',
-      port: 8080,
+      p: '8080',
+      d: 'ID 124095217 · Port 8080',
       streamUrl: 'http://127.0.0.1:8080/live.mjpg',
-      proxyUrl: '/proxy/stream/v380-1',
-      status: 'DEGRADED',
-      previousStatus: 'OFFLINE',
+      w: 1,
+      s: 'degraded',
       fps: 0.0,
       targetFps: 15.0,
       latencyMs: 0,
-      viewers: 1,
       aspect: '16:9',
       queue: '0 / 0',
       decodeErrors: 0,
       lastFrame: '--',
-      stage: 'CameraSource',
+      stage: 'Camera source',
       running: true,
       circuitBreakerTripped: false,
-      reason: 'Critically low framerate (0.0 fps). Expected >= 5.0 fps.',
       recording: false,
       recordStartTime: null,
       checks: { portListening: true, feedAlive: false, streamFrozen: false, fpsAdequate: false }
     },
     {
       id: 'v380-2',
-      name: 'Camera 2, Garage',
+      n: 'Camera 2, Garage',
       shortName: 'Cam 2',
       ip: '192.168.100.4',
-      port: 8081,
+      p: '8081',
+      d: 'ID 97357757 · Port 8081',
       streamUrl: 'http://127.0.0.1:8081/live.mjpg',
-      proxyUrl: '/proxy/stream/v380-2',
-      status: 'DEGRADED',
-      previousStatus: 'OFFLINE',
+      w: 1,
+      s: 'degraded',
       fps: 0.0,
       targetFps: 15.0,
       latencyMs: 0,
-      viewers: 1,
       aspect: '16:9',
       queue: '0 / 0',
       decodeErrors: 0,
       lastFrame: '--',
-      stage: 'CameraSource',
+      stage: 'Camera source',
       running: true,
       circuitBreakerTripped: false,
-      reason: 'Critically low framerate (0.0 fps). Expected >= 5.0 fps.',
       recording: false,
       recordStartTime: null,
       checks: { portListening: true, feedAlive: false, streamFrozen: false, fpsAdequate: false }
     },
     {
       id: 'okam-3',
-      name: 'Camera 3, O Kam Pro',
+      n: 'Camera 3, O Kam Pro',
       shortName: 'Cam 3',
       ip: '192.168.100.6',
-      port: 8082,
+      p: '10554',
+      d: 'Port 10554 · VStarcam',
       streamUrl: 'http://127.0.0.1:8082/live.mjpg',
-      proxyUrl: '/proxy/stream/okam-3',
-      status: 'DEGRADED',
-      previousStatus: 'OFFLINE',
+      w: 80,
+      s: 'degraded',
       fps: 0.0,
       targetFps: 15.0,
       latencyMs: 0,
-      viewers: 80,
       aspect: '16:9',
       queue: '0 / 0',
       decodeErrors: 0,
       lastFrame: '--',
-      stage: 'CameraSource',
+      stage: 'Camera source',
       running: true,
       circuitBreakerTripped: false,
-      reason: 'Critically low framerate (0.0 fps). Expected >= 5.0 fps.',
       recording: false,
       recordStartTime: null,
       checks: { portListening: true, feedAlive: false, streamFrozen: false, fpsAdequate: false }
     }
   ];
 
-  // 8 Main Views (Agents 1-10 complete architecture)
-  const navItems = [
-    { title: 'Live View', icon: 'i-live', id: 'v-live', sub: 'Multi-camera feeds and real-time pan/zoom control.' },
-    { title: 'Monitoring', icon: 'i-grid', id: 'v-dash', sub: 'Real-time camera health, pipeline, and performance.' },
-    { title: 'Playback', icon: 'i-play', id: 'v-playback', sub: 'Local MP4 recording archives and stream playback.' },
-    { title: 'Events & AI', icon: 'i-spark', id: 'v-events', sub: 'Motion detection and edge neural vision events.', badge: 0 },
-    { title: 'Storage & Retention', icon: 'i-db', id: 'v-storage', sub: 'Predictable storage management and policy pruning.' },
-    { title: 'Diagnostics', icon: 'i-pulse', id: 'v-diagnostics', sub: 'One-click diagnostics, port health checks, and log export bundle.' },
-    { title: 'Notifications', icon: 'i-bell', id: 'v-notif', sub: 'System alerts, camera offline notices, and fault timeline.', badge: 0 },
-    { title: 'Setup & Security', icon: 'i-shield', id: 'v-setup', sub: 'Zero-cloud local camera bridge and remote access setup.' }
+  const ST = {
+    healthy: ['Healthy', 'good-t', 'Live'],
+    degraded: ['Degraded', 'warn-t', 'No signal'],
+    offline: ['Offline', 'bad-t', 'Offline']
+  };
+
+  const tabs = [
+    ['Live View', 'v-live'],
+    ['Dashboard', 'v-dash'],
+    ['Playback', 'v-playback'],
+    ['Events & AI', 'v-events', 0],
+    ['Storage & Retention', 'v-storage'],
+    ['Diagnostics', 'v-diagnostics'],
+    ['Notifications', 'v-notif', 0],
+    ['Setup & Security', 'v-setup']
   ];
 
-  let currentViewIdx = 1; // Default to Monitoring / Dashboard per reference image
-  let selectedCamIdx = 0;
-  let streamPathCamIdx = 0;
-  let activeLayout = 'focus'; // 'focus' | 'wall'
+  const sentences = [
+    'Watch every camera in one place. Select a camera to focus on it.',
+    '0 of 3 cameras connected. All three are waiting for frames.',
+    'Local MP4 recording archives and stream playback.',
+    'Motion detection and edge neural vision events.',
+    'Predictable storage management and policy pruning.',
+    'One-click diagnostics, port health checks, and log export bundle.',
+    'System alerts, camera offline notices, and fault timeline.',
+    'Zero-cloud local camera bridge and remote access setup.'
+  ];
+
+  const col = ['#f2f2f2', '#6aa9e8', '#8c8c8c'];
+  const fpsHistory = { 'v380-1': [], 'v380-2': [], 'okam-3': [] };
+
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => document.querySelectorAll(s);
+  const p2 = (n) => String(n).padStart(2, '0');
+  const cnt = (k) => cams.filter((c) => c.s === k).length;
+
+  let sel = 0, pick = 0, pend = '';
   let zoomLevel = 1.0;
   let chartRange = '1m';
   let eventFilterCid = '';
   let notifFilterSev = '';
-  let serverUptimeSeconds = 3852;
-
-  const fpsHistory = {
-    'v380-1': [],
-    'v380-2': [],
-    'okam-3': []
-  };
-
-  // Helper DOM selectors
-  const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => document.querySelectorAll(sel);
+  let t0 = Date.now() - 4069e3;
 
   function escapeHtml(str) {
     if (!str) return '';
@@ -144,8 +149,8 @@
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
     const s = Math.floor(sec % 60);
-    if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
-    if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`;
+    if (h > 0) return `${h}h ${p2(m)}m ${p2(s)}s`;
+    if (m > 0) return `${m}m ${p2(s)}s`;
     return `${s}s`;
   }
 
@@ -153,451 +158,184 @@
     if (!isoStrOrMs) return '--';
     const d = new Date(isoStrOrMs);
     if (isNaN(d.getTime())) return '--';
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
   }
 
-  // --- Toast Notification ---
-  function showToast(message) {
+  function toast(m) {
     const t = $('#toast');
     if (!t) return;
-    t.textContent = message;
+    t.textContent = m;
     t.classList.add('on');
-    clearTimeout(t._timer);
-    t._timer = setTimeout(() => t.classList.remove('on'), 2800);
+    clearTimeout(t._h);
+    t._h = setTimeout(() => t.classList.remove('on'), 2600);
   }
 
-  // --- Role Check Guard (Agent 7 RBAC) ---
-  function checkAdminPermission(actionName) {
-    if (currentUserRole !== 'Admin') {
-      showToast(`Restricted: "${actionName}" requires Admin privileges.`);
-      return false;
-    }
-    return true;
+  const D = (n) => ({
+    restart: [
+      `Restart all ${n} cameras?`,
+      'Live feeds disconnect while the camera processes restart.',
+      'Restart cameras',
+      `Restarting all ${n} cameras…`
+    ],
+    stop: [
+      `Stop all ${n} cameras?`,
+      'This stops every running camera decoder. Feeds stay offline until you press Run all.',
+      'Stop cameras',
+      `Stopping all ${n} cameras…`
+    ]
+  });
+
+  function ask(k) {
+    pend = k;
+    const d = D(cams.length)[k];
+    $('#dt').textContent = d[0];
+    $('#dp').textContent = d[1];
+    $('#yes').textContent = d[2];
+    $('#dlg').showModal();
   }
 
-  // --- Clock & OSD Timestamp Tick ---
-  function updateTimestamps() {
-    serverUptimeSeconds++;
-    const now = new Date();
-    const pad = (n) => String(n).padStart(2, '0');
-    const timeStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-    $$('.ts').forEach((el) => {
-      el.textContent = timeStr;
-    });
-
-    const uptimeStr = formatDuration(serverUptimeSeconds);
-    if ($('#bar-uptime-text')) $('#bar-uptime-text').textContent = uptimeStr;
-    if ($('#sbf-uptime')) $('#sbf-uptime').textContent = `Local network · Uptime ${uptimeStr}`;
-
-    // Update active recording duration timers
-    cameras.forEach((cam) => {
-      if (cam.recording && cam.recordStartTime) {
-        const elapsed = Math.floor((Date.now() - cam.recordStartTime) / 1000);
-        const timerEl = $(`#rec-timer-${cam.id}`);
-        if (timerEl) timerEl.textContent = formatDuration(elapsed);
-      }
-    });
-  }
-  setInterval(updateTimestamps, 1000);
-
-  // --- Navigation & View Switching ---
-  function initNav() {
-    const navEl = $('#nav');
-    if (!navEl) return;
-    navEl.innerHTML = navItems
-      .map(
-        (item, idx) => `
-      <button data-go="${idx}" ${idx === currentViewIdx ? 'aria-current="page"' : ''} title="${item.title}">
-        <svg class="ico"><use href="#${item.icon}"/></svg>
-        <span>${item.title}</span>
-        ${item.badge ? `<b>${item.badge}</b>` : ''}
-      </button>`
-      )
-      .join('');
+  function toggleRole() {
+    currentUserRole = currentUserRole === 'admin' ? 'viewer' : 'admin';
+    document.body.dataset.role = currentUserRole;
+    $('#sbf-role').textContent = currentUserRole === 'admin' ? 'Admin' : 'Viewer';
+    toast(currentUserRole === 'admin' ? 'Admin mode: controls are visible' : 'Viewer mode: controls are hidden');
   }
 
-  function switchView(idx) {
-    if (idx < 0 || idx >= navItems.length) return;
-    currentViewIdx = idx;
+  // Action button template
+  const A = (c, a, t, x = '') => `<button class="btn ${x}" data-act="${a}" data-cid="${c.id}">${t}</button>`;
+  const bar = (c, s) => `<div class="vbar"><span><i class="dot ${s[1]}"></i>${c.n}</span><em>${s[2]}</em></div>`;
+  const msg = (c, ids) => `<div${ids ? ` id="msg-${c.id}"` : ''} class="msg-box"><b>Can't reach ${c.n.split(',')[0]}</b><p>No frames from ${c.ip}. Check that the camera is on and on this network.</p>${A(c, 'restart-cam', 'Retry connection', 'sm')}</div>`;
+  const stats = (c) => `<div class="stats"><div><b>${c.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${c.latencyMs} ms</b><span>latency</span></div><div><b>${c.aspect}</b><span>ratio</span></div><div><b>${c.w}</b><span>web</span></div></div>`;
+  const acts = (c, f) => `<div class="acts">${A(c, 'record', c.recording ? 'Stop' : 'Record', 'sm rec adm')}${A(c, 'restart-cam', 'Reload', 'sm adm')}${A(c, c.running ? 'stop-cam' : 'start-cam', c.running ? 'Stop' : 'Start', 'sm adm')}${A(c, 'config', 'Configure', 'sm adm')}${f}</div>`;
 
-    $$('#nav button').forEach((b, k) => {
-      if (k === idx) b.setAttribute('aria-current', 'page');
-      else b.removeAttribute('aria-current');
-    });
-
-    navItems.forEach((item, k) => {
-      const v = $(`#${item.id}`);
-      if (v) v.hidden = k !== idx;
-    });
-
-    const activeItem = navItems[idx];
-    if ($('#title')) $('#title').textContent = activeItem.title;
-    if ($('#title-sub')) $('#title-sub').textContent = activeItem.sub;
-
-    if (idx === 0) renderLiveView();
-    if (idx === 1) renderDashboard();
-    if (idx === 2) loadRecordings();
-    if (idx === 3) loadEvents();
-    if (idx === 4) loadStoragePage();
-    if (idx === 5) loadDiagnostics();
-    if (idx === 6) loadNotifications();
-
-    if (window.innerWidth <= 900) {
-      $('#shell')?.classList.add('hide');
-    }
-  }
-
-  // --- Segmented Controls ---
-  function initSegmentedControls() {
-    $('#layouts')?.addEventListener('click', (e) => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      setLayout(btn.dataset.l);
-    });
-
-    $('#pick')?.addEventListener('click', (e) => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      streamPathCamIdx = parseInt(btn.dataset.i, 10);
-      $$('#pick button').forEach((b) => b.setAttribute('aria-pressed', b === btn));
-      updateStreamPathCard();
-    });
-
-    $('#range')?.addEventListener('click', (e) => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      chartRange = btn.dataset.range || '1m';
-      $$('#range button').forEach((b) => b.setAttribute('aria-pressed', b === btn));
-      drawFpsChart();
-    });
-
-    $('#events-cam-filter')?.addEventListener('click', (e) => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      eventFilterCid = btn.dataset.cid || '';
-      $$('#events-cam-filter button').forEach((b) => b.setAttribute('aria-pressed', b === btn));
-      renderEventsList();
-    });
-
-    $('#notif-sev-filter')?.addEventListener('click', (e) => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      notifFilterSev = btn.dataset.sev || '';
-      $$('#notif-sev-filter button').forEach((b) => b.setAttribute('aria-pressed', b === btn));
-      renderNotificationsList();
-    });
-
-    // Toggle Role (Admin vs Viewer)
-    $('#btn-toggle-role')?.addEventListener('click', () => {
-      currentUserRole = currentUserRole === 'Admin' ? 'Viewer' : 'Admin';
-      if ($('#sbf-role')) $('#sbf-role').textContent = currentUserRole;
-      showToast(`User mode switched to: ${currentUserRole}`);
-      updateRoleUIAccess();
-    });
-  }
-
-  function updateRoleUIAccess() {
-    const isViewer = currentUserRole === 'Viewer';
-    const adminButtons = [
-      '#btn-run-all',
-      '#restart',
-      '#btn-stop-all',
-      '#btn-exec-cleanup',
-      '#btn-reindex-storage',
-      '#clear-events-btn',
-      '#notif-clear-all'
-    ];
-    adminButtons.forEach((sel) => {
-      const el = $(sel);
-      if (el) el.disabled = isViewer;
-    });
-  }
-
-  function setLayout(l) {
-    activeLayout = l;
-    const isWall = l === 'wall';
-    if ($('#stage')) $('#stage').hidden = isWall;
-    if ($('#cams')) $('#cams').hidden = !isWall;
-    $$('#layouts button').forEach((btn) => {
-      btn.setAttribute('aria-pressed', btn.dataset.l === l);
-    });
-    if (isWall) renderWallGrid();
-    else renderFocusStage();
-  }
-
-  // --- Live View Components ---
-  function getCameraFeedHtml(cam, isFocusView, idx) {
-    const isDegradedOrOffline = cam.status === 'DEGRADED' || cam.status === 'OFFLINE' || cam.fps === 0;
-    const dotClass = cam.status === 'HEALTHY' ? 'good-t' : cam.status === 'DEGRADED' ? 'warn-t' : 'bad-t';
-    const statusText = cam.status === 'HEALTHY' ? 'ONLINE' : cam.status === 'DEGRADED' ? 'DEGRADED' : 'NO SIGNAL';
-
+  const card = (c, i) => {
+    const s = ST[c.s] || ST.degraded;
     return `
-      <div class="feed" id="feed-${cam.id}" style="${isFocusView ? `transform: scale(${zoomLevel}); transform-origin: center center;` : ''}">
-        <div class="osd t">
-          <i><span class="dot ${dotClass}"></span>CAM ${String(idx + 1).padStart(2, '0')}</i>
-          <i>${statusText}</i>
+      <article class="card cam">
+        <div class="video" id="feed-${c.id}">
+          ${bar(c, s)}
+          <img class="mjpeg-stream" id="stream-img-${c.id}" src="${c.streamUrl}?t=${Date.now()}" alt="${c.n}" onerror="this.hidden=true; document.getElementById('msg-${c.id}').hidden=false;" onload="this.hidden=false; document.getElementById('msg-${c.id}').hidden=true;" hidden>
+          ${msg(c, 1)}
         </div>
-        
-        <img class="mjpeg-stream" id="stream-img-${cam.id}" src="${cam.streamUrl}?t=${Date.now()}" alt="${escapeHtml(cam.name)}" onerror="this.style.display='none'; document.getElementById('msg-${cam.id}').style.display='block';" onload="this.style.display='block'; document.getElementById('msg-${cam.id}').style.display='none';" />
-        
-        <div class="msg" id="msg-${cam.id}" style="${isDegradedOrOffline ? 'display:block' : 'display:none'}">
-          <svg class="ico nosig"><use href="#i-cam"/></svg>
-          <b>Can't Reach ${escapeHtml(cam.name.split(',')[0])}</b>
-          <p>No frames from ${cam.ip}. Check that the camera is on and on this network.</p>
-          ${isFocusView ? `<button class="btn" data-retry="${idx}">Retry Connection</button>` : ''}
-        </div>
-
-        <div class="osd b">
-          <i class="ts"></i>
-          ${isFocusView ? `
-            <div class="zoom">
-              <button data-zoom="in" aria-label="Zoom in">+</button>
-              <button data-zoom="reset" aria-label="Reset zoom">${zoomLevel.toFixed(1)}x</button>
-              <button data-zoom="out" aria-label="Zoom out">−</button>
-              <button data-fs aria-label="Full screen">⤢</button>
-            </div>
-          ` : ''}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderFocusStage() {
-    const stage = $('#stage');
-    if (!stage) return;
-    const cam = cameras[selectedCamIdx] || cameras[0];
-
-    const circuitBreakerAlert = cam.circuitBreakerTripped
-      ? `<div class="note dng" style="margin:10px 0 0"><p><b>Circuit Breaker Tripped</b><span>Camera exceeded restart limits. <button class="btn sq" data-act="reset-cb" data-cid="${cam.id}" style="height:24px;font-size:11px;padding:0 8px;margin-left:8px;">Reset Breaker</button></span></p></div>`
-      : '';
-
-    const checksHtml = `
-      <div class="signal-checks">
-        <div class="signal-check"><i class="dot ${cam.checks.portListening ? 'good-t' : 'bad-t'}"></i>Port :${cam.port}</div>
-        <div class="signal-check"><i class="dot ${cam.checks.feedAlive ? 'good-t' : 'warn-t'}"></i>Feed Stream</div>
-        <div class="signal-check"><i class="dot ${!cam.checks.streamFrozen ? 'good-t' : 'bad-t'}"></i>Freeze Detector</div>
-        <div class="signal-check"><i class="dot ${cam.checks.fpsAdequate ? 'good-t' : 'warn-t'}"></i>FPS Quality</div>
-      </div>
-    `;
-
-    const mainCamHtml = `
-      <div class="card main-cam" id="mc">
-        ${getCameraFeedHtml(cam, true, selectedCamIdx)}
-        <div class="meta">
-          <div>
-            <b>${escapeHtml(cam.name)}</b>
-            <div class="ip">${cam.ip} · Port ${cam.port} · ${cam.running ? 'RUNNING' : 'STOPPED'}</div>
-          </div>
-          <div class="stats">
-            <div><b>${cam.fps.toFixed(1)}</b><span>FPS</span></div>
-            <div><b>${cam.latencyMs} ms</b><span>Latency</span></div>
-            <div><b>${cam.aspect}</b><span>Aspect</span></div>
-            <div><b>${cam.viewers}</b><span>Viewers</span></div>
-          </div>
-          <div class="acts">
-            <button class="btn ${cam.running ? '' : 'pri'}" data-act="${cam.running ? 'stop-cam' : 'start-cam'}" data-cid="${cam.id}">
-              <svg class="ico"><use href="${cam.running ? '#i-stop' : '#i-play'}"/></svg>
-              <span>${cam.running ? 'Stop' : 'Start'}</span>
-            </button>
-            <button class="btn" data-act="restart-cam" data-cid="${cam.id}" title="Restart camera decoder">
-              <svg class="ico"><use href="#i-re"/></svg>
-              <span>Restart</span>
-            </button>
-            <button class="btn ${cam.recording ? 'dng' : ''}" data-act="record" data-cid="${cam.id}">
-              <svg class="ico"><use href="#i-play"/></svg>
-              <span>${cam.recording ? 'Stop Record' : 'Record'}</span>
-            </button>
-            <button class="btn" data-act="config" data-cid="${cam.id}">
-              <svg class="ico"><use href="#i-gear"/></svg>
-              <span>Configure</span>
-            </button>
-          </div>
-        </div>
-        ${checksHtml}
-        ${circuitBreakerAlert}
-      </div>
-    `;
-
-    const sideThumbnailsHtml = `
-      <div class="side">
-        ${cameras
-          .map((c, i) => {
-            const isSel = i === selectedCamIdx;
-            const dotClass = c.status === 'HEALTHY' ? 'good-t' : c.status === 'DEGRADED' ? 'warn-t' : 'bad-t';
-            return `
-            <button class="thumb" data-i="${i}" aria-pressed="${isSel}" aria-label="${escapeHtml(c.name)}">
-              ${getCameraFeedHtml(c, false, i)}
-              <div class="tl">
-                <span>${escapeHtml(c.name)}</span>
-                <span class="${dotClass}"><i class="dot"></i>${c.status}</span>
-              </div>
-            </button>
-          `;
-          })
-          .join('')}
-      </div>
-    `;
-
-    stage.innerHTML = mainCamHtml + sideThumbnailsHtml;
-  }
-
-  function renderWallGrid() {
-    const camsGrid = $('#cams');
-    if (!camsGrid) return;
-
-    camsGrid.innerHTML = cameras
-      .map(
-        (cam, i) => `
-      <article class="card main-cam">
-        ${getCameraFeedHtml(cam, false, i)}
-        <div class="meta">
-          <div>
-            <b style="font-size:15px">${escapeHtml(cam.name)}</b>
-            <div class="ip">${cam.ip} · Port ${cam.port}</div>
-          </div>
-          <div class="acts">
-            <button class="btn" data-focus="${i}">Focus</button>
-            <button class="btn ${cam.running ? '' : 'pri'}" data-act="${cam.running ? 'stop-cam' : 'start-cam'}" data-cid="${cam.id}">
-              ${cam.running ? 'Stop' : 'Start'}
-            </button>
-            <button class="btn ${cam.recording ? 'dng' : ''}" data-act="record" data-cid="${cam.id}">
-              ${cam.recording ? 'Stop' : 'Record'}
-            </button>
-          </div>
+        <div class="cmeta">
+          <div class="ip">${c.ip} · ${c.d}</div>
+          ${stats(c)}
+          ${acts(c, `<button class="btn sm" data-focus="${i}">Focus</button>`)}
         </div>
       </article>
-    `
-      )
-      .join('');
-  }
+    `;
+  };
 
-  function renderLiveView() {
-    updateFleetSummary();
-    if (activeLayout === 'wall') renderWallGrid();
-    else renderFocusStage();
-  }
+  const mini = (c, i) => {
+    const s = ST[c.s] || ST.degraded;
+    return `
+      <div class="video">
+        <div class="vbar">
+          <span><i class="dot ${s[1]}"></i>CAM ${p2(i + 1)}</span>
+          <em>${s[2]}</em>
+        </div>
+        <svg class="ico nosig" style="width:30px;height:30px;opacity:.45"><use href="#i-cam"/></svg>
+      </div>
+      <div class="tl">
+        <b>${c.n}</b>
+        <span class="${s[1]}"><i class="dot"></i>${s[0]}</span>
+      </div>
+    `;
+  };
 
-  function updateFleetSummary() {
-    let healthy = 0,
-      degraded = 0,
-      offline = 0;
-    cameras.forEach((c) => {
-      if (c.status === 'HEALTHY') healthy++;
-      else if (c.status === 'DEGRADED') degraded++;
-      else offline++;
-    });
+  const thumb = (c, i, a, k) => `<button class="thumb" ${k}="${i}"${a === null ? '' : ` aria-pressed="${a}"`} aria-label="${c.n}, ${ST[c.s][0]}">${mini(c, i)}</button>`;
 
-    const summaryEl = $('#live-fleet-counts');
-    if (summaryEl) {
-      summaryEl.textContent = `${healthy} Healthy · ${degraded} Degraded · ${offline} Offline`;
-    }
-
-    const dotEl = $('#live-fleet-dot');
-    if (dotEl) {
-      dotEl.className = 'dot ' + (healthy === cameras.length ? 'good-t' : degraded > 0 ? 'warn-t' : 'bad-t');
-    }
-  }
-
-  // --- Monitoring Dashboard (Agent 2 Bottleneck Pipeline) ---
-  function renderDashboard() {
-    // 1. Live Preview Thumbnails
-    const prev = $('#prev');
-    if (prev) {
-      prev.innerHTML = cameras
-        .map(
-          (c, i) => `
-        <div class="thumb" data-i="${i}" style="cursor:pointer;" aria-label="${escapeHtml(c.name)}">
-          ${getCameraFeedHtml(c, false, i)}
-          <div class="tl">
-            <div>
-              <b style="font-size:13px">${escapeHtml(c.name)}</b>
-              <div class="sub" style="font-family:var(--mono);">${c.ip} · ${c.aspect}</div>
+  // --- Live View Rendering ---
+  function live() {
+    const c = cams[sel] || cams[0], s = ST[c.s] || ST.degraded;
+    const stage = $('#stage');
+    if (stage) {
+      stage.innerHTML = `
+        <div class="card cam">
+          <div class="video big" id="mc" style="transform:scale(${zoomLevel});transform-origin:center center;">
+            ${bar(c, s)}
+            <img class="mjpeg-stream" id="stream-img-main" src="${c.streamUrl}?t=${Date.now()}" alt="${c.n}" onerror="this.hidden=true;" onload="this.hidden=false;">
+            ${msg(c)}
+            <div class="vfoot">
+              <span class="ts"></span>
+              <div class="zoom">
+                <button class="btn" data-zoom="in" aria-label="Zoom in">+</button>
+                <button class="btn" data-zoom="reset" aria-label="Reset zoom">${zoomLevel.toFixed(1)}x</button>
+                <button class="btn" data-zoom="out" aria-label="Zoom out">−</button>
+                <button class="btn" data-fs aria-label="Full screen">⤢</button>
+              </div>
             </div>
-            <span class="${c.status === 'HEALTHY' ? 'good-t' : 'warn-t'}"><i class="dot"></i>${c.status}</span>
           </div>
-          <div class="row" style="margin:6px 0 0;padding:0 4px;font-size:12px;font-family:var(--mono);">
-            <span>FPS: <b>${c.fps.toFixed(1)}/15</b></span>
-            <span>Lat: <b>${c.latencyMs}ms</b></span>
-            <span>Subs: <b>${c.viewers} Web</b></span>
-          </div>
-          <div class="acts" style="margin-top:8px;padding:0 4px;">
-            <button class="btn sq" data-act="${c.running ? 'stop-cam' : 'start-cam'}" data-cid="${c.id}" title="${c.running ? 'Stop' : 'Start'}">
-              <svg class="ico"><use href="${c.running ? '#i-stop' : '#i-play'}"/></svg>
-            </button>
-            <button class="btn sq" data-act="restart-cam" data-cid="${c.id}" title="Restart">
-              <svg class="ico"><use href="#i-re"/></svg>
-            </button>
-            <button class="btn sq" data-act="config" data-cid="${c.id}" title="Configure">
-              <svg class="ico"><use href="#i-gear"/></svg>
-            </button>
-            <button class="btn sq" data-focus="${i}" title="Focus View">
-              <svg class="ico"><use href="#i-side"/></svg>
-            </button>
+          <div class="cmeta">
+            <div class="mrow">
+              <div>
+                <b class="nm">${c.n}</b>
+                <div class="ip">${c.ip} · ${c.d} · Port ${c.p}</div>
+              </div>
+              ${acts(c, '')}
+            </div>
+            ${stats(c)}
+            <div class="signal-checks">
+              <div class="signal-check"><i class="dot ${c.checks.portListening ? 'good-t' : 'bad-t'}"></i>Port :${c.p}</div>
+              <div class="signal-check"><i class="dot ${c.checks.feedAlive ? 'good-t' : 'warn-t'}"></i>Feed Stream</div>
+              <div class="signal-check"><i class="dot ${!c.checks.streamFrozen ? 'good-t' : 'bad-t'}"></i>Freeze Detector</div>
+              <div class="signal-check"><i class="dot ${c.checks.fpsAdequate ? 'good-t' : 'warn-t'}"></i>FPS Quality</div>
+            </div>
+            ${c.circuitBreakerTripped ? `<div class="alert" style="margin-top:10px;"><svg class="ico"><use href="#i-warn"/></svg><p><b>Circuit Breaker Tripped</b><span>Camera exceeded restart limits. <button class="btn sm adm" data-act="reset-cb" data-cid="${c.id}" style="margin-left:8px;">Reset Breaker</button></span></p></div>` : ''}
           </div>
         </div>
-      `
-        )
-        .join('');
-    }
-
-    // 2. Camera Picker for Pipeline
-    const pick = $('#pick');
-    if (pick && pick.children.length === 0) {
-      pick.innerHTML = cameras
-        .map((c, i) => `<button aria-pressed="${i === streamPathCamIdx}" data-i="${i}">Cam ${i + 1}</button>`)
-        .join('');
-    }
-
-    updateDashboardFleetStats();
-    updateStreamPathCard();
-    drawFpsChart();
-    loadDashboardRecentEvents();
-  }
-
-  function updateDashboardFleetStats() {
-    let healthy = 0,
-      degraded = 0,
-      offline = 0;
-    cameras.forEach((c) => {
-      if (c.status === 'HEALTHY') healthy++;
-      else if (c.status === 'DEGRADED') degraded++;
-      else offline++;
-    });
-
-    if ($('#fleet-total')) $('#fleet-total').textContent = cameras.length;
-    if ($('#fleet-healthy')) $('#fleet-healthy').textContent = healthy;
-    if ($('#fleet-degraded')) $('#fleet-degraded').textContent = degraded;
-    if ($('#fleet-offline')) $('#fleet-offline').textContent = offline;
-
-    const stack = $('#fleet-stack');
-    if (stack) {
-      const total = cameras.length || 3;
-      const hPct = (healthy / total) * 100;
-      const dPct = (degraded / total) * 100;
-      const oPct = (offline / total) * 100;
-      stack.innerHTML = `
-        ${hPct > 0 ? `<i style="width:${hPct}%;background:var(--good)"></i>` : ''}
-        ${dPct > 0 ? `<i style="width:${dPct}%;background:var(--warn)"></i>` : ''}
-        ${oPct > 0 ? `<i style="width:${oPct}%;background:var(--bad)"></i>` : ''}
+        <div class="side">
+          ${cams.map((x, i) => thumb(x, i, i === sel, 'data-thumb')).join('')}
+        </div>
       `;
     }
+
+    const camsGrid = $('#cams');
+    if (camsGrid) camsGrid.innerHTML = cams.map(card).join('');
+    tick();
+  }
+
+  // --- Dashboard Rendering ---
+  function dash() {
+    const n = cams.length, h = cnt('healthy'), d = cnt('degraded'), o = cnt('offline');
+    if ($('#fleet-total')) $('#fleet-total').textContent = n;
+    if ($('#fleet-healthy')) $('#fleet-healthy').textContent = h;
+    if ($('#fleet-degraded')) $('#fleet-degraded').textContent = d;
+    if ($('#fleet-offline')) $('#fleet-offline').textContent = o;
+
+    const mon = `${h} of ${n} cameras connected.${d ? ` ${d} degraded and waiting for frames.` : ''}${o ? ` ${o} offline.` : ''}`;
+    if ($('#hcount')) $('#hcount').innerHTML = `<i class="dot ${d || o ? 'warn-t' : 'good-t'}"></i>${h} healthy · ${d} degraded · ${o} offline`;
+
+    const prev = $('#prev');
+    if (prev) prev.innerHTML = cams.map((c, i) => thumb(c, i, null, 'data-prev')).join('');
+
+    const pickEl = $('#pick');
+    if (pickEl && pickEl.children.length === 0) {
+      pickEl.innerHTML = cams.map((c, i) => `<button aria-pressed="${i === pick}" data-i="${i}">Camera ${i + 1}</button>`).join('');
+    }
+
+    path();
+    drawFps();
   }
 
   // --- AGENT 2: Pipeline Inspector ---
-  function updateStreamPathCard() {
-    const cam = cameras[streamPathCamIdx] || cameras[0];
-    if ($('#pipeline-title')) $('#pipeline-title').textContent = `Pipeline — ${cam.shortName}`;
+  function path() {
+    const c = cams[pick] || cams[0];
+    if ($('#pcam')) $('#pcam').textContent = `Camera ${pick + 1}`;
+    if ($('#path-note-msg')) {
+      $('#path-note-msg').textContent = `Tidak ada frame diterima dari sumber kamera. Pastikan kamera terhubung di IP ${c.ip}`;
+    }
+    if ($('#dl-port')) $('#dl-port').textContent = `${c.p} · Port listening`;
 
-    const isDegraded = cam.status === 'DEGRADED' || cam.fps === 0;
+    const isDegraded = c.s === 'degraded' || c.fps === 0;
     const flow = $('#flow');
     if (flow) {
       const nodes = [
-        { label: 'Source', fps: `${cam.fps.toFixed(1)} fps`, bad: isDegraded },
-        { label: 'LAN', fps: `${cam.fps.toFixed(1)} fps`, bad: false },
-        { label: 'Decoder', fps: `${cam.fps.toFixed(1)} fps`, bad: false },
-        { label: 'MJPEG', fps: `${cam.fps.toFixed(1)} fps`, bad: false },
-        { label: 'Browser', fps: `${cam.fps.toFixed(1)} fps`, bad: false }
+        { label: 'Source', fps: `${c.fps.toFixed(1)} fps`, bad: isDegraded },
+        { label: 'LAN', fps: `${c.fps.toFixed(1)} fps`, bad: false },
+        { label: 'Decoder', fps: `${c.fps.toFixed(1)} fps`, bad: false },
+        { label: 'MJPEG', fps: `${c.fps.toFixed(1)} fps`, bad: false },
+        { label: 'Browser', fps: `${c.fps.toFixed(1)} fps`, bad: false }
       ];
 
       flow.innerHTML = nodes
@@ -612,187 +350,250 @@
         )
         .join('');
     }
-
-    const noteTitle = $('#path-note-title');
-    const noteMsg = $('#path-note-msg');
-    const noteBox = $('#path-note');
-    if (noteTitle && noteMsg && noteBox) {
-      if (isDegraded) {
-        noteBox.className = 'note dng';
-        noteTitle.textContent = 'Bottleneck Detected';
-        noteMsg.textContent = 'Tidak ada frame diterima dari sumber kamera. Pastikan kamera terhubung di IP ' + cam.ip;
-      } else {
-        noteBox.className = 'note good';
-        noteTitle.textContent = 'Pipeline Beroperasi Normal';
-        noteMsg.textContent = 'Semua frame diterima, di-decode, dan dirender tanpa bottleneck.';
-      }
-    }
-
-    if ($('#dl-last-frame')) $('#dl-last-frame').textContent = cam.lastFrame;
-    if ($('#dl-queue')) $('#dl-queue').textContent = cam.queue;
-    if ($('#dl-errors')) $('#dl-errors').textContent = `${cam.decodeErrors} err`;
-    if ($('#dl-stage')) {
-      $('#dl-stage').textContent = cam.stage || 'CameraSource';
-      $('#dl-stage').className = `tag ${isDegraded ? 'bad' : 'good'}`;
-    }
   }
 
-  // --- Real-time Canvas FPS Chart ---
-  function drawFpsChart() {
-    const canvas = $('#fps-chart-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
+  // --- Canvas FPS History Chart ---
+  function drawFps() {
+    const cv = $('#fps-chart-canvas');
+    if (!cv) return;
+    const r = cv.getBoundingClientRect();
+    if (!r.width) return;
+    const d = window.devicePixelRatio || 1;
+    const x = cv.getContext('2d');
+    const T = 12, B = r.height - 8;
 
-    ctx.clearRect(0, 0, width, height);
+    cv.width = r.width * d;
+    cv.height = r.height * d;
+    x.scale(d, d);
 
-    // Draw horizontal grid lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-    ctx.lineWidth = 1;
-    for (let y = 15; y < height - 10; y += 30) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
-    }
+    x.font = '11px Urbanist, system-ui, sans-serif';
+    x.fillStyle = '#6f6f6f';
+    x.strokeStyle = 'rgba(255, 255, 255, .1)';
+    x.lineWidth = 1;
 
-    const seriesColors = ['#f2b84b', '#5aa2ff', '#ff6a99'];
-    const maxFps = 20.0;
-
-    cameras.forEach((cam, i) => {
-      const history = fpsHistory[cam.id] || [];
-      if (history.length === 0) return;
-
-      ctx.strokeStyle = seriesColors[i % seriesColors.length];
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-
-      const step = width / Math.max(history.length - 1, 1);
-      history.forEach((val, ptIdx) => {
-        const x = ptIdx * step;
-        const y = height - 10 - (Math.min(val, maxFps) / maxFps) * (height - 30);
-        if (ptIdx === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-
-      const fpsValEl = $(`#fps-val-${i + 1}`);
-      if (fpsValEl) fpsValEl.textContent = `${cam.fps.toFixed(1)} fps`;
+    [[T, '15'], [B, '0']].forEach(([y, l]) => {
+      x.beginPath();
+      x.moveTo(24, y);
+      x.lineTo(r.width, y);
+      x.stroke();
+      x.fillText(l, 0, y + 4);
     });
 
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-    ctx.beginPath();
-    ctx.moveTo(0, height - 10);
-    ctx.lineTo(width, height - 10);
-    ctx.stroke();
+    cams.forEach((c, i) => {
+      const history = fpsHistory[c.id] || [];
+      const val = c.fps || 0;
+      const y = B - (val / 15) * (B - T);
+
+      x.strokeStyle = col[i];
+      x.lineWidth = 2.5;
+
+      if (history.length > 1) {
+        x.beginPath();
+        const step = (r.width - 24) / Math.max(history.length - 1, 1);
+        history.forEach((pt, idx) => {
+          const ptY = B - (Math.min(pt, 15) / 15) * (B - T);
+          if (idx === 0) x.moveTo(24, ptY);
+          else x.lineTo(24 + idx * step, ptY);
+        });
+        x.stroke();
+      } else {
+        x.setLineDash([5, 10]);
+        x.lineDashOffset = -i * 5;
+        x.beginPath();
+        x.moveTo(24, y);
+        x.lineTo(r.width, y);
+        x.stroke();
+        x.setLineDash([]);
+      }
+
+      const fpsValEl = $(`#fps-val-${i + 1}`);
+      if (fpsValEl) fpsValEl.textContent = `${val.toFixed(1)} fps`;
+    });
+
+    const hasAnyFps = cams.some((c) => c.fps > 0);
+    const emptyEl = $('#fps-empty');
+    if (emptyEl) emptyEl.hidden = hasAnyFps;
   }
 
-  // --- AGENT 1: Service Operations (Start All / Stop All / Restart All) ---
+  // --- Clock & Uptime Tick ---
+  function tick() {
+    const d = new Date();
+    const t = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+    $$('.ts').forEach((e) => { e.textContent = t; });
+
+    const u = Math.floor((Date.now() - t0) / 1000);
+    const uptimeStr = `${Math.floor(u / 3600)}h ${p2(Math.floor((u % 3600) / 60))}m ${p2(u % 60)}s`;
+    if ($('#sbf-uptime')) $('#sbf-uptime').textContent = `Uptime ${uptimeStr}`;
+
+    cams.forEach((c) => {
+      if (c.recording && c.recordStartTime) {
+        const el = $(`#rec-timer-${c.id}`);
+        if (el) el.textContent = formatDuration(Math.floor((Date.now() - c.recordStartTime) / 1000));
+      }
+    });
+  }
+  setInterval(tick, 1000);
+
+  // --- Sliding Pill Navigation Tabs ---
+  const track = $('#track');
+  const pill = $('#pill');
+
+  function initTabs() {
+    if (!track) return;
+    track.innerHTML = '<span class="pill" id="pill"></span>' + tabs
+      .map((t, i) => `<button class="tab" data-go="${i}">${t[0]}${t[2] !== undefined ? `<i>${t[2]}</i>` : ''}</button>`)
+      .join('');
+  }
+
+  function move() {
+    const p = $('#pill');
+    const a = track ? track.querySelector('[aria-current="page"]') : null;
+    if (p && a) {
+      p.style.width = a.offsetWidth + 'px';
+      p.style.transform = `translateX(${a.offsetLeft}px)`;
+    }
+  }
+
+  function go(i) {
+    if (!track) return;
+    track.querySelectorAll('.tab').forEach((t, k) => {
+      if (k === i) t.setAttribute('aria-current', 'page');
+      else t.removeAttribute('aria-current');
+    });
+
+    tabs.forEach((t, k) => {
+      const v = $(`#${t[1]}`);
+      if (v) v.hidden = k !== i;
+    });
+
+    if ($('#title')) $('#title').textContent = tabs[i][0];
+    if ($('#sentence')) $('#sentence').textContent = sentences[i] || '';
+
+    move();
+
+    if (i === 0) live();
+    if (i === 1) { dash(); setTimeout(drawFps, 100); }
+    if (i === 2) loadRecordings();
+    if (i === 3) loadEvents();
+    if (i === 4) loadStoragePage();
+    if (i === 5) loadDiagnostics();
+    if (i === 6) loadNotifications();
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function seg(s, fn) {
+    const el = $(s);
+    if (!el) return;
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      [...el.children].forEach((x) => x.setAttribute('aria-pressed', x === b));
+      if (fn) fn(b);
+    });
+  }
+
+  function layout(l) {
+    const g = l === 'grid';
+    if ($('#stage')) $('#stage').hidden = g;
+    if ($('#cams')) $('#cams').hidden = !g;
+    $$('#layouts button').forEach((x) => x.setAttribute('aria-pressed', x.dataset.l === l));
+  }
+
+  // --- AGENT 1: Service Operations ---
   async function runAllCameras() {
-    if (!checkAdminPermission('Run All Cameras')) return;
-    showToast('Starting all camera decoders…');
+    toast(`Starting all ${cams.length} cameras…`);
     try {
       const res = await fetch('/api/services/start-all', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        showToast('All camera decoders started successfully.');
+        toast('All camera decoders started successfully.');
         setTimeout(pollBackendHealth, 1000);
       } else {
-        showToast(`Start warning: ${data.message || 'Error starting decoders'}`);
+        toast(`Start notice: ${data.message || 'Starting workers'}`);
       }
     } catch (err) {
-      showToast(`Error: ${err.message}`);
+      toast(`Error: ${err.message}`);
     }
   }
 
   async function stopAllCameras() {
-    if (!checkAdminPermission('Stop All Cameras')) return;
-    showToast('Stopping all camera decoders…');
+    toast(`Stopping all ${cams.length} cameras…`);
     try {
       const res = await fetch('/api/services/stop-all', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        showToast('All camera decoders stopped.');
+        toast('All camera decoders stopped.');
         setTimeout(pollBackendHealth, 1000);
-      } else {
-        showToast(`Stop warning: ${data.message}`);
       }
     } catch (err) {
-      showToast(`Error: ${err.message}`);
+      toast(`Error: ${err.message}`);
     }
   }
 
   async function restartAllCameras() {
-    if (!checkAdminPermission('Restart All Cameras')) return;
-    showToast('Restarting all camera decoders…');
+    toast(`Restarting all ${cams.length} cameras…`);
     try {
       const res = await fetch('/api/services/restart-all', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        showToast('All camera decoders restarted successfully.');
+        toast('All camera decoders restarted successfully.');
         setTimeout(pollBackendHealth, 1500);
-      } else {
-        showToast(`Restart warning: ${data.message}`);
       }
     } catch (err) {
-      showToast(`Error: ${err.message}`);
+      toast(`Error: ${err.message}`);
     }
   }
 
   async function startCamera(cid) {
-    if (!checkAdminPermission('Start Camera')) return;
     try {
       const res = await fetch(`/api/services/start?id=${encodeURIComponent(cid)}`, { method: 'POST' });
       if (res.ok) {
-        showToast(`Started decoder for ${cid}`);
+        toast(`Started decoder for ${cid}`);
         setTimeout(pollBackendHealth, 1000);
       }
     } catch (err) {
-      showToast(`Start error: ${err.message}`);
+      toast(`Start error: ${err.message}`);
     }
   }
 
   async function stopCamera(cid) {
-    if (!checkAdminPermission('Stop Camera')) return;
     try {
       const res = await fetch(`/api/services/stop?id=${encodeURIComponent(cid)}`, { method: 'POST' });
       if (res.ok) {
-        showToast(`Stopped decoder for ${cid}`);
+        toast(`Stopped decoder for ${cid}`);
         setTimeout(pollBackendHealth, 1000);
       }
     } catch (err) {
-      showToast(`Stop error: ${err.message}`);
+      toast(`Stop error: ${err.message}`);
     }
   }
 
   async function restartCamera(cid) {
-    if (!checkAdminPermission('Restart Camera')) return;
     try {
       const res = await fetch(`/api/services/restart?id=${encodeURIComponent(cid)}`, { method: 'POST' });
       if (res.ok) {
-        showToast(`Restarted decoder for ${cid}`);
+        toast(`Restarted decoder for ${cid}`);
         setTimeout(pollBackendHealth, 1000);
       }
     } catch (err) {
-      showToast(`Restart error: ${err.message}`);
+      toast(`Restart error: ${err.message}`);
     }
   }
 
   async function resetCircuitBreaker(cid) {
-    if (!checkAdminPermission('Reset Circuit Breaker')) return;
     try {
       const res = await fetch(`/api/recovery/reset?id=${encodeURIComponent(cid)}`, { method: 'POST' });
       if (res.ok) {
-        showToast(`Circuit breaker reset for ${cid}. Ready to start.`);
+        toast(`Circuit breaker reset for ${cid}. Ready to start.`);
         setTimeout(pollBackendHealth, 1000);
       }
     } catch (err) {
-      showToast(`Reset error: ${err.message}`);
+      toast(`Reset error: ${err.message}`);
     }
   }
 
-  // --- AGENT 4: Playback & Local Recording ---
+  // --- AGENT 4: Local Recording & Playback ---
   let recordingsCache = [];
 
   async function loadRecordings() {
@@ -808,8 +609,7 @@
       if (recordingsCache.length === 0) {
         listEl.innerHTML = `
           <div class="empty">
-            <b>No Recorded Segments</b>
-            <p>Trigger manual recording or motion detection to create MP4 segments.</p>
+            <p>No recorded MP4 segments found on disk.<br>Trigger manual recording or test motion to create archives.</p>
           </div>
         `;
         return;
@@ -824,13 +624,13 @@
             <span>${formatDateTime(rec.created_at || rec.start_time)} · ${formatBytes(rec.size_bytes || rec.file_size)} · ${formatDuration(rec.duration_seconds || rec.duration)}</span>
           </div>
           <div class="acts">
-            <button class="btn sq" data-rec-play="${escapeHtml(rec.id)}" title="Play in Player">
+            <button class="btn sq sm" data-rec-play="${escapeHtml(rec.id)}" title="Play video">
               <svg class="ico"><use href="#i-play"/></svg>
             </button>
-            <a class="btn sq" href="/api/recordings/download?id=${encodeURIComponent(rec.id)}" download="" title="Download MP4">
+            <a class="btn sq sm" href="/api/recordings/download?id=${encodeURIComponent(rec.id)}" download="" title="Download MP4">
               <svg class="ico"><use href="#i-dl"/></svg>
             </a>
-            <button class="btn sq" data-rec-del="${escapeHtml(rec.id)}" title="Delete Recording">
+            <button class="btn sq sm adm" data-rec-del="${escapeHtml(rec.id)}" title="Delete archive">
               <svg class="ico"><use href="#i-trash"/></svg>
             </button>
           </div>
@@ -839,7 +639,7 @@
         )
         .join('');
     } catch (err) {
-      listEl.innerHTML = `<div class="empty"><b>Error Loading Recordings</b><p>${escapeHtml(err.message)}</p></div>`;
+      listEl.innerHTML = `<div class="empty"><p>Error loading recordings: ${escapeHtml(err.message)}</p></div>`;
     }
   }
 
@@ -847,7 +647,7 @@
     const strip = $('#rec-status-strip');
     if (!strip) return;
 
-    strip.innerHTML = cameras
+    strip.innerHTML = cams
       .map(
         (cam) => `
       <div class="rec-status-card">
@@ -858,7 +658,7 @@
             <span id="rec-timer-${cam.id}" style="margin-left:6px;font-family:var(--mono);">${cam.recording ? '0s' : '--'}</span>
           </div>
         </div>
-        <button class="btn ${cam.recording ? 'dng' : 'pri'}" data-act="record" data-cid="${cam.id}">
+        <button class="btn sm ${cam.recording ? 'dng' : 'primary'} adm" data-act="record" data-cid="${cam.id}">
           <svg class="ico"><use href="${cam.recording ? '#i-cross' : '#i-play'}"/></svg>
           <span>${cam.recording ? 'Stop' : 'Record'}</span>
         </button>
@@ -869,7 +669,7 @@
   }
 
   async function toggleRecording(cid) {
-    const cam = cameras.find((c) => c.id === cid);
+    const cam = cams.find((c) => c.id === cid);
     if (!cam) return;
 
     if (!cam.recording) {
@@ -883,12 +683,12 @@
         if (res.ok && data.status === 'ok') {
           cam.recording = true;
           cam.recordStartTime = Date.now();
-          showToast(`Started recording on ${cam.shortName}`);
+          toast(`Recording started on ${cam.shortName}`);
         } else {
-          showToast(`Recording notice: ${data.message || 'Decoder port offline'}`);
+          toast(`Recording notice: ${data.message || 'Decoder is offline'}`);
         }
       } catch (err) {
-        showToast(`Failed: ${err.message}`);
+        toast(`Error: ${err.message}`);
       }
     } else {
       try {
@@ -899,31 +699,30 @@
         });
         cam.recording = false;
         cam.recordStartTime = null;
-        showToast(`Stopped recording on ${cam.shortName}`);
+        toast(`Recording stopped on ${cam.shortName}`);
         setTimeout(loadRecordings, 1500);
       } catch (err) {
-        showToast(`Failed: ${err.message}`);
+        toast(`Error: ${err.message}`);
       }
     }
 
     renderManualRecordingControls();
-    if (activeLayout === 'focus') renderFocusStage();
-    else renderWallGrid();
+    live();
   }
 
   async function triggerTestMotionRecording() {
-    showToast('Triggering automated test motion recording…');
+    toast('Triggering automated test motion recording…');
     try {
       const res = await fetch('/api/recordings/trigger-motion?cameraId=v380-1&duration=10', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        showToast('Motion recording triggered successfully (10s segment).');
+        toast('Test motion recording generated (10s segment).');
         setTimeout(loadRecordings, 2000);
       } else {
-        showToast(`Notice: ${data.message || data.error}`);
+        toast(`Notice: ${data.message || data.error}`);
       }
     } catch (err) {
-      showToast(`Error: ${err.message}`);
+      toast(`Error: ${err.message}`);
     }
   }
 
@@ -954,7 +753,7 @@
 
     if (tag) {
       tag.textContent = 'Playing';
-      tag.className = 'r tag good';
+      tag.className = 'tag good';
     }
 
     $$('.rec-item').forEach((item) => {
@@ -963,23 +762,22 @@
   }
 
   async function deleteRecording(id) {
-    if (!checkAdminPermission('Delete Recording')) return;
     if (!confirm('Permanently delete this recording archive?')) return;
     try {
       const res = await fetch(`/api/recordings?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       if (res.ok) {
-        showToast('Recording deleted');
+        toast('Recording deleted');
         loadRecordings();
       } else {
         const data = await res.json();
-        showToast(`Delete failed: ${data.message || 'File protected by active lock'}`);
+        toast(`Delete failed: ${data.message || 'File protected by active lock'}`);
       }
     } catch (err) {
-      showToast(`Delete failed: ${err.message}`);
+      toast(`Delete failed: ${err.message}`);
     }
   }
 
-  // --- AGENT 5 & 6: Events & Local AI Engine ---
+  // --- AGENT 5 & 6: Events & Edge AI Object Detection ---
   let eventsCache = [];
 
   async function loadEvents() {
@@ -992,11 +790,12 @@
       eventsCache = data.events || [];
       renderEventsList();
 
-      const navItem = navItems.find((n) => n.id === 'v-events');
-      if (navItem) navItem.badge = eventsCache.length;
-      initNav();
+      const tabItem = tabs.find((t) => t[1] === 'v-events');
+      if (tabItem) tabItem[2] = eventsCache.length;
+      initTabs();
+      move();
     } catch (err) {
-      list.innerHTML = `<div class="empty"><b>Error Loading Events</b><p>${escapeHtml(err.message)}</p></div>`;
+      list.innerHTML = `<div class="empty"><p>Error loading events: ${escapeHtml(err.message)}</p></div>`;
     }
   }
 
@@ -1012,8 +811,7 @@
     if (filtered.length === 0) {
       list.innerHTML = `
         <div class="empty" style="grid-column: 1 / -1">
-          <b>No Activity Events Found</b>
-          <p>Camera motion triggers and AI detections will be captured here.</p>
+          <p>No activity events found.<br>Camera motion triggers and AI detections will be captured here.</p>
         </div>
       `;
       return;
@@ -1030,9 +828,9 @@
           </span>
         </div>
         <div class="event-info">
-          <div class="row" style="margin:0 0 4px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
             <b>${escapeHtml(ev.camera_name || ev.camera_id)}</b>
-            <button class="btn sq r" data-ev-del="${escapeHtml(ev.id)}" title="Delete Event">
+            <button class="btn sq sm adm" data-ev-del="${escapeHtml(ev.id)}" title="Delete Event">
               <svg class="ico"><use href="#i-trash"/></svg>
             </button>
           </div>
@@ -1063,82 +861,52 @@
   }
 
   async function deleteEvent(id) {
-    if (!checkAdminPermission('Delete Event')) return;
     try {
       const res = await fetch(`/api/events?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       if (res.ok) {
         eventsCache = eventsCache.filter((e) => e.id !== id);
         renderEventsList();
-        showToast('Event removed');
+        toast('Event removed');
       }
     } catch (err) {
-      showToast(`Delete error: ${err.message}`);
+      toast(`Delete error: ${err.message}`);
     }
   }
 
   async function clearAllEvents() {
-    if (!checkAdminPermission('Clear All Events')) return;
     if (!confirm('Clear all motion and AI detection events?')) return;
     try {
       const res = await fetch('/api/events', { method: 'DELETE' });
       if (res.ok) {
         eventsCache = [];
         renderEventsList();
-        showToast('All events cleared');
+        toast('All events cleared');
       }
     } catch (err) {
-      showToast(`Clear error: ${err.message}`);
+      toast(`Clear error: ${err.message}`);
     }
   }
 
-  // --- AGENT 6: AI Benchmark ---
   async function runAiBenchmark() {
-    showToast('Running DirectML / CPU AI inference benchmark (5 iterations)…');
+    toast('Running DirectML / CPU AI inference benchmark (5 iterations)…');
     try {
       const res = await fetch('/api/ai/benchmark?runs=5', { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.results) {
         const dml = data.results.DirectML || {};
         const cpu = data.results.CPU || {};
-        const msg = `AI Benchmark Complete: DirectML Latency = ${dml.latencyMs || '--'}ms (${dml.fpsCapacity || '--'} FPS) | CPU Fallback = ${cpu.latencyMs || '--'}ms`;
-        showToast(msg);
+        const msg = `AI Benchmark Complete:\nDirectML Latency = ${dml.latencyMs || '--'}ms (${dml.fpsCapacity || '--'} FPS)\nCPU Fallback = ${cpu.latencyMs || '--'}ms`;
+        toast('AI Benchmark finished.');
         alert(msg);
       } else {
-        showToast(`AI Benchmark notice: ${data.error || 'DirectML ready'}`);
+        toast(`AI notice: ${data.error || 'DirectML provider ready'}`);
       }
     } catch (err) {
-      showToast(`Benchmark error: ${err.message}`);
+      toast(`Benchmark error: ${err.message}`);
     }
   }
 
-  function loadDashboardRecentEvents() {
-    const container = $('#dash-recent-events');
-    if (!container) return;
-
-    if (eventsCache.length === 0) {
-      container.innerHTML = `
-        <div class="empty"><b>No Activity Yet</b><p>Motion and AI detections will appear here.</p></div>
-      `;
-      return;
-    }
-
-    const recent = eventsCache.slice(0, 3);
-    container.innerHTML = recent
-      .map(
-        (ev) => `
-      <div class="notif-item">
-        <i class="dot ${ev.event_type === 'ai_person' ? 'good-t' : 'warn-t'}"></i>
-        <div class="notif-main">
-          <b>${escapeHtml(ev.camera_name || ev.camera_id)}: ${escapeHtml(ev.event_type === 'ai_person' ? 'Person detected' : 'Motion detected')}</b>
-          <p>${formatDateTime(ev.timestamp)}</p>
-        </div>
-      </div>
-    `
-      )
-      .join('');
-  }
-
-  // --- AGENT 8: Storage Manager View ---
+  // --- AGENT 8: Storage & Retention Manager ---
   async function loadStoragePage() {
     try {
       const res = await fetch('/api/storage/status');
@@ -1154,17 +922,16 @@
         if ($('#st-disk-used')) $('#st-disk-used').textContent = usedGb;
         if ($('#st-disk-free')) $('#st-disk-free').textContent = freeGb;
 
-        if ($('#storage-page-percent')) $('#storage-page-percent').innerHTML = `${pct}%<small>Used</small>`;
+        if ($('#storage-page-percent')) $('#storage-page-percent').innerHTML = `${pct}%<small>used</small>`;
         if ($('#storage-page-ring')) $('#storage-page-ring').style.setProperty('--ring-fill', `${pct}%`);
 
-        // Multi-tier alert gauges
         if ($('#alert-80')) $('#alert-80').className = `threshold-card ${pct >= 80 ? 'warn-t' : 'good-t'}`;
         if ($('#alert-90')) $('#alert-90').className = `threshold-card ${pct >= 90 ? 'bad-t' : ''}`;
         if ($('#alert-95')) $('#alert-95').className = `threshold-card ${pct >= 95 ? 'bad-t' : ''}`;
       }
 
       if (data.forecasting && $('#st-growth-rate')) {
-        const mbPerDay = (data.forecasting.growth_rate_bytes_per_sec * 86400 / 1e6).toFixed(1);
+        const mbPerDay = ((data.forecasting.growth_rate_bytes_per_sec * 86400) / 1e6).toFixed(1);
         $('#st-growth-rate').textContent = `+${mbPerDay} MB/day`;
       }
     } catch (err) {
@@ -1173,49 +940,47 @@
   }
 
   async function dryRunCleanup() {
-    showToast('Evaluating retention policies (Dry-Run)…');
+    toast('Evaluating retention policies (Dry-Run)…');
     try {
       const res = await fetch('/api/storage/cleanup?dryRun=true', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         const count = data.recordings_purged?.length || 0;
         const msg = `Dry-Run Complete: ${count} recordings eligible for purge. No files were deleted.`;
-        showToast(msg);
+        toast(msg);
         alert(msg);
       }
     } catch (err) {
-      showToast(`Dry-run error: ${err.message}`);
+      toast(`Dry-run error: ${err.message}`);
     }
   }
 
   async function executeRetentionCleanup() {
-    if (!checkAdminPermission('Execute Retention Cleanup')) return;
     if (!confirm('Execute retention cleanup and purge expired recordings? Files with active playback or recording locks will be preserved.')) return;
     try {
       const res = await fetch('/api/storage/cleanup?dryRun=false', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         const count = data.recordings_purged?.length || 0;
-        showToast(`Retention purge executed: ${count} expired files deleted.`);
+        toast(`Retention purge executed: ${count} expired files deleted.`);
         loadStoragePage();
       }
     } catch (err) {
-      showToast(`Purge error: ${err.message}`);
+      toast(`Purge error: ${err.message}`);
     }
   }
 
   async function reindexStorage() {
-    if (!checkAdminPermission('Rebuild Storage Index')) return;
-    showToast('Reconciling on-disk files with metadata index…');
+    toast('Reconciling on-disk files with metadata index…');
     try {
       const res = await fetch('/api/storage/reindex', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        showToast('Storage index rebuilt and repaired successfully.');
+        toast('Storage index rebuilt and repaired successfully.');
         loadStoragePage();
       }
     } catch (err) {
-      showToast(`Reindex error: ${err.message}`);
+      toast(`Reindex error: ${err.message}`);
     }
   }
 
@@ -1248,17 +1013,36 @@
       }
 
       if (data.bundles && $('#diag-bundles-list')) {
-        renderBundlesList(data.bundles);
+        const list = $('#diag-bundles-list');
+        if (data.bundles.length === 0) {
+          list.innerHTML = `<div class="empty"><p>No diagnostic bundles generated yet.</p></div>`;
+        } else {
+          list.innerHTML = data.bundles
+            .slice(0, 3)
+            .map(
+              (b) => `
+            <div class="bundle-item">
+              <div>
+                <b>${escapeHtml(b.filename)}</b>
+                <div class="sub">${formatDateTime(b.createdAt)} · ${formatBytes(b.sizeBytes)}</div>
+              </div>
+              <a class="btn sq sm" href="/api/diagnostics/download?filename=${encodeURIComponent(b.filename)}" download="" title="Download Bundle">
+                <svg class="ico"><use href="#i-dl"/></svg>
+              </a>
+            </div>
+          `
+            )
+            .join('');
+        }
       }
 
-      // Populate sanitized log viewer
       if ($('#diag-log-box')) {
         $('#diag-log-box').textContent = `[SYSTEM] CamHUB host active on Windows 10/11.
 [PORT 8080] Decoder Kamera 1: Port listening. Status: DEGRADED (0.0 fps).
 [PORT 8081] Decoder Kamera 2: Port listening. Status: DEGRADED (0.0 fps).
 [PORT 8082] Decoder Kamera 3: Port listening. Status: DEGRADED (0.0 fps).
 [SECURITY] Credential redactor active: RTSP tokens, passwords, and secrets sanitized.
-[AI ENGINE] Provider: DirectML (GPU: 12% capacity).
+[AI ENGINE] Provider: DirectML (GPU capacity active).
 [STORAGE] Storage retention policy: 14 days video, 7 days snapshots.`;
       }
     } catch (err) {
@@ -1266,34 +1050,7 @@
     }
   }
 
-  function renderBundlesList(bundles) {
-    const list = $('#diag-bundles-list');
-    if (!list) return;
-    if (!bundles || bundles.length === 0) {
-      list.innerHTML = `<div class="empty" style="padding:14px 10px">No diagnostic bundles generated yet.</div>`;
-      return;
-    }
-
-    list.innerHTML = bundles
-      .slice(0, 3)
-      .map(
-        (b) => `
-      <div class="bundle-item">
-        <div>
-          <b>${escapeHtml(b.filename)}</b>
-          <div class="sub">${formatDateTime(b.createdAt)} · ${formatBytes(b.sizeBytes)}</div>
-        </div>
-        <a class="btn sq" href="/api/diagnostics/download?filename=${encodeURIComponent(b.filename)}" download="" title="Download Bundle">
-          <svg class="ico"><use href="#i-dl"/></svg>
-        </a>
-      </div>
-    `
-      )
-      .join('');
-  }
-
   async function generateDiagnosticBundle() {
-    if (!checkAdminPermission('Generate Diagnostic Bundle')) return;
     const prog = $('#bundle-progress');
     const btn = $('#btn-generate-bundle');
     if (prog) prog.style.display = 'block';
@@ -1303,13 +1060,13 @@
       const res = await fetch('/api/diagnostics/generate', { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.status === 'ok') {
-        showToast('Sanitized diagnostic bundle (.ZIP) generated!');
+        toast('Sanitized diagnostic bundle (.ZIP) generated!');
         loadDiagnostics();
       } else {
-        showToast(`Bundle notice: ${data.message}`);
+        toast(`Bundle notice: ${data.message}`);
       }
     } catch (err) {
-      showToast(`Export failed: ${err.message}`);
+      toast(`Export failed: ${err.message}`);
     } finally {
       if (prog) prog.style.display = 'none';
       if (btn) btn.disabled = false;
@@ -1330,11 +1087,12 @@
       renderNotificationsList();
 
       const unreadCount = notificationsCache.filter((n) => !n.acknowledged).length;
-      const navItem = navItems.find((n) => n.id === 'v-notif');
-      if (navItem) navItem.badge = unreadCount;
-      initNav();
+      const tabItem = tabs.find((t) => t[1] === 'v-notif');
+      if (tabItem) tabItem[2] = unreadCount;
+      initTabs();
+      move();
     } catch (err) {
-      list.innerHTML = `<div class="empty"><b>Error Loading Notifications</b><p>${escapeHtml(err.message)}</p></div>`;
+      list.innerHTML = `<div class="empty"><p>Error loading notifications: ${escapeHtml(err.message)}</p></div>`;
     }
   }
 
@@ -1350,8 +1108,7 @@
     if (filtered.length === 0) {
       list.innerHTML = `
         <div class="empty">
-          <b>No Notifications Found</b>
-          <p>Camera offline alerts and fault notices will be listed here.</p>
+          <p>No notifications captured.<br>Camera offline alerts and fault notices will be listed here.</p>
         </div>
       `;
       return;
@@ -1362,7 +1119,7 @@
         const dotClass = n.severity === 'critical' ? 'bad-t' : n.severity === 'warning' ? 'warn-t' : 'good-t';
         return `
         <div class="notif-item ${n.acknowledged ? '' : 'unread'}">
-          <i class="dot ${dotClass}" style="margin-top:4px"></i>
+          <i class="dot ${dotClass}" style="margin-top:5px"></i>
           <div class="notif-main">
             <b>${escapeHtml(n.title)}</b>
             <p>${escapeHtml(n.message)}</p>
@@ -1370,7 +1127,7 @@
           </div>
           ${
             !n.acknowledged
-              ? `<button class="btn sq" data-notif-ack="${escapeHtml(n.id)}" title="Acknowledge">
+              ? `<button class="btn sq sm" data-notif-ack="${escapeHtml(n.id)}" title="Acknowledge">
                   <svg class="ico"><use href="#i-check"/></svg>
                 </button>`
               : ''
@@ -1389,11 +1146,11 @@
         body: JSON.stringify({ id })
       });
       if (res.ok) {
-        showToast('Notification acknowledged');
+        toast('Notification acknowledged');
         loadNotifications();
       }
     } catch (err) {
-      showToast(`Error: ${err.message}`);
+      toast(`Error: ${err.message}`);
     }
   }
 
@@ -1405,26 +1162,25 @@
         body: JSON.stringify({ all: true })
       });
       if (res.ok) {
-        showToast('All notifications acknowledged');
+        toast('All notifications acknowledged');
         loadNotifications();
       }
     } catch (err) {
-      showToast(`Error: ${err.message}`);
+      toast(`Error: ${err.message}`);
     }
   }
 
   async function clearAllNotifications() {
-    if (!checkAdminPermission('Clear Notifications')) return;
     if (!confirm('Clear all notification alerts?')) return;
     try {
       const res = await fetch('/api/notifications', { method: 'DELETE' });
       if (res.ok) {
         notificationsCache = [];
         renderNotificationsList();
-        showToast('Notifications cleared');
+        toast('Notifications cleared');
       }
     } catch (err) {
-      showToast(`Error: ${err.message}`);
+      toast(`Error: ${err.message}`);
     }
   }
 
@@ -1441,11 +1197,11 @@
         })
       });
       if (res.ok) {
-        showToast('Simulated notification dispatched');
+        toast('Simulated notification dispatched');
         loadNotifications();
       }
     } catch (err) {
-      showToast(`Simulation failed: ${err.message}`);
+      toast(`Simulation failed: ${err.message}`);
     }
   }
 
@@ -1453,21 +1209,21 @@
     const token = $('#tg-token')?.value?.trim();
     const chat = $('#tg-chat')?.value?.trim();
     if (!token || !chat) {
-      showToast('Please provide Bot Token and Chat ID.');
+      toast('Please provide Bot Token and Chat ID.');
       return;
     }
-    showToast('Testing Telegram Bot connection…');
+    toast('Testing Telegram Bot connection…');
     try {
       const res = await fetch(`/api/notifications/test-telegram?botToken=${encodeURIComponent(token)}&chatId=${encodeURIComponent(chat)}`, { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast('Telegram message sent successfully!');
+        toast('Telegram message sent successfully!');
         $('#telegram-dialog')?.close();
       } else {
-        showToast(`Telegram notice: ${data.message || data.error}`);
+        toast(`Telegram notice: ${data.message || data.error}`);
       }
     } catch (err) {
-      showToast(`Telegram test failed: ${err.message}`);
+      toast(`Telegram test failed: ${err.message}`);
     }
   }
 
@@ -1482,10 +1238,9 @@
 
       if (healthRes && healthRes.cameras) {
         Object.entries(healthRes.cameras).forEach(([cid, camData]) => {
-          const localCam = cameras.find((c) => c.id === cid);
+          const localCam = cams.find((c) => c.id === cid);
           if (localCam) {
-            localCam.status = camData.status || 'DEGRADED';
-            localCam.reason = camData.reason || '';
+            localCam.s = (camData.status || 'degraded').toLowerCase();
             if (camData.checks) localCam.checks = camData.checks;
             if (camData.metrics) {
               localCam.fps = camData.metrics.fps || 0.0;
@@ -1496,13 +1251,13 @@
 
             if (!fpsHistory[cid]) fpsHistory[cid] = [];
             fpsHistory[cid].push(localCam.fps);
-            if (fpsHistory[cid].length > 60) fpsHistory[cid].shift();
+            if (fpsHistory[cid].length > 30) fpsHistory[cid].shift();
           }
         });
 
         if (servicesRes && servicesRes.services) {
           Object.entries(servicesRes.services).forEach(([cid, sData]) => {
-            const localCam = cameras.find((c) => c.id === cid);
+            const localCam = cams.find((c) => c.id === cid);
             if (localCam) {
               localCam.running = sData.running;
               localCam.circuitBreakerTripped = sData.circuitBreakerTripped || false;
@@ -1519,13 +1274,7 @@
           if ($('#res-mem-bar')) $('#res-mem-bar').style.setProperty('--w', `${mem}%`);
         }
 
-        updateFleetSummary();
-        updateDashboardFleetStats();
-        if (currentViewIdx === 0) renderLiveView();
-        if (currentViewIdx === 1) {
-          updateStreamPathCard();
-          drawFpsChart();
-        }
+        dash();
       }
 
       // Storage status
@@ -1537,9 +1286,9 @@
         const snapMb = (storageRes.events?.total_bytes / 1e6 || 2.5).toFixed(1);
         const forecast = storageRes.forecasting?.estimated_days_remaining
           ? `${Math.round(storageRes.forecasting.estimated_days_remaining)} days left`
-          : '30+ days left';
+          : 'Over 30 days left';
 
-        if ($('#store-percent')) $('#store-percent').innerHTML = `${percent}%<small>Used</small>`;
+        if ($('#store-percent')) $('#store-percent').innerHTML = `${percent}%<small>used</small>`;
         if ($('#store-used')) $('#store-used').textContent = `${usedGb} GB`;
         if ($('#store-free')) $('#store-free').textContent = `${freeGb} GB`;
         if ($('#store-recs')) $('#store-recs').textContent = `${recMb} MB`;
@@ -1548,317 +1297,170 @@
         if ($('#store-ring')) $('#store-ring').style.setProperty('--ring-fill', `${percent}%`);
       }
     } catch (err) {
-      console.warn('Telemetry polling notice:', err);
+      console.warn('Telemetry poll notice:', err);
     }
   }
 
   // --- Global Event Listeners Delegation ---
-  function initEventDelegation() {
-    document.addEventListener('click', (e) => {
-      // 1. Navigation items
-      const navBtn = e.target.closest('[data-go]');
-      if (navBtn) {
-        switchView(parseInt(navBtn.dataset.go, 10));
-        return;
+  document.addEventListener('click', (e) => {
+    const c = (s) => e.target.closest(s);
+    let m;
+
+    if ((m = c('[data-go]'))) return go(+m.dataset.go);
+
+    if ((m = c('[data-act]'))) {
+      const act = m.dataset.act;
+      const cid = m.dataset.cid;
+      const targetCam = cams.find((x) => x.id === cid) || cams[sel];
+
+      if (act === 'record') return toggleRecording(cid);
+      if (act === 'start-cam') return startCamera(cid);
+      if (act === 'stop-cam') return stopCamera(cid);
+      if (act === 'restart-cam') return restartCamera(cid);
+      if (act === 'reset-cb') return resetCircuitBreaker(cid);
+      if (act === 'config') {
+        if ($('#config-cam-name')) $('#config-cam-name').textContent = targetCam.n;
+        if ($('#cfg-name')) $('#cfg-name').value = targetCam.n;
+        if ($('#cfg-url')) $('#cfg-url').value = targetCam.streamUrl;
+        if ($('#cfg-location')) $('#cfg-location').value = targetCam.ip;
+        return $('#config-dialog')?.showModal();
       }
-
-      // 2. Thumbnails
-      const thumb = e.target.closest('.thumb');
-      if (thumb && !e.target.closest('button')) {
-        selectedCamIdx = parseInt(thumb.dataset.i, 10);
-        if (thumb.closest('#prev')) {
-          switchView(0);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        } else {
-          renderLiveView();
-        }
-        return;
-      }
-
-      // 3. Focus button
-      const focusBtn = e.target.closest('[data-focus]');
-      if (focusBtn) {
-        selectedCamIdx = parseInt(focusBtn.dataset.focus, 10);
-        setLayout('focus');
-        switchView(0);
-        return;
-      }
-
-      // 4. Per-camera Start/Stop/Restart/Reset actions
-      const startCamBtn = e.target.closest('[data-act="start-cam"]');
-      if (startCamBtn) {
-        startCamera(startCamBtn.dataset.cid);
-        return;
-      }
-
-      const stopCamBtn = e.target.closest('[data-act="stop-cam"]');
-      if (stopCamBtn) {
-        stopCamera(stopCamBtn.dataset.cid);
-        return;
-      }
-
-      const restartCamBtn = e.target.closest('[data-act="restart-cam"]');
-      if (restartCamBtn) {
-        restartCamera(restartCamBtn.dataset.cid);
-        return;
-      }
-
-      const resetCbBtn = e.target.closest('[data-act="reset-cb"]');
-      if (resetCbBtn) {
-        resetCircuitBreaker(resetCbBtn.dataset.cid);
-        return;
-      }
-
-      // 5. Record toggle button
-      const recActBtn = e.target.closest('[data-act="record"]');
-      if (recActBtn) {
-        toggleRecording(recActBtn.dataset.cid || cameras[selectedCamIdx].id);
-        return;
-      }
-
-      // 6. Trigger Test Motion Recording
-      if (e.target.closest('#btn-trigger-motion')) {
-        triggerTestMotionRecording();
-        return;
-      }
-
-      // 7. AI Benchmark button
-      if (e.target.closest('#btn-ai-benchmark')) {
-        runAiBenchmark();
-        return;
-      }
-
-      // 8. Storage retention buttons
-      if (e.target.closest('#btn-dry-run-cleanup')) {
-        dryRunCleanup();
-        return;
-      }
-
-      if (e.target.closest('#btn-exec-cleanup')) {
-        executeRetentionCleanup();
-        return;
-      }
-
-      if (e.target.closest('#btn-reindex-storage')) {
-        reindexStorage();
-        return;
-      }
-
-      // 9. Zoom controls
-      const zoomBtn = e.target.closest('[data-zoom]');
-      if (zoomBtn) {
-        const type = zoomBtn.dataset.zoom;
-        if (type === 'in') zoomLevel = Math.min(zoomLevel + 0.25, 3.0);
-        else if (type === 'out') zoomLevel = Math.max(zoomLevel - 0.25, 1.0);
-        else if (type === 'reset') zoomLevel = 1.0;
-        const feed = $(`#feed-${cameras[selectedCamIdx].id}`);
-        if (feed) feed.style.transform = `scale(${zoomLevel})`;
-        zoomBtn.parentElement.querySelector('button[data-zoom="reset"]').textContent = `${zoomLevel.toFixed(1)}x`;
-        return;
-      }
-
-      // 10. Fullscreen toggle
-      if (e.target.closest('[data-fs]')) {
-        const feed = $('#mc .feed');
-        if (feed && feed.requestFullscreen) feed.requestFullscreen();
-        return;
-      }
-
-      // 11. Top Bar Actions: Run All / Restart All / Stop All / Refresh
-      if (e.target.closest('#btn-run-all')) {
-        runAllCameras();
-        return;
-      }
-
-      if (e.target.closest('#restart')) {
-        $('#dlg')?.showModal();
-        return;
-      }
-
-      if (e.target.closest('#btn-stop-all')) {
-        $('#stop-dlg')?.showModal();
-        return;
-      }
-
-      if (e.target.closest('#no')) {
-        $('#dlg')?.close();
-        return;
-      }
-
-      if (e.target.closest('#yes')) {
-        $('#dlg')?.close();
-        restartAllCameras();
-        return;
-      }
-
-      if (e.target.closest('#stop-no')) {
-        $('#stop-dlg')?.close();
-        return;
-      }
-
-      if (e.target.closest('#stop-yes')) {
-        $('#stop-dlg')?.close();
-        stopAllCameras();
-        return;
-      }
-
-      if (e.target.closest('#refresh')) {
-        pollBackendHealth();
-        showToast('Feeds & telemetry refreshed');
-        return;
-      }
-
-      // 12. Sidebar toggle
-      if (e.target.closest('#sbt')) {
-        const shell = $('#shell');
-        if (shell) {
-          const isHidden = shell.classList.toggle('hide');
-          $('#sbt').setAttribute('aria-expanded', !isHidden);
-        }
-        return;
-      }
-
-      // 13. Playback recordings buttons
-      const playBtn = e.target.closest('[data-rec-play]');
-      if (playBtn) {
-        playRecording(playBtn.dataset.recPlay);
-        return;
-      }
-
-      const delRecBtn = e.target.closest('[data-rec-del]');
-      if (delRecBtn) {
-        deleteRecording(delRecBtn.dataset.recDel);
-        return;
-      }
-
-      if (e.target.closest('#refresh-recordings')) {
-        loadRecordings();
-        showToast('Recordings list refreshed');
-        return;
-      }
-
-      // 14. Events snapshot lightbox & delete
-      const snapBtn = e.target.closest('[data-ev-snap]');
-      if (snapBtn) {
-        openEventLightbox(snapBtn.dataset.evSnap);
-        return;
-      }
-
-      const delEvBtn = e.target.closest('[data-ev-del]');
-      if (delEvBtn) {
-        deleteEvent(delEvBtn.dataset.evDel);
-        return;
-      }
-
-      if (e.target.closest('#clear-events-btn')) {
-        clearAllEvents();
-        return;
-      }
-
-      if (e.target.closest('#lightbox-close')) {
-        $('#event-dialog')?.close();
-        return;
-      }
-
-      // 15. Diagnostics export bundle
-      if (e.target.closest('#btn-generate-bundle')) {
-        generateDiagnosticBundle();
-        return;
-      }
-
-      // 16. Notifications actions
-      const ackBtn = e.target.closest('[data-notif-ack]');
-      if (ackBtn) {
-        acknowledgeNotification(ackBtn.dataset.notifAck);
-        return;
-      }
-
-      if (e.target.closest('#notif-ack-all')) {
-        acknowledgeAllNotifications();
-        return;
-      }
-
-      if (e.target.closest('#notif-clear-all')) {
-        clearAllNotifications();
-        return;
-      }
-
-      if (e.target.closest('#notif-simulate')) {
-        simulateNotification();
-        return;
-      }
-
-      // 17. Telegram Bot Dialog
-      if (e.target.closest('#btn-telegram-settings')) {
-        $('#telegram-dialog')?.showModal();
-        return;
-      }
-
-      if (e.target.closest('#tg-cancel')) {
-        $('#telegram-dialog')?.close();
-        return;
-      }
-
-      if (e.target.closest('#tg-test')) {
-        testTelegramBot();
-        return;
-      }
-
-      // 18. Config dialog
-      const cfgBtn = e.target.closest('[data-act="config"]');
-      if (cfgBtn) {
-        const cid = cfgBtn.dataset.cid || cameras[selectedCamIdx].id;
-        const cam = cameras.find((c) => c.id === cid);
-        if (cam) {
-          if ($('#config-cam-name')) $('#config-cam-name').textContent = cam.name;
-          if ($('#cfg-name')) $('#cfg-name').value = cam.name;
-          if ($('#cfg-url')) $('#cfg-url').value = cam.streamUrl;
-          if ($('#cfg-location')) $('#cfg-location').value = cam.ip;
-          $('#config-dialog')?.showModal();
-        }
-        return;
-      }
-
-      if (e.target.closest('#cfg-cancel')) {
-        $('#config-dialog')?.close();
-        return;
-      }
-    });
-
-    // Camera config form submit
-    $('#config-form')?.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const cam = cameras[selectedCamIdx];
-      if (cam) {
-        cam.name = $('#cfg-name').value || cam.name;
-        cam.streamUrl = $('#cfg-url').value || cam.streamUrl;
-        cam.ip = $('#cfg-location').value || cam.ip;
-        showToast(`Saved configuration for ${cam.name}`);
-        renderLiveView();
-      }
-      $('#config-dialog')?.close();
-    });
-  }
-
-  // --- Initializer ---
-  function init() {
-    initNav();
-    initSegmentedControls();
-    initEventDelegation();
-    switchView(1); // Default to Monitoring View per user reference image
-
-    pollBackendHealth();
-    setInterval(pollBackendHealth, 3000);
-
-    if (window.innerWidth <= 900) {
-      $('#shell')?.classList.add('hide');
-      $('#sbt')?.setAttribute('aria-expanded', 'false');
+      return;
     }
+
+    if ((m = c('[data-focus]') || c('[data-prev]'))) {
+      sel = +(m.dataset.focus ?? m.dataset.prev);
+      live();
+      layout('focus');
+      return go(0);
+    }
+
+    if ((m = c('[data-thumb]'))) {
+      sel = +m.dataset.thumb;
+      return live();
+    }
+
+    // Zoom controls
+    const zoomBtn = c('[data-zoom]');
+    if (zoomBtn) {
+      const type = zoomBtn.dataset.zoom;
+      if (type === 'in') zoomLevel = Math.min(zoomLevel + 0.25, 3.0);
+      else if (type === 'out') zoomLevel = Math.max(zoomLevel - 0.25, 1.0);
+      else if (type === 'reset') zoomLevel = 1.0;
+      const mc = $('#mc');
+      if (mc) mc.style.transform = `scale(${zoomLevel})`;
+      const resetBtn = zoomBtn.parentElement.querySelector('[data-zoom="reset"]');
+      if (resetBtn) resetBtn.textContent = `${zoomLevel.toFixed(1)}x`;
+      return;
+    }
+
+    if (c('[data-fs]')) {
+      const f = $('#mc');
+      if (f && f.requestFullscreen) f.requestFullscreen();
+      return;
+    }
+
+    if (c('#refresh')) {
+      pollBackendHealth();
+      return toast('Feeds & telemetry refreshed');
+    }
+
+    if (c('#restart')) return ask('restart');
+    if (c('#btn-stop-all')) return ask('stop');
+    if (c('#btn-run-all')) return runAllCameras();
+    if (c('#btn-toggle-role')) return toggleRole();
+
+    // Dialog handlers
+    if (c('#no')) return $('#dlg')?.close();
+    if (c('#yes')) {
+      $('#dlg')?.close();
+      if (pend === 'restart') return restartAllCameras();
+      if (pend === 'stop') return stopAllCameras();
+      return;
+    }
+
+    // Playback actions
+    if ((m = c('[data-rec-play]'))) return playRecording(m.dataset.recPlay);
+    if ((m = c('[data-rec-del]'))) return deleteRecording(m.dataset.recDel);
+    if (c('#refresh-recordings')) {
+      loadRecordings();
+      return toast('Recordings list refreshed');
+    }
+    if (c('#btn-trigger-motion')) return triggerTestMotionRecording();
+
+    // Events actions
+    if ((m = c('[data-ev-snap]'))) return openEventLightbox(m.dataset.evSnap);
+    if ((m = c('[data-ev-del]'))) return deleteEvent(m.dataset.evDel);
+    if (c('#clear-events-btn')) return clearAllEvents();
+    if (c('#btn-ai-benchmark')) return runAiBenchmark();
+    if (c('#lightbox-close')) return $('#event-dialog')?.close();
+
+    // Storage actions
+    if (c('#btn-dry-run-cleanup')) return dryRunCleanup();
+    if (c('#btn-exec-cleanup')) return executeRetentionCleanup();
+    if (c('#btn-reindex-storage')) return reindexStorage();
+
+    // Diagnostics actions
+    if (c('#btn-generate-bundle')) return generateDiagnosticBundle();
+
+    // Notifications actions
+    if ((m = c('[data-notif-ack]'))) return acknowledgeNotification(m.dataset.notifAck);
+    if (c('#notif-ack-all')) return acknowledgeAllNotifications();
+    if (c('#notif-clear-all')) return clearAllNotifications();
+    if (c('#notif-simulate')) return simulateNotification();
+    if (c('#btn-telegram-settings')) return $('#telegram-dialog')?.showModal();
+    if (c('#tg-cancel')) return $('#telegram-dialog')?.close();
+    if (c('#tg-test')) return testTelegramBot();
+
+    // Config dialog cancel
+    if (c('#cfg-cancel')) return $('#config-dialog')?.close();
+  });
+
+  // Config form submit
+  $('#config-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const cam = cams[sel];
+    if (cam) {
+      cam.n = $('#cfg-name').value || cam.n;
+      cam.streamUrl = $('#cfg-url').value || cam.streamUrl;
+      cam.ip = $('#cfg-location').value || cam.ip;
+      toast(`Saved configuration for ${cam.n}`);
+      live();
+    }
+    $('#config-dialog')?.close();
+  });
+
+  // --- Initialization ---
+  window.addEventListener('resize', () => {
+    move();
+    drawFps();
+  });
+
+  initTabs();
+  seg('#layouts', (b) => layout(b.dataset.l));
+  seg('#pick', (b) => {
+    pick = +b.dataset.i;
+    path();
+  });
+  seg('#range', () => drawFps());
+  seg('#events-cam-filter', (b) => {
+    eventFilterCid = b.dataset.cid || '';
+    renderEventsList();
+  });
+  seg('#notif-sev-filter', (b) => {
+    notifFilterSev = b.dataset.sev || '';
+    renderNotificationsList();
+  });
+
+  dash();
+  live();
+  go(0); // Start on Live View as designed in user snippet
+
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(move);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  // Periodic polling
+  pollBackendHealth();
+  setInterval(pollBackendHealth, 3000);
 })();
