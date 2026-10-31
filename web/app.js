@@ -16,7 +16,9 @@
       ip: '192.168.100.24',
       p: '8080',
       d: 'ID 124095217 · Port 8080',
-      streamUrl: 'http://127.0.0.1:8080/live.mjpg',
+      streamUrl: '/proxy/stream/v380-1',
+      snapshotUrl: '/proxy/snapshot/v380-1',
+      directStreamUrl: 'http://127.0.0.1:8080/stream.mjpg',
       w: 1,
       s: 'degraded',
       fps: 0.0,
@@ -40,7 +42,9 @@
       ip: '192.168.100.4',
       p: '8081',
       d: 'ID 97357757 · Port 8081',
-      streamUrl: 'http://127.0.0.1:8081/live.mjpg',
+      streamUrl: '/proxy/stream/v380-2',
+      snapshotUrl: '/proxy/snapshot/v380-2',
+      directStreamUrl: 'http://127.0.0.1:8081/stream.mjpg',
       w: 1,
       s: 'degraded',
       fps: 0.0,
@@ -64,7 +68,9 @@
       ip: '192.168.100.6',
       p: '10554',
       d: 'Port 10554 · VStarcam',
-      streamUrl: 'http://127.0.0.1:8082/live.mjpg',
+      streamUrl: '/proxy/stream/okam-3',
+      snapshotUrl: '/proxy/snapshot/okam-3',
+      directStreamUrl: 'http://127.0.0.1:8082/stream.mjpg',
       w: 80,
       s: 'degraded',
       fps: 0.0,
@@ -204,18 +210,29 @@
   // Action button template
   const A = (c, a, t, x = '') => `<button class="btn ${x}" data-act="${a}" data-cid="${c.id}">${t}</button>`;
   const bar = (c, s) => `<div class="vbar"><span><i class="dot ${s[1]}"></i>${c.n}</span><em>${s[2]}</em></div>`;
-  const msg = (c, ids) => `<div${ids ? ` id="msg-${c.id}"` : ''} class="msg-box"><b>Can't reach ${c.n.split(',')[0]}</b><p>No frames from ${c.ip}. Check that the camera is on and on this network.</p>${A(c, 'restart-cam', 'Retry connection', 'sm')}</div>`;
+  const msg = (c, id) => `
+    <div id="${id || `msg-${c.id}`}" class="msg-box" style="display:none;">
+      <svg class="ico nosig" style="width:36px;height:36px;opacity:.55;margin-bottom:8px;"><use href="#i-cam"/></svg>
+      <b>Can't reach ${escapeHtml(c.n.split(',')[0])}</b>
+      <p>No frames from ${c.ip}. Check that the camera is powered on and connected.</p>
+      ${A(c, 'restart-cam', 'Retry connection', 'sm')}
+    </div>
+  `;
   const stats = (c) => `<div class="stats"><div><b>${c.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${c.latencyMs} ms</b><span>latency</span></div><div><b>${c.aspect}</b><span>ratio</span></div><div><b>${c.w}</b><span>web</span></div></div>`;
   const acts = (c, f) => `<div class="acts">${A(c, 'record', c.recording ? 'Stop' : 'Record', 'sm rec adm')}${A(c, 'restart-cam', 'Reload', 'sm adm')}${A(c, c.running ? 'stop-cam' : 'start-cam', c.running ? 'Stop' : 'Start', 'sm adm')}${A(c, 'config', 'Configure', 'sm adm')}${f}</div>`;
 
   const card = (c, i) => {
     const s = ST[c.s] || ST.degraded;
+    const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
     return `
       <article class="card cam">
         <div class="video" id="feed-${c.id}">
           ${bar(c, s)}
-          <img class="mjpeg-stream" id="stream-img-${c.id}" src="${c.streamUrl}?t=${Date.now()}" alt="${c.n}" onerror="this.hidden=true; document.getElementById('msg-${c.id}').hidden=false;" onload="this.hidden=false; document.getElementById('msg-${c.id}').hidden=true;" hidden>
-          ${msg(c, 1)}
+          <img class="mjpeg-stream" id="stream-img-${c.id}" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
+            onerror="this.style.display='none'; const m=document.getElementById('msg-${c.id}'); if(m) m.style.display='flex';" 
+            onload="this.style.display='block'; const m=document.getElementById('msg-${c.id}'); if(m) m.style.display='none';" 
+            style="${isHealthy ? 'display:block;' : 'display:none;'}">
+          ${msg(c, `msg-${c.id}`)}
         </div>
         <div class="cmeta">
           <div class="ip">${c.ip} · ${c.d}</div>
@@ -228,16 +245,20 @@
 
   const mini = (c, i) => {
     const s = ST[c.s] || ST.degraded;
+    const snapUrl = c.snapshotUrl || `/proxy/snapshot/${c.id}`;
     return `
       <div class="video">
         <div class="vbar">
           <span><i class="dot ${s[1]}"></i>CAM ${p2(i + 1)}</span>
           <em>${s[2]}</em>
         </div>
-        <svg class="ico nosig" style="width:30px;height:30px;opacity:.45"><use href="#i-cam"/></svg>
+        <img src="${snapUrl}?t=${Date.now()}" alt="${escapeHtml(c.n)}" 
+          onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='block';" 
+          onload="this.style.display='block'; if(this.nextElementSibling) this.nextElementSibling.style.display='none';" />
+        <svg class="ico nosig" style="width:30px;height:30px;opacity:.45;display:none;"><use href="#i-cam"/></svg>
       </div>
       <div class="tl">
-        <b>${c.n}</b>
+        <b>${escapeHtml(c.n)}</b>
         <span class="${s[1]}"><i class="dot"></i>${s[0]}</span>
       </div>
     `;
@@ -249,13 +270,17 @@
   function live() {
     const c = cams[sel] || cams[0], s = ST[c.s] || ST.degraded;
     const stage = $('#stage');
+    const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
     if (stage) {
       stage.innerHTML = `
         <div class="card cam">
           <div class="video big" id="mc" style="transform:scale(${zoomLevel});transform-origin:center center;">
             ${bar(c, s)}
-            <img class="mjpeg-stream" id="stream-img-main" src="${c.streamUrl}?t=${Date.now()}" alt="${c.n}" onerror="this.hidden=true;" onload="this.hidden=false;">
-            ${msg(c)}
+            <img class="mjpeg-stream" id="stream-img-main" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
+              onerror="this.style.display='none'; const m=document.getElementById('msg-main'); if(m) m.style.display='flex';" 
+              onload="this.style.display='block'; const m=document.getElementById('msg-main'); if(m) m.style.display='none';"
+              style="${isHealthy ? 'display:block;' : 'display:none;'}">
+            ${msg(c, 'msg-main')}
             <div class="vfoot">
               <span class="ts"></span>
               <div class="zoom">
@@ -269,7 +294,7 @@
           <div class="cmeta">
             <div class="mrow">
               <div>
-                <b class="nm">${c.n}</b>
+                <b class="nm">${escapeHtml(c.n)}</b>
                 <div class="ip">${c.ip} · ${c.d} · Port ${c.p}</div>
               </div>
               ${acts(c, '')}
@@ -293,6 +318,47 @@
     const camsGrid = $('#cams');
     if (camsGrid) camsGrid.innerHTML = cams.map(card).join('');
     tick();
+  }
+
+  function updateLiveStats() {
+    const c = cams[sel] || cams[0];
+    const s = ST[c.s] || ST.degraded;
+
+    // Update main stage OSD bar & stats
+    const mainBar = $('#mc .vbar');
+    if (mainBar) {
+      mainBar.innerHTML = `<span><i class="dot ${s[1]}"></i>${escapeHtml(c.n)}</span><em>${s[2]}</em>`;
+    }
+    const stageMeta = $('#stage .cmeta');
+    if (stageMeta) {
+      const statsBox = stageMeta.querySelector('.stats');
+      if (statsBox) {
+        statsBox.innerHTML = `<div><b>${c.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${c.latencyMs} ms</b><span>latency</span></div><div><b>${c.aspect}</b><span>ratio</span></div><div><b>${c.w}</b><span>web</span></div>`;
+      }
+      const checksBox = stageMeta.querySelector('.signal-checks');
+      if (checksBox) {
+        checksBox.innerHTML = `
+          <div class="signal-check"><i class="dot ${c.checks.portListening ? 'good-t' : 'bad-t'}"></i>Port :${c.p}</div>
+          <div class="signal-check"><i class="dot ${c.checks.feedAlive ? 'good-t' : 'warn-t'}"></i>Feed Stream</div>
+          <div class="signal-check"><i class="dot ${!c.checks.streamFrozen ? 'good-t' : 'bad-t'}"></i>Freeze Detector</div>
+          <div class="signal-check"><i class="dot ${c.checks.fpsAdequate ? 'good-t' : 'warn-t'}"></i>FPS Quality</div>
+        `;
+      }
+    }
+
+    // Update grid cards if in grid mode
+    cams.forEach((cam) => {
+      const cardEl = $(`#feed-${cam.id}`)?.closest('.card');
+      if (cardEl) {
+        const cs = ST[cam.s] || ST.degraded;
+        const vbar = cardEl.querySelector('.vbar');
+        if (vbar) vbar.innerHTML = `<span><i class="dot ${cs[1]}"></i>${escapeHtml(cam.n)}</span><em>${cs[2]}</em>`;
+        const statsBox = cardEl.querySelector('.stats');
+        if (statsBox) {
+          statsBox.innerHTML = `<div><b>${cam.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${cam.latencyMs} ms</b><span>latency</span></div><div><b>${cam.aspect}</b><span>ratio</span></div><div><b>${cam.w}</b><span>web</span></div>`;
+        }
+      }
+    });
   }
 
   // --- Dashboard Rendering ---
@@ -1368,6 +1434,7 @@
         }
 
         dash();
+        updateLiveStats();
       }
 
       // Storage status

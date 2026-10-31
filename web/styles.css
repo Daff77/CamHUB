@@ -302,7 +302,19 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   height: clamp(320px, calc(100vh - 400px), 800px);
   border-radius: 18px;
 }
-.video img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.video img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+.video .msg-box {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  width: 100%;
+  height: 100%;
+}
 .video p { font-size: 13px; padding: 0 20px; }
 .video b { display: block; color: var(--text); font-size: 15px; margin-bottom: 3px; }
 .video .btn { margin-top: 10px; }
