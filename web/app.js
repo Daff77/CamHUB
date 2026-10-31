@@ -316,6 +316,44 @@
 
     path();
     drawFps();
+    updateDashEvents();
+  }
+
+  async function updateDashEvents() {
+    const recentBox = $('#dash-recent-events');
+    if (!recentBox) return;
+
+    if (!eventsCache || eventsCache.length === 0) {
+      try {
+        const res = await fetch('/api/events?limit=6');
+        const data = await res.json();
+        eventsCache = data.events || [];
+      } catch (e) {}
+    }
+
+    if (eventsCache.length === 0) {
+      recentBox.innerHTML = '<div class="empty" style="padding:14px;"><p>No recent events captured</p></div>';
+      return;
+    }
+
+    if ($('#ev-count')) $('#ev-count').textContent = `${eventsCache.length} recent`;
+
+    recentBox.innerHTML = eventsCache.slice(0, 3).map((ev) => {
+      const camName = ev.cameraName || ev.camera_name || (cams.find((c) => c.id === (ev.cameraId || ev.camera_id))?.name) || ev.cameraId || 'Camera';
+      const isAi = !!(ev.primaryClass || (ev.detectedObjects && ev.detectedObjects.length > 0));
+      const label = ev.primaryClass
+        ? `${ev.primaryClass.charAt(0).toUpperCase() + ev.primaryClass.slice(1)} detected`
+        : `Motion detected (${Math.round(ev.score || 0)}%)`;
+      return `
+        <div class="ev" style="cursor:pointer;" data-ev-snap="${escapeHtml(ev.id)}">
+          <span class="dot ${isAi ? 'good' : 'warn'}"></span>
+          <div style="flex:1">
+            <b>${escapeHtml(camName)}</b>
+            <span>${escapeHtml(label)} · ${formatDateTime(ev.timestamp)}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
   }
 
   // --- AGENT 2: Pipeline Inspector ---
@@ -617,11 +655,16 @@
 
       listEl.innerHTML = recordingsCache
         .map(
-          (rec) => `
+          (rec) => {
+            const camName = rec.cameraName || (cams.find((c) => c.id === (rec.cameraId || rec.camera_id))?.name) || rec.cameraId || rec.camera_name || rec.camera_id || 'Camera';
+            const startTime = rec.startTime || rec.start_time || rec.created_at || rec.timestamp;
+            const fileSize = rec.fileSizeBytes || rec.file_size || rec.size_bytes || 0;
+            const duration = rec.durationSeconds || rec.duration_seconds || rec.duration || 0;
+            return `
         <div class="rec-item" data-rec-id="${escapeHtml(rec.id)}">
           <div class="rec-meta">
-            <b>${escapeHtml(rec.camera_name || rec.camera_id)}</b>
-            <span>${formatDateTime(rec.created_at || rec.start_time)} · ${formatBytes(rec.size_bytes || rec.file_size)} · ${formatDuration(rec.duration_seconds || rec.duration)}</span>
+            <b>${escapeHtml(camName)}</b>
+            <span>${formatDateTime(startTime)} · ${formatBytes(fileSize)} · ${formatDuration(duration)}</span>
           </div>
           <div class="acts">
             <button class="btn sq sm" data-rec-play="${escapeHtml(rec.id)}" title="Play video">
@@ -635,7 +678,8 @@
             </button>
           </div>
         </div>
-      `
+      `;
+          }
         )
         .join('');
     } catch (err) {
@@ -748,7 +792,10 @@
     }
 
     if (info) {
-      info.textContent = `Streaming ${rec.camera_name || rec.camera_id} · Recorded ${formatDateTime(rec.created_at || rec.start_time)} (${formatDuration(rec.duration_seconds || rec.duration)})`;
+      const camName = rec.cameraName || (cams.find((c) => c.id === (rec.cameraId || rec.camera_id))?.name) || rec.cameraId || rec.camera_name || rec.camera_id || 'Camera';
+      const startTime = rec.startTime || rec.start_time || rec.created_at || rec.timestamp;
+      const duration = rec.durationSeconds || rec.duration_seconds || rec.duration || 0;
+      info.textContent = `Streaming ${camName} · Recorded ${formatDateTime(startTime)} (${formatDuration(duration)})`;
     }
 
     if (tag) {
@@ -785,9 +832,24 @@
     if (!list) return;
 
     try {
-      const res = await fetch('/api/events');
+      const res = await fetch('/api/events?limit=200');
       const data = await res.json();
       eventsCache = data.events || [];
+
+      // Update counters for All, Cam 1, Cam 2, Cam 3
+      const count1 = eventsCache.filter((e) => (e.cameraId || e.camera_id) === 'v380-1').length;
+      const count2 = eventsCache.filter((e) => (e.cameraId || e.camera_id) === 'v380-2').length;
+      const count3 = eventsCache.filter((e) => (e.cameraId || e.camera_id) === 'okam-3').length;
+
+      if ($('#cnt-ev-all')) $('#cnt-ev-all').textContent = eventsCache.length;
+      if ($('#cnt-ev-1')) $('#cnt-ev-1').textContent = count1;
+      if ($('#cnt-ev-2')) $('#cnt-ev-2').textContent = count2;
+      if ($('#cnt-ev-3')) $('#cnt-ev-3').textContent = count3;
+
+      if ($('#card-cnt-v380-1')) $('#card-cnt-v380-1').textContent = `${count1} Events`;
+      if ($('#card-cnt-v380-2')) $('#card-cnt-v380-2').textContent = `${count2} Events`;
+      if ($('#card-cnt-okam-3')) $('#card-cnt-okam-3').textContent = `${count3} Events`;
+
       renderEventsList();
 
       const tabItem = tabs.find((t) => t[1] === 'v-events');
@@ -805,13 +867,13 @@
 
     let filtered = eventsCache;
     if (eventFilterCid) {
-      filtered = filtered.filter((ev) => ev.camera_id === eventFilterCid);
+      filtered = filtered.filter((ev) => (ev.cameraId || ev.camera_id) === eventFilterCid);
     }
 
     if (filtered.length === 0) {
       list.innerHTML = `
         <div class="empty" style="grid-column: 1 / -1">
-          <p>No activity events found.<br>Camera motion triggers and AI detections will be captured here.</p>
+          <p>No activity events found for this filter.<br>Camera motion triggers and AI detections will be captured here.</p>
         </div>
       `;
       return;
@@ -819,17 +881,38 @@
 
     list.innerHTML = filtered
       .map(
-        (ev) => `
+        (ev) => {
+          const cid = ev.cameraId || ev.camera_id || '';
+          const camName = ev.cameraName || ev.camera_name || (cams.find((c) => c.id === cid)?.name) || cid || 'Camera';
+          let tagText = 'Motion';
+          let tagClass = 'warn';
+
+          if (ev.primaryClass) {
+            const cls = ev.primaryClass.charAt(0).toUpperCase() + ev.primaryClass.slice(1);
+            const conf = ev.primaryConfidence ? ` ${Math.round(ev.primaryConfidence * 100)}%` : '';
+            tagText = `${cls}${conf}`;
+            tagClass = 'good';
+          } else if (ev.detectedObjects && ev.detectedObjects.length > 0) {
+            const d = ev.detectedObjects[0];
+            const cls = d.class.charAt(0).toUpperCase() + d.class.slice(1);
+            const conf = d.confidence ? ` ${Math.round(d.confidence * 100)}%` : '';
+            tagText = `${cls}${conf}`;
+            tagClass = 'good';
+          } else if (ev.score != null) {
+            tagText = `Motion ${Math.round(ev.score)}%`;
+          }
+
+          return `
       <div class="event-card">
         <div class="event-snap" data-ev-snap="${escapeHtml(ev.id)}">
           <img src="/api/events/snapshot?id=${encodeURIComponent(ev.id)}" alt="Event Snapshot" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 24 24\\'%3E%3Ctext x=\\'50%\\' y=\\'50%\\' fill=\\'%23666\\' text-anchor=\\'middle\\'%3ENo Snapshot%3C/text%3E%3C/svg%3E';" />
-          <span class="tag ${ev.event_type === 'ai_person' ? 'good' : 'warn'}">
-            ${escapeHtml(ev.event_type === 'ai_person' ? 'Person' : 'Motion')}
+          <span class="tag ${tagClass}">
+            ${escapeHtml(tagText)}
           </span>
         </div>
         <div class="event-info">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <b>${escapeHtml(ev.camera_name || ev.camera_id)}</b>
+            <b>${escapeHtml(camName)}</b>
             <button class="btn sq sm adm" data-ev-del="${escapeHtml(ev.id)}" title="Delete Event">
               <svg class="ico"><use href="#i-trash"/></svg>
             </button>
@@ -837,7 +920,8 @@
           <span>${formatDateTime(ev.timestamp)}</span>
         </div>
       </div>
-    `
+    `;
+        }
       )
       .join('');
   }
@@ -851,10 +935,19 @@
     const details = $('#lightbox-details');
     const title = $('#lightbox-title');
 
-    if (title) title.textContent = `${ev.camera_name || ev.camera_id} — ${ev.event_type || 'Motion'}`;
+    const cid = ev.cameraId || ev.camera_id || '';
+    const camName = ev.cameraName || ev.camera_name || (cams.find((c) => c.id === cid)?.name) || cid || 'Camera';
+    const tagText = ev.primaryClass
+      ? ev.primaryClass.charAt(0).toUpperCase() + ev.primaryClass.slice(1)
+      : (ev.detectedObjects?.[0]?.class ? ev.detectedObjects[0].class.charAt(0).toUpperCase() + ev.detectedObjects[0].class.slice(1) : 'Motion');
+    const confStr = ev.primaryConfidence != null
+      ? `${(ev.primaryConfidence * 100).toFixed(1)}%`
+      : (ev.score != null ? `${ev.score.toFixed(1)}% motion` : 'N/A');
+
+    if (title) title.textContent = `${camName} — ${tagText}`;
     if (img) img.src = `/api/events/snapshot?id=${encodeURIComponent(id)}`;
     if (details) {
-      details.textContent = `Timestamp: ${formatDateTime(ev.timestamp)} | Confidence: ${ev.confidence ? (ev.confidence * 100).toFixed(1) + '%' : 'N/A'} | ID: ${ev.id}`;
+      details.textContent = `Camera: ${camName} (${cid}) | Detection: ${tagText} | Confidence/Score: ${confStr} | Time: ${formatDateTime(ev.timestamp)} | ID: ${ev.id}`;
     }
 
     if (dlg) dlg.showModal();
@@ -1389,6 +1482,15 @@
     if (c('#btn-trigger-motion')) return triggerTestMotionRecording();
 
     // Events actions
+    if ((m = c('[data-filter-cid]'))) {
+      const targetCid = m.dataset.filterCid;
+      eventFilterCid = targetCid;
+      $$('#events-cam-filter button').forEach((btn) => {
+        btn.setAttribute('aria-pressed', btn.dataset.cid === targetCid ? 'true' : 'false');
+      });
+      renderEventsList();
+      return;
+    }
     if ((m = c('[data-ev-snap]'))) return openEventLightbox(m.dataset.evSnap);
     if ((m = c('[data-ev-del]'))) return deleteEvent(m.dataset.evDel);
     if (c('#clear-events-btn')) return clearAllEvents();
