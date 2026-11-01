@@ -247,6 +247,15 @@
     cam1GridLens = localStorage.getItem('camhub_cam1_grid_lens') || 'all';
   } catch (_) {}
 
+  // PTZ Controller State
+  let ptzPanelOpen = false;
+  let ptzSpeed = 0.5;
+  let ptzMode = 'continuous'; // 'continuous' or 'step'
+  let ptzStepMs = 400;
+  let activePtzDir = null;
+  let activePresetId = 1;
+  let ptzPresetsCache = {};
+
   // Stream error handling with automatic reconnection
   window.handleStreamError = function(img, cid, msgId) {
     if (!img) return;
@@ -334,7 +343,10 @@
   }
 
   const stats = (c) => `<div class="stats"><div><b>${c.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${c.latencyMs} ms</b><span>latency</span></div><div><b class="ratio-val">${c.aspect}</b><span>ratio</span></div><div><b>${c.w}</b><span>web</span></div></div>`;
-  const acts = (c, f) => `<div class="acts">${A(c, 'record', c.recording ? 'Stop' : 'Record', 'sm rec adm')}${A(c, 'restart-cam', 'Reload', 'sm adm')}${A(c, c.running ? 'stop-cam' : 'start-cam', c.running ? 'Stop' : 'Start', 'sm adm')}${A(c, 'config', 'Configure', 'sm adm')}${f}</div>`;
+  const acts = (c, f) => {
+    const ptzBtn = (c.id === 'v380-1' || c.id === 'okam-3') ? `<button class="btn sm${ptzPanelOpen ? ' primary' : ''}" data-act="toggle-ptz" title="Toggle PTZ Controller"><svg class="ico"><use href="#i-ptz"/></svg><span>PTZ</span></button>` : '';
+    return `<div class="acts">${ptzBtn}${A(c, 'record', c.recording ? 'Stop' : 'Record', 'sm rec adm')}${A(c, 'restart-cam', 'Reload', 'sm adm')}${A(c, c.running ? 'stop-cam' : 'start-cam', c.running ? 'Stop' : 'Start', 'sm adm')}${A(c, 'config', 'Configure', 'sm adm')}${f}</div>`;
+  };
 
   const card = (c, i) => {
     const s = ST[c.s] || ST.degraded;
@@ -401,6 +413,336 @@
   };
 
   const thumb = (c, i, a, k) => `<button class="thumb" ${k}="${i}"${a === null ? '' : ` aria-pressed="${a}"`} aria-label="${c.n}, ${ST[c.s][0]}">${mini(c, i)}</button>`;
+
+  // --- PTZ Controller Operations & Rendering ---
+  function renderPTZController(c) {
+    const isCam1 = c.id === 'v380-1';
+    const isPTZCapable = isCam1 || c.id === 'okam-3';
+    if (!isPTZCapable) return '';
+
+    const lens3Badge = isCam1 ? '<span class="res-tag" style="background:rgba(106,169,232,0.12);color:var(--good);border-color:rgba(106,169,232,0.25);">Lensa 3 · Motorized PTZ Base</span>' : '';
+
+    return `
+      <div class="ptz-container${ptzPanelOpen ? '' : ' hidden'}" id="ptz-panel" data-cid="${c.id}">
+        <div class="ptz-header">
+          <div class="ptz-title-wrap">
+            <svg class="ico"><use href="#i-ptz"/></svg>
+            <span class="ptz-title">PTZ Tactical Controller (ONVIF Profile S)</span>
+            ${lens3Badge}
+            <span class="ptz-status-badge" id="ptz-active-badge">Idle</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="seg" id="ptz-mode-seg" role="group" aria-label="PTZ Movement Mode">
+              <button class="btn sm" data-ptz-mode="continuous" aria-pressed="${ptzMode === 'continuous'}">Continuous</button>
+              <button class="btn sm" data-ptz-mode="step" aria-pressed="${ptzMode === 'step'}">Step (Pulse)</button>
+            </div>
+            <button class="btn sm" id="btn-close-ptz" aria-label="Close PTZ controller">Close</button>
+          </div>
+        </div>
+
+        <div class="ptz-controls-grid">
+          <!-- 8-Way D-Pad -->
+          <div class="ptz-dpad-wrapper">
+            <div class="ptz-dpad" id="ptz-dpad" role="group" aria-label="Directional Controls">
+              <button class="ptz-btn diag" data-ptz-dir="upleft" title="Up-Left (Diagonal)"><svg class="ico"><use href="#i-arrow-upleft"/></svg></button>
+              <button class="ptz-btn" data-ptz-dir="up" title="Tilt Up"><svg class="ico"><use href="#i-arrow-up"/></svg></button>
+              <button class="ptz-btn diag" data-ptz-dir="upright" title="Up-Right (Diagonal)"><svg class="ico"><use href="#i-arrow-upright"/></svg></button>
+              <button class="ptz-btn" data-ptz-dir="left" title="Pan Left"><svg class="ico"><use href="#i-arrow-left"/></svg></button>
+              <button class="ptz-btn center-stop" data-ptz-dir="stop" title="Emergency Stop"><svg class="ico"><use href="#i-stop"/></svg></button>
+              <button class="ptz-btn" data-ptz-dir="right" title="Pan Right"><svg class="ico"><use href="#i-arrow-right"/></svg></button>
+              <button class="ptz-btn diag" data-ptz-dir="downleft" title="Down-Left (Diagonal)"><svg class="ico"><use href="#i-arrow-downleft"/></svg></button>
+              <button class="ptz-btn" data-ptz-dir="down" title="Tilt Down"><svg class="ico"><use href="#i-arrow-down"/></svg></button>
+              <button class="ptz-btn diag" data-ptz-dir="downright" title="Down-Right (Diagonal)"><svg class="ico"><use href="#i-arrow-downright"/></svg></button>
+            </div>
+          </div>
+
+          <!-- Right Section: Speed, Presets, Aux -->
+          <div class="ptz-settings-panel">
+            <!-- Speed Slider & Zoom -->
+            <div class="ptz-setting-row">
+              <span class="ptz-setting-label">Speed & Slew</span>
+              <div class="ptz-speed-control">
+                <input type="range" class="ptz-speed-slider" id="ptz-speed-range" min="0.1" max="1.0" step="0.05" value="${ptzSpeed}">
+                <span class="ptz-speed-val" id="ptz-speed-val">${(ptzSpeed * 100).toFixed(0)}%</span>
+              </div>
+              <div class="seg" role="group" aria-label="Zoom Controls">
+                <button class="btn sm" data-ptz-zoom="in" title="Zoom In"><svg class="ico"><use href="#i-zoom-in"/></svg> <span>Zoom +</span></button>
+                <button class="btn sm" data-ptz-zoom="out" title="Zoom Out"><svg class="ico"><use href="#i-zoom-out"/></svg> <span>Zoom −</span></button>
+              </div>
+            </div>
+
+            <!-- Presets Strip -->
+            <div class="ptz-setting-row">
+              <span class="ptz-setting-label">Preset Slots</span>
+              <div class="ptz-presets-strip" id="ptz-presets-strip">
+                <button class="ptz-preset-btn configured${activePresetId === 1 ? ' active' : ''}" data-preset="1" title="Preset 1 · Center / Home">1</button>
+                <button class="ptz-preset-btn configured${activePresetId === 2 ? ' active' : ''}" data-preset="2" title="Preset 2 · Pintu Masuk">2</button>
+                <button class="ptz-preset-btn configured${activePresetId === 3 ? ' active' : ''}" data-preset="3" title="Preset 3 · Lorong Utama">3</button>
+                <button class="ptz-preset-btn${activePresetId === 4 ? ' active' : ''}" data-preset="4" title="Preset 4 (Empty)">4</button>
+                <button class="ptz-preset-btn${activePresetId === 5 ? ' active' : ''}" data-preset="5" title="Preset 5 (Empty)">5</button>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button class="btn sm adm" id="btn-save-preset" title="Save current position to selected preset"><svg class="ico"><use href="#i-bookmark"/></svg><span>Save Slot</span></button>
+                <button class="btn sm adm" id="btn-clear-preset" title="Clear selected preset"><svg class="ico"><use href="#i-trash"/></svg><span>Clear</span></button>
+              </div>
+            </div>
+
+            <!-- Auxiliary Light & Image Controls -->
+            ${isCam1 ? `
+            <div class="ptz-setting-row">
+              <span class="ptz-setting-label">Auxiliary / IR</span>
+              <div class="ptz-aux-group">
+                <button class="btn sm" data-ptz-aux="light_auto" title="Set IR Light Auto"><svg class="ico"><use href="#i-bulb"/></svg><span>IR Auto</span></button>
+                <button class="btn sm" data-ptz-aux="light_on" title="Force IR Light On">IR On</button>
+                <button class="btn sm" data-ptz-aux="light_off" title="Force IR Light Off">IR Off</button>
+                <button class="btn sm" data-ptz-aux="image_flip" title="Flip Image 180°"><svg class="ico"><use href="#i-flip"/></svg><span>Flip 180°</span></button>
+              </div>
+            </div>
+            ` : ''}
+
+            <!-- Monospace Keyboard Hints -->
+            <div class="ptz-kbd-hints">
+              <svg class="ico" style="width:14px;height:14px;"><use href="#i-kb"/></svg>
+              <span>Tactical Keys: <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> Move &middot; <kbd>Space</kbd> Stop &middot; <kbd>+</kbd><kbd>−</kbd> Zoom &middot; <kbd>1-5</kbd> Presets</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  async function sendPtzMove(cid, dir, speed, durationMs, mode) {
+    activePtzDir = dir;
+    updatePtzBadge(`Moving: ${dir.toUpperCase()}`, true);
+    try {
+      const res = await fetch('/api/ptz/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: cid, dir, speed, duration: durationMs, mode })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        toast(`PTZ Error: ${data.message || 'Failed'}`);
+        updatePtzBadge('Idle', false);
+      }
+    } catch (e) {
+      console.warn('PTZ move err:', e);
+      updatePtzBadge('Idle', false);
+    }
+  }
+
+  async function sendPtzStop(cid) {
+    activePtzDir = null;
+    updatePtzBadge('Idle', false);
+    $$('.ptz-btn').forEach(b => b.classList.remove('active'));
+    try {
+      await fetch('/api/ptz/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: cid })
+      });
+    } catch (e) {
+      console.warn('PTZ stop err:', e);
+    }
+  }
+
+  async function sendPtzZoom(cid, action, speed) {
+    updatePtzBadge(`Zoom ${action.toUpperCase()}`, true);
+    try {
+      const res = await fetch('/api/ptz/zoom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: cid, action, speed })
+      });
+      const data = await res.json();
+      toast(data.message || `Zoom ${action}`);
+    } catch (e) {
+      toast(`Zoom error: ${e.message}`);
+    } finally {
+      setTimeout(() => updatePtzBadge('Idle', false), 800);
+    }
+  }
+
+  async function sendPtzPreset(cid, action, presetId, name) {
+    activePresetId = presetId;
+    updatePtzBadge(`Preset ${presetId}`, true);
+    try {
+      const res = await fetch('/api/ptz/preset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: cid, action, preset: presetId, name })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(data.message);
+        if (data.presets) refreshPresetPills(data.presets);
+      } else {
+        toast(`Preset: ${data.message}`);
+      }
+    } catch (e) {
+      toast(`Preset error: ${e.message}`);
+    } finally {
+      setTimeout(() => updatePtzBadge('Idle', false), 1000);
+    }
+  }
+
+  async function sendPtzAux(cid, cmd) {
+    try {
+      const res = await fetch('/api/ptz/aux', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: cid, cmd })
+      });
+      const data = await res.json();
+      toast(data.message || `Command ${cmd} sent`);
+    } catch (e) {
+      toast(`Aux error: ${e.message}`);
+    }
+  }
+
+  function updatePtzBadge(text, isMoving) {
+    const badge = $('#ptz-active-badge');
+    if (badge) {
+      badge.textContent = text;
+      if (isMoving) badge.classList.add('moving');
+      else badge.classList.remove('moving');
+    }
+  }
+
+  function refreshPresetPills(presets) {
+    if (!Array.isArray(presets)) return;
+    $$('.ptz-preset-btn').forEach(btn => {
+      const pid = parseInt(btn.dataset.preset, 10);
+      const p = presets.find(x => x.id === pid);
+      if (p && p.configured) {
+        btn.classList.add('configured');
+        btn.title = p.name || `Preset ${pid}`;
+      } else {
+        btn.classList.remove('configured');
+        btn.title = `Preset ${pid} (Empty)`;
+      }
+      if (pid === activePresetId) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+
+  function bindPTZControls() {
+    const ptzPanel = $('#ptz-panel');
+    if (!ptzPanel) return;
+    const cid = ptzPanel.dataset.cid;
+
+    // Speed slider
+    const speedRange = $('#ptz-speed-range');
+    if (speedRange) {
+      speedRange.oninput = (e) => {
+        ptzSpeed = parseFloat(e.target.value);
+        const valEl = $('#ptz-speed-val');
+        if (valEl) valEl.textContent = `${(ptzSpeed * 100).toFixed(0)}%`;
+      };
+    }
+
+    // 8-Way D-Pad Pointer Events
+    $$('#ptz-dpad .ptz-btn').forEach(btn => {
+      const dir = btn.dataset.ptzDir;
+      btn.onpointerdown = (e) => {
+        e.preventDefault();
+        try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+        btn.classList.add('active');
+        if (dir === 'stop') {
+          sendPtzStop(cid);
+        } else {
+          sendPtzMove(cid, dir, ptzSpeed, ptzMode === 'step' ? ptzStepMs : null, ptzMode);
+        }
+      };
+      btn.onpointerup = (e) => {
+        btn.classList.remove('active');
+        if (dir !== 'stop' && ptzMode === 'continuous') {
+          sendPtzStop(cid);
+        }
+      };
+      btn.onpointercancel = (e) => {
+        btn.classList.remove('active');
+        if (dir !== 'stop' && ptzMode === 'continuous') {
+          sendPtzStop(cid);
+        }
+      };
+    });
+
+    // Preset Buttons
+    $$('.ptz-preset-btn').forEach(btn => {
+      btn.onclick = () => {
+        const pid = parseInt(btn.dataset.preset, 10);
+        activePresetId = pid;
+        $$('.ptz-preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        sendPtzPreset(cid, 'goto', pid);
+      };
+    });
+
+    // Save Preset
+    const saveBtn = $('#btn-save-preset');
+    if (saveBtn) {
+      saveBtn.onclick = () => {
+        const pName = prompt(`Enter a label for Preset ${activePresetId}:`, `Preset ${activePresetId}`);
+        if (pName !== null) {
+          sendPtzPreset(cid, 'set', activePresetId, pName);
+        }
+      };
+    }
+
+    // Clear Preset
+    const clearBtn = $('#btn-clear-preset');
+    if (clearBtn) {
+      clearBtn.onclick = () => {
+        sendPtzPreset(cid, 'clear', activePresetId);
+      };
+    }
+
+    // Zoom Buttons
+    $$('[data-ptz-zoom]').forEach(btn => {
+      btn.onclick = () => {
+        sendPtzZoom(cid, btn.dataset.ptzZoom, ptzSpeed);
+      };
+    });
+
+    // Aux Buttons
+    $$('[data-ptz-aux]').forEach(btn => {
+      btn.onclick = () => {
+        sendPtzAux(cid, btn.dataset.ptzAux);
+      };
+    });
+
+    // Mode Toggle
+    $$('[data-ptz-mode]').forEach(btn => {
+      btn.onclick = () => {
+        ptzMode = btn.dataset.ptzMode;
+        $$('[data-ptz-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.ptzMode === ptzMode ? 'true' : 'false'));
+        toast(`PTZ Mode: ${ptzMode === 'continuous' ? 'Continuous (Hold to Move)' : 'Step (Pulse 400ms)'}`);
+      };
+    });
+
+    // Close Button
+    const closeBtn = $('#btn-close-ptz');
+    if (closeBtn) {
+      closeBtn.onclick = () => {
+        ptzPanelOpen = false;
+        ptzPanel.classList.add('hidden');
+        const tBtn = $('#btn-toggle-ptz');
+        if (tBtn) tBtn.classList.remove('active');
+      };
+    }
+
+    // Fetch initial presets from server
+    fetch(`/api/ptz/presets?id=${cid}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.presets) refreshPresetPills(d.presets);
+      })
+      .catch(() => {});
+  }
 
   // --- Live View Rendering ---
   function live() {
@@ -469,12 +811,16 @@
                 <div class="cmeta" style="padding:10px 4px 2px;">
                   <div class="mrow">
                     <b>Lensa 3 · PTZ Rotasi (Bawah)</b>
-                    <button class="btn sm" data-switch-lens="3">Perbesar Lensa 3</button>
+                    <div style="display:flex;gap:6px;">
+                      <button class="btn sm primary" data-open-ptz="v380-1"><svg class="ico"><use href="#i-ptz"/></svg> <span>PTZ</span></button>
+                      <button class="btn sm" data-switch-lens="3">Perbesar Lensa 3</button>
+                    </div>
                   </div>
                   <div class="ip">Sensor Gerak PTZ · 1920×1080 · 16:9 widescreen</div>
                 </div>
               </div>
             </div>
+            ${renderPTZController(c)}
             <div class="cmeta" style="margin-top:14px;">
               <div class="mrow">
                 <div>
@@ -531,6 +877,11 @@
                 <span class="ts"></span>
                 <span class="res-tag">${stageRes}</span>
                 <div class="zoom">
+                  ${(isCam1 || c.id === 'okam-3') ? `
+                  <button class="btn ptz-toggle-btn${ptzPanelOpen ? ' active' : ''}" id="btn-toggle-ptz" title="Toggle PTZ Controller">
+                    <svg class="ico"><use href="#i-ptz"/></svg><span>PTZ</span>
+                  </button>
+                  ` : ''}
                   <button class="btn" data-zoom="in" aria-label="Zoom in">+</button>
                   <button class="btn" data-zoom="reset" aria-label="Reset zoom">${zoomLevel.toFixed(1)}x</button>
                   <button class="btn" data-zoom="out" aria-label="Zoom out">−</button>
@@ -538,6 +889,7 @@
                 </div>
               </div>
             </div>
+            ${renderPTZController(c)}
             <div class="cmeta">
               <div class="mrow">
                 <div>
@@ -565,6 +917,7 @@
 
     const camsGrid = $('#cams');
     if (camsGrid) camsGrid.innerHTML = cams.map(card).join('');
+    bindPTZControls();
     applyFitMode(fitMode);
     tick();
   }
@@ -1785,6 +2138,16 @@
       try { localStorage.setItem('camhub_cam1_lens', cam1LensMode); } catch (_) {}
       return live();
     }
+    if ((m = c('[data-open-ptz]'))) {
+      cam1LensMode = '3';
+      ptzPanelOpen = true;
+      try { localStorage.setItem('camhub_cam1_lens', cam1LensMode); } catch (_) {}
+      return live();
+    }
+    if (c('#btn-toggle-ptz') || (m = c('[data-act="toggle-ptz"]'))) {
+      ptzPanelOpen = !ptzPanelOpen;
+      return live();
+    }
     if ((m = c('[data-cam1-lens]'))) {
       cam1GridLens = m.dataset.cam1Lens;
       try { localStorage.setItem('camhub_cam1_grid_lens', cam1GridLens); } catch (_) {}
@@ -1902,6 +2265,60 @@
       live();
     }
     $('#config-dialog')?.close();
+  });
+
+  // --- Tactical Keyboard Listener for PTZ Navigation ---
+  window.addEventListener('keydown', (e) => {
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+    const vLive = $('#v-live');
+    if (!vLive || vLive.hidden) return;
+
+    const c = cams[sel] || cams[0];
+    if (c.id !== 'v380-1' && c.id !== 'okam-3') return;
+
+    let dir = null;
+    if (e.key === 'ArrowUp') dir = 'up';
+    else if (e.key === 'ArrowDown') dir = 'down';
+    else if (e.key === 'ArrowLeft') dir = 'left';
+    else if (e.key === 'ArrowRight') dir = 'right';
+    else if (e.key === ' ') {
+      e.preventDefault();
+      sendPtzStop(c.id);
+      return;
+    } else if (['1', '2', '3', '4', '5'].includes(e.key)) {
+      sendPtzPreset(c.id, 'goto', parseInt(e.key, 10));
+      return;
+    } else if (e.key === '+' || e.key === '=') {
+      sendPtzZoom(c.id, 'in', ptzSpeed);
+      return;
+    } else if (e.key === '-' || e.key === '_') {
+      sendPtzZoom(c.id, 'out', ptzSpeed);
+      return;
+    }
+
+    if (dir && activePtzDir !== dir) {
+      e.preventDefault();
+      const btn = $(`[data-ptz-dir="${dir}"]`);
+      if (btn) btn.classList.add('active');
+      sendPtzMove(c.id, dir, ptzSpeed, ptzMode === 'step' ? ptzStepMs : null, ptzMode);
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+    const vLive = $('#v-live');
+    if (!vLive || vLive.hidden) return;
+
+    const c = cams[sel] || cams[0];
+    if (c.id !== 'v380-1' && c.id !== 'okam-3') return;
+
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      e.preventDefault();
+      $$('.ptz-btn').forEach(b => b.classList.remove('active'));
+      if (ptzMode === 'continuous') {
+        sendPtzStop(c.id);
+      }
+    }
   });
 
   // --- Initialization ---

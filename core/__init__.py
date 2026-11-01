@@ -70,7 +70,16 @@ from .diagnostics_service import (
     test_tcp_port
 )
 
+from .ptz_service import (
+    CamHubPTZService,
+    VALID_DIRECTIONS,
+    VALID_AUX_COMMANDS
+)
+
 __all__ = [
+    "CamHubPTZService",
+    "VALID_DIRECTIONS",
+    "VALID_AUX_COMMANDS",
     "CamHubDiagnosticsService",
     "sanitize_value",
     "sanitize_string",

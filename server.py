@@ -34,6 +34,7 @@ from core.motion_detector import MotionDetectorService
 from core.storage_manager import CamHubStorageManager
 from core.notification_center import NotificationCenter
 from core.diagnostics_service import CamHubDiagnosticsService
+from core.ptz_service import CamHubPTZService
 
 # Config file discovery: config/services_config.json first, fallback to root
 CONFIG_FILE = os.path.join(CONFIG_DIR, "services_config.json")
@@ -190,6 +191,7 @@ DIAGNOSTICS_SERVICE = CamHubDiagnosticsService(
     storage_manager=STORAGE_MANAGER,
     notification_center=NOTIFICATION_CENTER
 )
+PTZ_SERVICE = CamHubPTZService(load_config)
 
 SERVER_START_TIME = time.time()
 STATIC_DIR = WEB_DIR if os.path.isdir(WEB_DIR) else BASE_DIR
@@ -812,6 +814,19 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             self.send_json(200, NOTIFICATION_CENTER.get_stats())
             return
 
+        # PTZ Status & Presets Endpoints
+        if url.path == "/api/ptz/status":
+            cid = qs.get("id", [None])[0] or qs.get("cameraId", ["v380-1"])[0]
+            status = PTZ_SERVICE.get_status(cid)
+            self.send_json(200, status)
+            return
+
+        if url.path == "/api/ptz/presets":
+            cid = qs.get("id", [None])[0] or qs.get("cameraId", ["v380-1"])[0]
+            presets = PTZ_SERVICE.get_presets(cid)
+            self.send_json(200, {"cameraId": cid, "presets": presets})
+            return
+
         super().do_GET()
 
     def do_POST(self):
@@ -832,6 +847,98 @@ class CamHubHandler(SimpleHTTPRequestHandler):
                         cid = body_json.get("cameraId") or body_json.get("id")
             except Exception:
                 pass
+
+        # PTZ Camera Controls (ONVIF & V380)
+        if url.path == "/api/ptz/move":
+            direction = body_json.get("direction") or body_json.get("dir") or qs.get("dir", [None])[0] or qs.get("direction", [None])[0]
+            speed = body_json.get("speed") or qs.get("speed", ["0.5"])[0]
+            duration = body_json.get("duration") or qs.get("duration", [None])[0]
+            mode = body_json.get("mode") or qs.get("mode", ["continuous"])[0]
+            if not cid:
+                self.send_json(400, {"error": "Missing 'id' or 'cameraId' parameter"})
+                return
+            if not direction:
+                self.send_json(400, {"error": "Missing 'dir' or 'direction' parameter"})
+                return
+            ok, msg = PTZ_SERVICE.move(cid, direction, speed=speed, duration_ms=duration, mode=mode)
+            self.send_json(200 if ok else 400, {
+                "success": ok,
+                "message": msg,
+                "status": PTZ_SERVICE.get_status(cid)
+            })
+            return
+
+        if url.path == "/api/ptz/stop":
+            if not cid:
+                self.send_json(400, {"error": "Missing 'id' or 'cameraId' parameter"})
+                return
+            ok, msg = PTZ_SERVICE.stop(cid)
+            self.send_json(200 if ok else 400, {
+                "success": ok,
+                "message": msg,
+                "status": PTZ_SERVICE.get_status(cid)
+            })
+            return
+
+        if url.path == "/api/ptz/zoom":
+            action = body_json.get("action") or qs.get("action", [None])[0] or qs.get("dir", [None])[0]
+            speed = body_json.get("speed") or qs.get("speed", ["0.5"])[0]
+            if not cid:
+                self.send_json(400, {"error": "Missing 'id' or 'cameraId' parameter"})
+                return
+            if not action:
+                self.send_json(400, {"error": "Missing 'action' parameter ('in', 'out', or 'reset')"})
+                return
+            ok, msg = PTZ_SERVICE.zoom(cid, action, speed=speed)
+            self.send_json(200 if ok else 400, {
+                "success": ok,
+                "message": msg,
+                "status": PTZ_SERVICE.get_status(cid)
+            })
+            return
+
+        if url.path == "/api/ptz/preset":
+            action = body_json.get("action") or qs.get("action", ["goto"])[0]
+            preset_id = body_json.get("preset") or body_json.get("presetId") or qs.get("preset", [None])[0]
+            preset_name = body_json.get("name") or qs.get("name", [None])[0]
+            if not cid:
+                self.send_json(400, {"error": "Missing 'id' or 'cameraId' parameter"})
+                return
+            if not preset_id:
+                self.send_json(400, {"error": "Missing 'preset' ID parameter (1-5)"})
+                return
+            if action == "goto":
+                ok, msg = PTZ_SERVICE.preset_goto(cid, preset_id)
+            elif action in ("set", "save"):
+                ok, msg = PTZ_SERVICE.preset_set(cid, preset_id, name=preset_name)
+            elif action in ("clear", "remove"):
+                ok, msg = PTZ_SERVICE.preset_clear(cid, preset_id)
+            else:
+                self.send_json(400, {"error": f"Invalid preset action '{action}'. Use 'goto', 'set', or 'clear'."})
+                return
+            self.send_json(200 if ok else 400, {
+                "success": ok,
+                "message": msg,
+                "presets": PTZ_SERVICE.get_presets(cid),
+                "status": PTZ_SERVICE.get_status(cid)
+            })
+            return
+
+        if url.path == "/api/ptz/aux":
+            cmd = body_json.get("command") or body_json.get("cmd") or qs.get("cmd", [None])[0]
+            if not cid:
+                self.send_json(400, {"error": "Missing 'id' or 'cameraId' parameter"})
+                return
+            if not cmd:
+                self.send_json(400, {"error": "Missing 'command' or 'cmd' parameter"})
+                return
+            ok, msg = PTZ_SERVICE.auxiliary(cid, cmd)
+            self.send_json(200 if ok else 400, {
+                "success": ok,
+                "message": msg,
+                "status": PTZ_SERVICE.get_status(cid)
+            })
+            return
 
         # Recording controls
         if url.path == "/api/recordings/start":
@@ -1111,6 +1218,7 @@ def main():
     print(f"[CAMHUB] Storage Manager API ready at http://127.0.0.1:{args.port}/api/storage/status", flush=True)
     print(f"[CAMHUB] Diagnostics API ready at http://127.0.0.1:{args.port}/api/diagnostics/summary", flush=True)
     print(f"[CAMHUB] Notifications API ready at http://127.0.0.1:{args.port}/api/notifications", flush=True)
+    print(f"[CAMHUB] PTZ Controller API ready at http://127.0.0.1:{args.port}/api/ptz/status", flush=True)
 
     HEALTH_MONITOR.start()
     MANAGER.start()
