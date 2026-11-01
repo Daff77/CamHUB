@@ -337,7 +337,8 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5.0)
             sock.connect(("127.0.0.1", port))
-            req = f"GET /stream.mjpg HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n".encode("utf-8")
+            # Request HTTP/1.0 to prevent upstream servers (like Kestrel) from applying chunked transfer encoding
+            req = f"GET /stream.mjpg HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n".encode("utf-8")
             sock.sendall(req)
 
             header_data = b""
@@ -350,12 +351,16 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             header_part, _, body_init = header_data.partition(b"\r\n\r\n")
             header_lines = header_part.decode("utf-8", errors="replace").split("\r\n")
 
-            content_type = "multipart/x-mixed-replace; boundary=--boundary"
+            content_type = "multipart/x-mixed-replace; boundary=frame"
+            is_chunked = False
             for h in header_lines[1:]:
                 if ":" in h:
                     k, v = h.split(":", 1)
-                    if k.strip().lower() == "content-type":
+                    kl = k.strip().lower()
+                    if kl == "content-type":
                         content_type = v.strip()
+                    elif kl == "transfer-encoding" and "chunked" in v.lower():
+                        is_chunked = True
 
             self.send_response(200)
             self.send_header("Content-Type", content_type)
@@ -367,17 +372,51 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             self.send_cors_headers()
             self.end_headers()
 
-            if body_init:
-                self.wfile.write(body_init)
-                self.wfile.flush()
+            if is_chunked:
+                # De-chunk the stream so downstream browser receives pure multipart JPEG frames
+                stream_buf = body_init
+                sock.settimeout(8.0)
+                while True:
+                    while b"\r\n" not in stream_buf:
+                        more = sock.recv(16384)
+                        if not more:
+                            break
+                        stream_buf += more
+                    if b"\r\n" not in stream_buf:
+                        break
+                    line, _, rest = stream_buf.partition(b"\r\n")
+                    chunk_hex = line.split(b";")[0].strip()
+                    if not chunk_hex:
+                        stream_buf = rest
+                        continue
+                    try:
+                        chunk_size = int(chunk_hex, 16)
+                    except ValueError:
+                        break
+                    if chunk_size == 0:
+                        break
+                    stream_buf = rest
+                    while len(stream_buf) < chunk_size + 2:
+                        more = sock.recv(max(16384, chunk_size + 2 - len(stream_buf)))
+                        if not more:
+                            break
+                        stream_buf += more
+                    payload = stream_buf[:chunk_size]
+                    stream_buf = stream_buf[chunk_size + 2:]
+                    self.wfile.write(payload)
+                    self.wfile.flush()
+            else:
+                if body_init:
+                    self.wfile.write(body_init)
+                    self.wfile.flush()
 
-            sock.settimeout(None)
-            while True:
-                data = sock.recv(32768)
-                if not data:
-                    break
-                self.wfile.write(data)
-                self.wfile.flush()
+                sock.settimeout(None)
+                while True:
+                    data = sock.recv(32768)
+                    if not data:
+                        break
+                    self.wfile.write(data)
+                    self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception:

@@ -219,14 +219,17 @@
   // Action button template
   const A = (c, a, t, x = '') => `<button class="btn ${x}" data-act="${a}" data-cid="${c.id}">${t}</button>`;
   const bar = (c, s) => `<div class="vbar"><span><i class="dot ${s[1]}"></i>${c.n}</span><em>${s[2]}</em></div>`;
-  const msg = (c, id) => `
-    <div id="${id || `msg-${c.id}`}" class="msg-box" style="display:none;">
-      <svg class="ico nosig" style="width:36px;height:36px;opacity:.55;margin-bottom:8px;"><use href="#i-cam"/></svg>
-      <b>Can't reach ${escapeHtml(c.n.split(',')[0])}</b>
-      <p>No frames from ${c.ip}. Check that the camera is powered on and connected.</p>
-      ${A(c, 'restart-cam', 'Retry connection', 'sm')}
-    </div>
-  `;
+  const msg = (c, id) => {
+    const isOfflineDevice = c.id === 'v380-2';
+    return `
+      <div id="${id || `msg-${c.id}`}" class="msg-box" style="display:none;">
+        <svg class="ico nosig" style="width:36px;height:36px;opacity:.55;margin-bottom:8px;"><use href="#i-cam"/></svg>
+        <b>${isOfflineDevice ? 'Kamera Garasi Offline' : `Menghubungkan ke ${escapeHtml(c.n.split(',')[0])}`}</b>
+        <p>${isOfflineDevice ? `Perangkat ${c.ip} tidak merespon di jaringan lokal. Pastikan kabel daya terpasang dan kamera terhubung ke WiFi.` : `Menunggu aliran frame dari ${c.ip}. Sambungan otomatis mencoba ulang setiap beberapa detik.`}</p>
+        ${A(c, 'restart-cam', 'Sambungkan Ulang', 'sm')}
+      </div>
+    `;
+  };
 
   // --- Dynamic Aspect Ratio & Fit Mode ---
   let fitMode = 'contain';
@@ -243,6 +246,37 @@
   try {
     cam1GridLens = localStorage.getItem('camhub_cam1_grid_lens') || 'all';
   } catch (_) {}
+
+  // Stream error handling with automatic reconnection
+  window.handleStreamError = function(img, cid, msgId) {
+    if (!img) return;
+    img.style.display = 'none';
+    const m = document.getElementById(msgId);
+    if (m) m.style.display = 'flex';
+
+    if (!img._retryTimer) {
+      img._retryTimer = setTimeout(() => {
+        img._retryTimer = null;
+        const cam = cams.find((x) => x.id === cid);
+        if (cam && cam.running) {
+          const sep = cam.streamUrl.includes('?') ? '&' : '?';
+          img.src = `${cam.streamUrl}${sep}_r=${Date.now()}`;
+        }
+      }, 3500);
+    }
+  };
+
+  window.handleStreamLoad = function(img, cid, msgId) {
+    if (!img) return;
+    img.style.display = 'block';
+    const m = document.getElementById(msgId);
+    if (m) m.style.display = 'none';
+    if (img._retryTimer) {
+      clearTimeout(img._retryTimer);
+      img._retryTimer = null;
+    }
+    if (window.applyCameraRatio) window.applyCameraRatio(img, cid);
+  };
 
   function gcd(a, b) {
     return b === 0 ? a : gcd(b, a % b);
@@ -329,8 +363,8 @@
         <div class="video${fillCls}${lensCls}" id="feed-${c.id}" style="--cam-aspect: ${cardAspect}; --cam-ratio: ${cardRatioVal};">
           ${bar(c, s)}
           <img class="mjpeg-stream" id="stream-img-${c.id}" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
-            onerror="this.style.display='none'; const m=document.getElementById('msg-${c.id}'); if(m) m.style.display='flex';" 
-            onload="this.style.display='block'; const m=document.getElementById('msg-${c.id}'); if(m) m.style.display='none'; window.applyCameraRatio && window.applyCameraRatio(this, '${c.id}');" 
+            onerror="window.handleStreamError && window.handleStreamError(this, '${c.id}', 'msg-${c.id}');" 
+            onload="window.handleStreamLoad && window.handleStreamLoad(this, '${c.id}', 'msg-${c.id}');" 
             style="${isHealthy ? 'display:block;' : 'display:none;'}">
           ${msg(c, `msg-${c.id}`)}
         </div>
@@ -395,7 +429,9 @@
               <div class="cam-split-card">
                 <div class="video lens-1${fillCls}" style="aspect-ratio:16/9;">
                   <div class="vbar"><span><i class="dot ${s[1]}"></i>Lensa 1 · Atas (Panoramic)</span><em>Live · 1920×1080</em></div>
-                  <img class="mjpeg-stream" src="${c.streamUrl}" alt="Lensa 1" style="${isHealthy ? 'display:block;' : 'display:none;'}">
+                  <img class="mjpeg-stream" src="${c.streamUrl}" alt="Lensa 1" 
+                    onerror="window.handleStreamError && window.handleStreamError(this, '${c.id}', 'msg-lens-1');" 
+                    onload="window.handleStreamLoad && window.handleStreamLoad(this, '${c.id}', 'msg-lens-1');">
                   ${msg(c, 'msg-lens-1')}
                 </div>
                 <div class="cmeta" style="padding:10px 4px 2px;">
@@ -409,7 +445,9 @@
               <div class="cam-split-card">
                 <div class="video lens-2${fillCls}" style="aspect-ratio:16/9;">
                   <div class="vbar"><span><i class="dot ${s[1]}"></i>Lensa 2 · Tengah (Fixed Tele)</span><em>Live · 1920×1080</em></div>
-                  <img class="mjpeg-stream" src="${c.streamUrl}" alt="Lensa 2" style="${isHealthy ? 'display:block;' : 'display:none;'}">
+                  <img class="mjpeg-stream" src="${c.streamUrl}" alt="Lensa 2" 
+                    onerror="window.handleStreamError && window.handleStreamError(this, '${c.id}', 'msg-lens-2');" 
+                    onload="window.handleStreamLoad && window.handleStreamLoad(this, '${c.id}', 'msg-lens-2');">
                   ${msg(c, 'msg-lens-2')}
                 </div>
                 <div class="cmeta" style="padding:10px 4px 2px;">
@@ -423,7 +461,9 @@
               <div class="cam-split-card">
                 <div class="video lens-3${fillCls}" style="aspect-ratio:16/9;">
                   <div class="vbar"><span><i class="dot ${s[1]}"></i>Lensa 3 · Bawah (PTZ Rotasi)</span><em>Live · 1920×1080</em></div>
-                  <img class="mjpeg-stream" src="${c.streamUrl}" alt="Lensa 3" style="${isHealthy ? 'display:block;' : 'display:none;'}">
+                  <img class="mjpeg-stream" src="${c.streamUrl}" alt="Lensa 3" 
+                    onerror="window.handleStreamError && window.handleStreamError(this, '${c.id}', 'msg-lens-3');" 
+                    onload="window.handleStreamLoad && window.handleStreamLoad(this, '${c.id}', 'msg-lens-3');">
                   ${msg(c, 'msg-lens-3')}
                 </div>
                 <div class="cmeta" style="padding:10px 4px 2px;">
@@ -483,8 +523,8 @@
             <div class="video big${fillCls}${lensCls}" id="mc" style="--cam-aspect: ${stageAspect}; --cam-ratio: ${stageRatioVal}; transform:scale(${zoomLevel});transform-origin:center center;">
               ${bar(c, s)}
               <img class="mjpeg-stream" id="stream-img-main" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
-                onerror="this.style.display='none'; const m=document.getElementById('msg-main'); if(m) m.style.display='flex';" 
-                onload="this.style.display='block'; const m=document.getElementById('msg-main'); if(m) m.style.display='none'; window.applyCameraRatio && window.applyCameraRatio(this, '${c.id}');"
+                onerror="window.handleStreamError && window.handleStreamError(this, '${c.id}', 'msg-main');" 
+                onload="window.handleStreamLoad && window.handleStreamLoad(this, '${c.id}', 'msg-main');"
                 style="${isHealthy ? 'display:block;' : 'display:none;'}">
               ${msg(c, 'msg-main')}
               <div class="vfoot">
@@ -532,6 +572,18 @@
   function updateLiveStats() {
     const c = cams[sel] || cams[0];
     const s = ST[c.s] || ST.degraded;
+    const isMainAlive = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
+
+    // Auto-restore main stream if camera is alive
+    const mainImg = $('#stream-img-main');
+    const mainMsg = $('#msg-main');
+    if (isMainAlive && mainImg && (mainImg.style.display === 'none' || (mainMsg && mainMsg.style.display !== 'none'))) {
+      mainImg.style.display = 'block';
+      if (mainMsg) mainMsg.style.display = 'none';
+      if (!mainImg.src || mainImg.src.includes('about:blank')) {
+        mainImg.src = c.streamUrl;
+      }
+    }
 
     // Update main stage OSD bar & stats
     const mainBar = $('#mc .vbar');
@@ -570,6 +622,15 @@
         }
         const resTag = cardEl.querySelector('.res-tag');
         if (resTag && cam.resolution) resTag.textContent = cam.resolution;
+
+        // Auto-restore card stream if recovered
+        const streamImg = cardEl.querySelector('.mjpeg-stream');
+        const msgBox = cardEl.querySelector('.msg-box');
+        const isCamAlive = cam.s === 'healthy' || (cam.checks && cam.checks.feedAlive);
+        if (isCamAlive && streamImg && msgBox && msgBox.style.display !== 'none') {
+          streamImg.style.display = 'block';
+          msgBox.style.display = 'none';
+        }
       }
     });
   }
