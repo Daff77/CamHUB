@@ -889,6 +889,7 @@
     const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
     const fillCls = fitMode === 'cover' ? ' fill' : '';
     const isPTZCapable = c.id === 'v380-1' || c.id === 'okam-3';
+    const locText = c.d && c.d.toLowerCase().includes('port') ? `${c.ip} · ${c.d}` : `${c.ip} · ${c.d} · Port ${c.p}`;
 
     return `
       <article class="card cam split-other-card" id="card-${c.id}">
@@ -900,13 +901,13 @@
             style="${isHealthy ? 'display:block;' : 'display:none;'}">
           ${msg(c, `msg-split-${c.id}`)}
         </div>
-        <div class="cmeta" style="padding:12px 14px 10px;">
-          <div class="mrow" style="margin-bottom:8px;">
+        <div class="cmeta">
+          <div class="mrow" style="margin-bottom:10px; gap:12px;">
             <div>
-              <b class="nm" style="font-size:14px;">${escapeHtml(c.n)}</b>
-              <div class="ip">${c.ip} · ${c.d} · Port ${c.p} <span class="res-tag">${c.resolution || '1920×1080 (16:9)'}</span></div>
+              <b class="nm" style="font-size:14.5px; line-height:1.2;">${escapeHtml(c.n)}</b>
+              <div class="ip" style="margin-top:4px;">${locText} <span class="res-tag">${c.resolution || '1920×1080 (16:9)'}</span></div>
             </div>
-            <div style="display:flex;gap:6px;">
+            <div style="display:flex;gap:8px;align-items:center;">
               ${isPTZCapable ? `<button class="btn sm" data-focus="${i}" title="Buka Kamera dan Kontroler PTZ"><svg class="ico"><use href="#i-ptz"/></svg><span>PTZ</span></button>` : ''}
               <button class="btn sm primary" data-focus="${i}" title="Tampilkan kamera ini sebagai fokus utama">
                 <svg class="ico"><use href="#i-live"/></svg><span>Fokus Kamera</span>
@@ -914,7 +915,7 @@
             </div>
           </div>
           ${stats(c)}
-          <div class="acts" style="margin-top:8px;">
+          <div class="acts" style="margin-top:4px;">
             ${A(c, 'record', c.recording ? 'Stop' : 'Record', 'sm rec adm')}
             ${A(c, 'restart-cam', 'Reload', 'sm adm')}
             ${A(c, c.running ? 'stop-cam' : 'start-cam', c.running ? 'Stop' : 'Start', 'sm adm')}
