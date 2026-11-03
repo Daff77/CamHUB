@@ -513,3 +513,4 @@ class CamHubPTZService:
             },
             "stats": self.stats
         }
+

@@ -136,6 +136,13 @@
 
   let sel = 0, pick = 0, pend = '';
   let zoomLevel = 1.0;
+  let panX = 0;
+  let panY = 0;
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let dragStartPanX = 0;
+  let dragStartPanY = 0;
   let chartRange = '1m';
   let eventFilterCid = '';
   let notifFilterSev = '';
@@ -242,9 +249,9 @@
     cam1LensMode = localStorage.getItem('camhub_cam1_lens') || 'all';
   } catch (_) {}
 
-  let cam1GridLens = 'all';
+  let cam1GridLens = '1';
   try {
-    cam1GridLens = localStorage.getItem('camhub_cam1_grid_lens') || 'all';
+    cam1GridLens = localStorage.getItem('camhub_cam1_grid_lens') || '1';
   } catch (_) {}
 
   // PTZ Controller State
@@ -313,11 +320,11 @@
       cam.resolution = `${w}×${h}`;
     }
     const video = img.closest('.video');
-    if (video) {
+    if (video && !video.closest('.thumb')) {
       video.style.setProperty('--cam-aspect', ratio.css);
       video.style.setProperty('--cam-ratio', String(ratio.val));
     }
-    const card = img.closest('.card') || img.closest('.thumb');
+    const card = img.closest('.card');
     if (card) {
       const res = card.querySelector('.res-tag');
       if (res) res.textContent = `${w}×${h}`;
@@ -354,8 +361,8 @@
     const fillCls = fitMode === 'cover' ? ' fill' : '';
     const isCam1 = c.id === 'v380-1';
     const lensCls = isCam1 && cam1GridLens !== 'all' ? ` lens-${cam1GridLens}` : '';
-    const cardAspect = isCam1 && cam1GridLens !== 'all' ? '16 / 9' : (c.aspectRatio || '16 / 9');
-    const cardRatioVal = isCam1 && cam1GridLens !== 'all' ? 1.7778 : (c.aspectVal || 1.7778);
+    const cardAspect = isCam1 && cam1GridLens === 'all' ? (c.aspectRatio || '16 / 27') : (c.aspectRatio || '16 / 9');
+    const cardRatioVal = isCam1 && cam1GridLens === 'all' ? 0.5926 : (c.aspectVal || 1.7778);
     const cardRes = isCam1 && cam1GridLens !== 'all' ? '1920×1080 (16:9)' : (c.resolution || '');
 
     const lensPill = isCam1 ? `
@@ -393,16 +400,15 @@
   const mini = (c, i) => {
     const s = ST[c.s] || ST.degraded;
     const snapUrl = c.snapshotUrl || `/proxy/snapshot/${c.id}`;
-    const fillCls = fitMode === 'cover' ? ' fill' : '';
     return `
-      <div class="video${fillCls}" style="--cam-aspect: ${c.aspectRatio || '16 / 9'}; --cam-ratio: ${c.aspectVal || 1.7778};">
+      <div class="video" style="aspect-ratio: 16 / 9; width: 100%;">
         <div class="vbar">
           <span><i class="dot ${s[1]}"></i>CAM ${p2(i + 1)}</span>
           <em>${s[2]}</em>
         </div>
         <img src="${snapUrl}?t=${Date.now()}" alt="${escapeHtml(c.n)}" 
           onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='block';" 
-          onload="this.style.display='block'; if(this.nextElementSibling) this.nextElementSibling.style.display='none'; window.applyCameraRatio && window.applyCameraRatio(this, '${c.id}');" />
+          onload="this.style.display='block'; if(this.nextElementSibling) this.nextElementSibling.style.display='none';" />
         <svg class="ico nosig" style="width:30px;height:30px;opacity:.45;display:none;"><use href="#i-cam"/></svg>
       </div>
       <div class="tl">
@@ -744,6 +750,140 @@
       .catch(() => {});
   }
 
+  // --- Digital Zoom & Pan Stage Controller ---
+  function applyZoomTransform() {
+    const stage = $('#video-zoom-stage');
+    if (!stage) return;
+    if (zoomLevel <= 1.0) {
+      zoomLevel = 1.0;
+      panX = 0;
+      panY = 0;
+    } else {
+      const vp = $('#video-viewport');
+      if (vp) {
+        const rect = vp.getBoundingClientRect();
+        const maxPanX = Math.max(0, (rect.width * (zoomLevel - 1)) / 2);
+        const maxPanY = Math.max(0, (rect.height * (zoomLevel - 1)) / 2);
+        panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
+        panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
+      }
+    }
+    stage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+
+    const resetBtn = document.querySelector('[data-zoom="reset"]');
+    if (resetBtn) resetBtn.textContent = `${zoomLevel.toFixed(1)}x`;
+
+    const vp = $('#video-viewport');
+    if (vp) {
+      vp.style.cursor = zoomLevel > 1.0 ? (isDragging ? 'grabbing' : 'grab') : 'default';
+    }
+  }
+
+  function setZoom(targetLevel) {
+    zoomLevel = Math.max(1.0, Math.min(4.0, Math.round(targetLevel * 100) / 100));
+    if (zoomLevel === 1.0) {
+      panX = 0;
+      panY = 0;
+    }
+    applyZoomTransform();
+  }
+
+  function bindVideoZoomAndPan() {
+    const vp = $('#video-viewport');
+    if (!vp) return;
+
+    // Mouse wheel zoom
+    vp.onwheel = (e) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.25 : -0.25;
+      setZoom(zoomLevel + delta);
+    };
+
+    // Double click to toggle zoom 1.0x <-> 2.0x
+    vp.ondblclick = (e) => {
+      e.preventDefault();
+      setZoom(zoomLevel > 1.0 ? 1.0 : 2.0);
+    };
+
+    // Drag to pan when zoomed
+    vp.onpointerdown = (e) => {
+      if (zoomLevel <= 1.0 || e.button !== 0) return;
+      isDragging = true;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      dragStartPanX = panX;
+      dragStartPanY = panY;
+      vp.classList.add('is-dragging');
+      vp.style.cursor = 'grabbing';
+      try { vp.setPointerCapture(e.pointerId); } catch (_) {}
+    };
+
+    vp.onpointermove = (e) => {
+      if (!isDragging) return;
+      panX = dragStartPanX + (e.clientX - dragStartX);
+      panY = dragStartPanY + (e.clientY - dragStartY);
+      applyZoomTransform();
+    };
+
+    const endDrag = (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      vp.classList.remove('is-dragging');
+      try { vp.releasePointerCapture(e.pointerId); } catch (_) {}
+      applyZoomTransform();
+    };
+
+    vp.onpointerup = endDrag;
+    vp.onpointercancel = endDrag;
+  }
+
+  // --- Fullscreen Controller ---
+  function isPlayerFullscreen() {
+    return Boolean(
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement ||
+      $('#mc')?.classList.contains('is-fullscreen')
+    );
+  }
+
+  function updateFsButton() {
+    const fsBtn = document.querySelector('[data-fs]');
+    if (!fsBtn) return;
+    const isFs = isPlayerFullscreen();
+    fsBtn.textContent = isFs ? '⤡' : '⤢';
+    fsBtn.setAttribute('title', isFs ? 'Keluar Layar Penuh (Esc / F)' : 'Layar Penuh (F)');
+    fsBtn.setAttribute('aria-label', isFs ? 'Exit full screen' : 'Full screen');
+  }
+
+  function toggleFullscreen() {
+    const mc = $('#mc');
+    if (!mc) return;
+
+    if (isPlayerFullscreen()) {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      } else if (document.mozCancelFullScreen) {
+        document.mozCancelFullScreen();
+      }
+      mc.classList.remove('is-fullscreen');
+    } else {
+      const reqFs = mc.requestFullscreen || mc.webkitRequestFullscreen || mc.mozRequestFullScreen || mc.msRequestFullscreen;
+      if (reqFs) {
+        reqFs.call(mc).catch(() => {
+          mc.classList.add('is-fullscreen');
+          updateFsButton();
+        });
+      } else {
+        mc.classList.add('is-fullscreen');
+      }
+    }
+    updateFsButton();
+  }
+
   // --- Live View Rendering ---
   function live() {
     const c = cams[sel] || cams[0], s = ST[c.s] || ST.degraded;
@@ -866,26 +1006,30 @@
         stage.innerHTML = `
           <div class="card cam">
             ${lensBar}
-            <div class="video big${fillCls}${lensCls}" id="mc" style="--cam-aspect: ${stageAspect}; --cam-ratio: ${stageRatioVal}; transform:scale(${zoomLevel});transform-origin:center center;">
+            <div class="video big${fillCls}${lensCls}" id="mc" style="--cam-aspect: ${stageAspect}; --cam-ratio: ${stageRatioVal};">
               ${bar(c, s)}
-              <img class="mjpeg-stream" id="stream-img-main" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
-                onerror="window.handleStreamError && window.handleStreamError(this, '${c.id}', 'msg-main');" 
-                onload="window.handleStreamLoad && window.handleStreamLoad(this, '${c.id}', 'msg-main');"
-                style="${isHealthy ? 'display:block;' : 'display:none;'}">
-              ${msg(c, 'msg-main')}
+              <div class="video-viewport" id="video-viewport" title="Scroll untuk Zoom · Drag untuk Pan · Double-click untuk Reset/Toggle">
+                <div class="video-zoom-stage" id="video-zoom-stage">
+                  <img class="mjpeg-stream" id="stream-img-main" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
+                    onerror="window.handleStreamError && window.handleStreamError(this, '${c.id}', 'msg-main');" 
+                    onload="window.handleStreamLoad && window.handleStreamLoad(this, '${c.id}', 'msg-main');"
+                    style="${isHealthy ? 'display:block;' : 'display:none;'}">
+                  ${msg(c, 'msg-main')}
+                </div>
+              </div>
               <div class="vfoot">
                 <span class="ts"></span>
                 <span class="res-tag">${stageRes}</span>
                 <div class="zoom">
                   ${(isCam1 || c.id === 'okam-3') ? `
-                  <button class="btn ptz-toggle-btn${ptzPanelOpen ? ' active' : ''}" id="btn-toggle-ptz" title="Toggle PTZ Controller">
+                  <button class="btn ptz-toggle-btn${ptzPanelOpen ? ' active' : ''}" id="btn-toggle-ptz" title="Toggle PTZ Tactical Controller">
                     <svg class="ico"><use href="#i-ptz"/></svg><span>PTZ</span>
                   </button>
                   ` : ''}
-                  <button class="btn" data-zoom="in" aria-label="Zoom in">+</button>
-                  <button class="btn" data-zoom="reset" aria-label="Reset zoom">${zoomLevel.toFixed(1)}x</button>
-                  <button class="btn" data-zoom="out" aria-label="Zoom out">−</button>
-                  <button class="btn" data-fs aria-label="Full screen">⤢</button>
+                  <button class="btn" data-zoom="in" title="Perbesar (Zoom In)" aria-label="Zoom in">+</button>
+                  <button class="btn" data-zoom="reset" title="Kembalikan Zoom (1.0x)" aria-label="Reset zoom">${zoomLevel.toFixed(1)}x</button>
+                  <button class="btn" data-zoom="out" title="Perkecil (Zoom Out)" aria-label="Zoom out">−</button>
+                  <button class="btn" data-fs title="Layar Penuh (F)" aria-label="Full screen">⤢</button>
                 </div>
               </div>
             </div>
@@ -918,6 +1062,9 @@
     const camsGrid = $('#cams');
     if (camsGrid) camsGrid.innerHTML = cams.map(card).join('');
     bindPTZControls();
+    bindVideoZoomAndPan();
+    applyZoomTransform();
+    updateFsButton();
     applyFitMode(fitMode);
     tick();
   }
@@ -2117,6 +2264,9 @@
 
     if ((m = c('[data-focus]') || c('[data-prev]'))) {
       sel = +(m.dataset.focus ?? m.dataset.prev);
+      zoomLevel = 1.0;
+      panX = 0;
+      panY = 0;
       live();
       layout('focus');
       return go(0);
@@ -2124,6 +2274,9 @@
 
     if ((m = c('[data-thumb]'))) {
       sel = +m.dataset.thumb;
+      zoomLevel = 1.0;
+      panX = 0;
+      panY = 0;
       return live();
     }
 
@@ -2168,23 +2321,18 @@
       return;
     }
 
-    // Zoom controls
+    // Digital Zoom controls
     const zoomBtn = c('[data-zoom]');
     if (zoomBtn) {
       const type = zoomBtn.dataset.zoom;
-      if (type === 'in') zoomLevel = Math.min(zoomLevel + 0.25, 3.0);
-      else if (type === 'out') zoomLevel = Math.max(zoomLevel - 0.25, 1.0);
-      else if (type === 'reset') zoomLevel = 1.0;
-      const mc = $('#mc');
-      if (mc) mc.style.transform = `scale(${zoomLevel})`;
-      const resetBtn = zoomBtn.parentElement.querySelector('[data-zoom="reset"]');
-      if (resetBtn) resetBtn.textContent = `${zoomLevel.toFixed(1)}x`;
+      if (type === 'in') setZoom(zoomLevel + 0.25);
+      else if (type === 'out') setZoom(zoomLevel - 0.25);
+      else if (type === 'reset') setZoom(1.0);
       return;
     }
 
     if (c('[data-fs]')) {
-      const f = $('#mc');
-      if (f && f.requestFullscreen) f.requestFullscreen();
+      toggleFullscreen();
       return;
     }
 
@@ -2267,13 +2415,44 @@
     $('#config-dialog')?.close();
   });
 
-  // --- Tactical Keyboard Listener for PTZ Navigation ---
+  // --- Tactical Keyboard Listener for PTZ, Zoom & Fullscreen ---
   window.addEventListener('keydown', (e) => {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
     const vLive = $('#v-live');
     if (!vLive || vLive.hidden) return;
 
+    // Fullscreen toggle
+    if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      toggleFullscreen();
+      return;
+    }
+
     const c = cams[sel] || cams[0];
+
+    // Digital Zoom / PTZ Zoom
+    if (e.key === '+' || e.key === '=') {
+      e.preventDefault();
+      if ((c.id === 'v380-1' || c.id === 'okam-3') && ptzPanelOpen) {
+        sendPtzZoom(c.id, 'in', ptzSpeed);
+      } else {
+        setZoom(zoomLevel + 0.25);
+      }
+      return;
+    } else if (e.key === '-' || e.key === '_') {
+      e.preventDefault();
+      if ((c.id === 'v380-1' || c.id === 'okam-3') && ptzPanelOpen) {
+        sendPtzZoom(c.id, 'out', ptzSpeed);
+      } else {
+        setZoom(zoomLevel - 0.25);
+      }
+      return;
+    } else if (e.key === '0') {
+      e.preventDefault();
+      setZoom(1.0);
+      return;
+    }
+
     if (c.id !== 'v380-1' && c.id !== 'okam-3') return;
 
     let dir = null;
@@ -2288,12 +2467,6 @@
     } else if (['1', '2', '3', '4', '5'].includes(e.key)) {
       sendPtzPreset(c.id, 'goto', parseInt(e.key, 10));
       return;
-    } else if (e.key === '+' || e.key === '=') {
-      sendPtzZoom(c.id, 'in', ptzSpeed);
-      return;
-    } else if (e.key === '-' || e.key === '_') {
-      sendPtzZoom(c.id, 'out', ptzSpeed);
-      return;
     }
 
     if (dir && activePtzDir !== dir) {
@@ -2302,6 +2475,18 @@
       if (btn) btn.classList.add('active');
       sendPtzMove(c.id, dir, ptzSpeed, ptzMode === 'step' ? ptzStepMs : null, ptzMode);
     }
+  });
+
+  // Fullscreen state listener (for Esc key & native exit)
+  ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(ev => {
+    document.addEventListener(ev, () => {
+      const mc = $('#mc');
+      if (!isPlayerFullscreen() && mc) {
+        mc.classList.remove('is-fullscreen');
+      }
+      updateFsButton();
+      applyZoomTransform();
+    });
   });
 
   window.addEventListener('keyup', (e) => {
