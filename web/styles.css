@@ -390,6 +390,90 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   }
 }
 
+/* Split Mode Layout & Other Cameras Grid */
+.stage.is-split {
+  grid-template-columns: 1fr !important;
+  gap: 20px !important;
+}
+.split-fleet-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+.split-fleet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 6px 2px 2px;
+}
+.split-fleet-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+.split-fleet-badge {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--well);
+  color: var(--good);
+  border: 1px solid rgba(106, 169, 232, 0.25);
+}
+.split-fleet-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+.split-fleet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+@media (max-width: 900px) {
+  .split-fleet-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.split-other-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.split-other-card:hover {
+  border-color: var(--line-2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+.split-other-card .video {
+  width: 100% !important;
+  aspect-ratio: 16 / 9 !important;
+  border-radius: 14px 14px 0 0;
+  overflow: hidden;
+  position: relative;
+  background: #080808;
+  margin: 0 !important;
+}
+.split-other-card .video img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* Lens Selector Bar */
 .lens-bar {
   display: flex;

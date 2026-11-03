@@ -884,6 +884,47 @@
     updateFsButton();
   }
 
+  function renderSplitOtherCard(c, i) {
+    const s = ST[c.s] || ST.degraded;
+    const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
+    const fillCls = fitMode === 'cover' ? ' fill' : '';
+    const isPTZCapable = c.id === 'v380-1' || c.id === 'okam-3';
+
+    return `
+      <article class="card cam split-other-card" id="card-${c.id}">
+        <div class="video${fillCls}" id="feed-${c.id}" data-focus="${i}" style="--cam-aspect: 16 / 9; --cam-ratio: 1.7778; aspect-ratio: 16 / 9; width: 100%; cursor: pointer;" title="Klik untuk fokus ke ${escapeHtml(c.n)}">
+          ${bar(c, s)}
+          <img class="mjpeg-stream" id="stream-img-split-${c.id}" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
+            onerror="window.handleStreamError && window.handleStreamError(this, '${c.id}', 'msg-split-${c.id}');" 
+            onload="window.handleStreamLoad && window.handleStreamLoad(this, '${c.id}', 'msg-split-${c.id}');" 
+            style="${isHealthy ? 'display:block;' : 'display:none;'}">
+          ${msg(c, `msg-split-${c.id}`)}
+        </div>
+        <div class="cmeta" style="padding:12px 14px 10px;">
+          <div class="mrow" style="margin-bottom:8px;">
+            <div>
+              <b class="nm" style="font-size:14px;">${escapeHtml(c.n)}</b>
+              <div class="ip">${c.ip} · ${c.d} · Port ${c.p} <span class="res-tag">${c.resolution || '1920×1080 (16:9)'}</span></div>
+            </div>
+            <div style="display:flex;gap:6px;">
+              ${isPTZCapable ? `<button class="btn sm" data-focus="${i}" title="Buka Kamera dan Kontroler PTZ"><svg class="ico"><use href="#i-ptz"/></svg><span>PTZ</span></button>` : ''}
+              <button class="btn sm primary" data-focus="${i}" title="Tampilkan kamera ini sebagai fokus utama">
+                <svg class="ico"><use href="#i-live"/></svg><span>Fokus Kamera</span>
+              </button>
+            </div>
+          </div>
+          ${stats(c)}
+          <div class="acts" style="margin-top:8px;">
+            ${A(c, 'record', c.recording ? 'Stop' : 'Record', 'sm rec adm')}
+            ${A(c, 'restart-cam', 'Reload', 'sm adm')}
+            ${A(c, c.running ? 'stop-cam' : 'start-cam', c.running ? 'Stop' : 'Start', 'sm adm')}
+            ${A(c, 'config', 'Configure', 'sm adm')}
+          </div>
+        </div>
+      </article>
+    `;
+  }
+
   // --- Live View Rendering ---
   function live() {
     const c = cams[sel] || cams[0], s = ST[c.s] || ST.degraded;
@@ -894,9 +935,11 @@
 
     if (stage) {
       if (isCam1 && cam1LensMode === 'split') {
+        stage.classList.add('is-split');
+        const otherCams = cams.map((x, i) => ({ cam: x, idx: i })).filter(item => item.cam.id !== c.id);
         // Multi-Lens Split 3-Channel Grid View
         stage.innerHTML = `
-          <div class="card cam" style="grid-column: 1 / -1;">
+          <div class="card cam">
             <div class="lens-bar">
               <span class="lens-bar-label">Sudut Pandang Lensa (Camera 1 · 3-in-1 Hardware):</span>
               <div class="seg" id="lens-selector" role="group" aria-label="Pilih Lensa Kamera 1">
@@ -979,11 +1022,22 @@
               ${c.circuitBreakerTripped ? `<div class="alert" style="margin-top:10px;"><svg class="ico"><use href="#i-warn"/></svg><p><b>Circuit Breaker Tripped</b><span>Camera exceeded restart limits. <button class="btn sm adm" data-act="reset-cb" data-cid="${c.id}" style="margin-left:8px;">Reset Breaker</button></span></p></div>` : ''}
             </div>
           </div>
-          <div class="side">
-            ${cams.map((x, i) => thumb(x, i, i === sel, 'data-thumb')).join('')}
-          </div>
+          <section class="split-fleet-section">
+            <div class="split-fleet-header">
+              <div class="split-fleet-title">
+                <svg class="ico"><use href="#i-grid"/></svg>
+                <span>Kamera Armada Lainnya</span>
+                <span class="split-fleet-badge">${otherCams.length} Kamera Terhubung</span>
+              </div>
+              <span class="split-fleet-hint">Klik kartu atau tombol "Fokus Kamera" untuk menampilkan kamera sebagai tampilan utama</span>
+            </div>
+            <div class="split-fleet-grid">
+              ${otherCams.map(item => renderSplitOtherCard(item.cam, item.idx)).join('')}
+            </div>
+          </section>
         `;
       } else {
+        stage.classList.remove('is-split');
         const lensCls = isCam1 && cam1LensMode !== 'all' ? ` lens-${cam1LensMode}` : '';
         const stageAspect = isCam1 && cam1LensMode !== 'all' ? '16 / 9' : (c.aspectRatio || '16 / 9');
         const stageRatioVal = isCam1 && cam1LensMode !== 'all' ? 1.7778 : (c.aspectVal || 1.7778);
