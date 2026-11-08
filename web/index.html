@@ -7,7 +7,7 @@
 <title>CamHub — Command Center</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400..700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=5.4">
+<link rel="stylesheet" href="styles.css?v=5.9">
 </head>
 <body data-role="admin">
 <!-- SVG Icon Defs -->
@@ -50,7 +50,95 @@
 <symbol id="i-flip" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M9 21H4v-5"/></symbol>
 <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
 <symbol id="i-kb" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="10" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="14" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="7" y1="16" x2="17" y2="16"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10Z"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></symbol>
 </defs></svg>
+
+<!-- Left Floating Dock Navigation (Murmura Template Style) -->
+<nav class="dock" id="dock" aria-label="Quick navigation and actions">
+  <!-- Search / Command Palette -->
+  <button type="button" class="dock__btn" data-act="quick-search" aria-label="Search and Command Palette (Ctrl+K)" title="Search">
+    <svg class="ico"><use href="#i-search"/></svg>
+    <span class="dock__tip">Search <kbd>Ctrl+K</kbd></span>
+  </button>
+
+  <!-- Add Camera Action Button -->
+  <button type="button" class="dock__btn dock__btn--new adm" data-act="add-cam" aria-label="Add Camera (N)" title="Add Camera">
+    <svg class="ico"><use href="#i-plus"/></svg>
+    <span class="dock__tip">Add Camera <kbd>N</kbd></span>
+  </button>
+
+  <span class="dock__sep" aria-hidden="true"></span>
+
+  <!-- Primary Operations Tabs -->
+  <button type="button" class="dock__btn" data-go="0" aria-label="Live View" aria-current="page">
+    <svg class="ico"><use href="#i-live"/></svg>
+    <span class="dock__tip">Live View <kbd>1</kbd></span>
+  </button>
+
+  <button type="button" class="dock__btn" data-go="1" aria-label="Dashboard">
+    <svg class="ico"><use href="#i-grid"/></svg>
+    <span class="dock__tip">Dashboard <kbd>2</kbd></span>
+  </button>
+
+  <button type="button" class="dock__btn" data-go="2" aria-label="Playback">
+    <svg class="ico"><use href="#i-play"/></svg>
+    <span class="dock__tip">Playback <kbd>3</kbd></span>
+  </button>
+
+  <button type="button" class="dock__btn" data-go="3" aria-label="Events &amp; AI">
+    <svg class="ico"><use href="#i-spark"/></svg>
+    <span class="dock__dot" id="dock-events-dot" style="display:none"></span>
+    <span class="dock__tip">Events &amp; AI <kbd>4</kbd></span>
+  </button>
+
+  <span class="dock__sep" aria-hidden="true"></span>
+
+  <!-- Management & System Tabs -->
+  <button type="button" class="dock__btn" data-go="4" aria-label="Storage &amp; Retention">
+    <svg class="ico"><use href="#i-db"/></svg>
+    <span class="dock__tip">Storage <kbd>5</kbd></span>
+  </button>
+
+  <button type="button" class="dock__btn" data-go="5" aria-label="Diagnostics">
+    <svg class="ico"><use href="#i-pulse"/></svg>
+    <span class="dock__tip">Diagnostics <kbd>6</kbd></span>
+  </button>
+
+  <button type="button" class="dock__btn" data-go="6" aria-label="Notifications">
+    <svg class="ico"><use href="#i-bell"/></svg>
+    <span class="dock__dot" id="dock-notif-dot" style="display:none"></span>
+    <span class="dock__tip">Notifications <kbd>7</kbd></span>
+  </button>
+
+  <button type="button" class="dock__btn" data-go="7" aria-label="Setup &amp; Security">
+    <svg class="ico"><use href="#i-gear"/></svg>
+    <span class="dock__tip">Setup &amp; Security <kbd>8</kbd></span>
+  </button>
+
+  <span class="dock__sep" aria-hidden="true"></span>
+
+  <!-- Quick Admin Role Switcher -->
+  <button type="button" class="dock__btn" id="dock-role" aria-label="Switch Role (Admin / Viewer)" title="Switch Role">
+    <svg class="ico"><use href="#i-shield"/></svg>
+    <span class="dock__tip">Role: <b id="dock-role-txt">Admin</b></span>
+  </button>
+
+  <!-- Quick Restart Cameras (Admin only) -->
+  <button type="button" class="dock__btn adm" id="dock-power" aria-label="Restart all cameras" title="Restart Cameras">
+    <svg class="ico"><use href="#i-pwr"/></svg>
+    <span class="dock__tip">Restart Cameras</span>
+  </button>
+
+  <!-- Theme Switcher (Circular Reveal Animation) -->
+  <button type="button" class="dock__btn dock__theme" id="dock-theme" data-act="theme" aria-label="Toggle light/dark theme" title="Toggle theme">
+    <svg class="ico ico--moon"><use href="#i-moon"/></svg>
+    <svg class="ico ico--sun"><use href="#i-sun"/></svg>
+    <span class="dock__tip">Theme <kbd>T</kbd></span>
+  </button>
+</nav>
 
 <div class="app">
   <!-- Top Floating Nav Bar -->
@@ -94,6 +182,12 @@
       <!-- Refresh Feeds & Telemetry -->
       <button class="btn sq" id="refresh" aria-label="Refresh feeds" title="Refresh feeds">
         <svg class="ico"><use href="#i-re"/></svg>
+      </button>
+
+      <!-- Toggle Light/Dark Theme (Circular Reveal Animation) -->
+      <button class="btn sq btn-theme-toggle" id="btn-theme" data-act="theme" aria-label="Toggle light/dark theme" title="Toggle theme">
+        <svg class="ico ico--moon"><use href="#i-moon"/></svg>
+        <svg class="ico ico--sun"><use href="#i-sun"/></svg>
       </button>
     </div>
   </header>
@@ -603,9 +697,21 @@
   <p id="lightbox-details" class="sub" style="margin-top:12px;font-family:var(--mono);"></p>
 </dialog>
 
+<!-- Quick Finder / Command Palette Modal (Murmura Style) -->
+<dialog id="finder-dialog" class="finder-dlg" aria-label="Quick Search and Command Palette">
+  <div class="finder-box">
+    <div class="finder-input-row">
+      <svg class="ico"><use href="#i-search"/></svg>
+      <input type="text" id="finder-input" placeholder="Search cameras, views, actions..." autocomplete="off">
+      <button type="button" class="finder-close" id="finder-close" aria-label="Close search"><kbd>Esc</kbd></button>
+    </div>
+    <div class="finder-results" id="finder-results"></div>
+  </div>
+</dialog>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <!-- Application Logic -->
-<script src="app.js?v=5.4"></script>
+<script src="app.js?v=5.9"></script>
 </body>
 </html>

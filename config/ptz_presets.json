@@ -1,0 +1,96 @@
+{
+  "v380-1": [
+    {
+      "id": 1,
+      "name": "Preset 1 · Center / Home",
+      "configured": true,
+      "token": "Preset_1",
+      "pan": 0.0,
+      "tilt": 0.0,
+      "zoom": 1.0
+    },
+    {
+      "id": 2,
+      "name": "Preset 2 · Pintu Masuk",
+      "configured": true,
+      "token": "Preset_2",
+      "pan": -0.6,
+      "tilt": 0.1,
+      "zoom": 1.0
+    },
+    {
+      "id": 3,
+      "name": "Preset 3 · Lorong Utama",
+      "configured": true,
+      "token": "Preset_3",
+      "pan": 0.5,
+      "tilt": -0.2,
+      "zoom": 1.2
+    },
+    {
+      "id": 4,
+      "name": "Preset 4 · Meja Kerja",
+      "configured": false,
+      "token": "Preset_4",
+      "pan": 0.0,
+      "tilt": -0.5,
+      "zoom": 1.0
+    },
+    {
+      "id": 5,
+      "name": "Preset 5 · Area Parkir",
+      "configured": false,
+      "token": "Preset_5",
+      "pan": 0.8,
+      "tilt": 0.3,
+      "zoom": 1.5
+    }
+  ],
+  "okam-3": [
+    {
+      "id": 1,
+      "name": "Preset 1",
+      "configured": false,
+      "token": "Preset_1",
+      "pan": 0.0,
+      "tilt": 0.0,
+      "zoom": 1.0
+    },
+    {
+      "id": 2,
+      "name": "Preset 2 · Pagar Luar",
+      "configured": true,
+      "token": "Preset_2",
+      "pan": -0.5,
+      "tilt": 0.0,
+      "zoom": 1.2
+    },
+    {
+      "id": 3,
+      "name": "Preset 3 · Halaman",
+      "configured": false,
+      "token": "Preset_3",
+      "pan": 0.5,
+      "tilt": -0.1,
+      "zoom": 1.0
+    },
+    {
+      "id": 4,
+      "name": "Preset 4 · Gerbang",
+      "configured": false,
+      "token": "Preset_4",
+      "pan": -0.8,
+      "tilt": 0.2,
+      "zoom": 1.4
+    },
+    {
+      "id": 5,
+      "name": "Preset 5 · Sudut Jalan",
+      "configured": false,
+      "token": "Preset_5",
+      "pan": 0.9,
+      "tilt": 0.1,
+      "zoom": 1.6
+    }
+  ]
+}

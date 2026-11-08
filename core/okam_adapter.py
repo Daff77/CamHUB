@@ -1,7 +1,8 @@
 """
-O-Kam Pro / VStarcam Stream Adapter for CamHub
-Bridges RTSP stream to HTTP MJPEG (/stream.mjpg), Snapshot (/snapshot), and Telemetry (/api/metrics).
-Uses multi-threaded HTTP server so /api/metrics and /snapshot are never blocked by live streams.
+CamHUB O-Kam Pro / VStarcam Multi-Camera Stream Adapter
+Bridges RTSP streams to HTTP MJPEG, Snapshots, and Telemetry for multiple cameras concurrently.
+Supports independent workers per camera, dedicated frame buffers, robust auto-recovery,
+and full backward compatibility with legacy single-camera endpoints.
 """
 
 import sys
@@ -10,17 +11,38 @@ import subprocess
 import threading
 import argparse
 import json
+import os
+import re
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from collections import deque
+from urllib.parse import parse_qs, urlparse
 
-class StreamBroker:
-    def __init__(self, rtsp_url):
+
+def sanitize_rtsp_url(url: str) -> str:
+    """Masks credentials in RTSP URL for secure logging and telemetry exposure."""
+    if not url:
+        return ""
+    return re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", url)
+
+
+class CameraStreamWorker:
+    """Independent RTSP-to-MJPEG stream worker and frame buffer for a single camera."""
+
+    def __init__(self, camera_id: str, name: str, rtsp_url: str,
+                 resolution: str = "1920x1080", rtsp_transport: str = "tcp",
+                 target_fps: float = 15.0):
+        self.camera_id = camera_id
+        self.name = name
         self.rtsp_url = rtsp_url
-        self.running = True
+        self.resolution = resolution
+        self.rtsp_transport = rtsp_transport
+        self.target_fps = target_fps
+
+        self.running = False
         self.subscribers = set()
         self.lock = threading.Lock()
         self.latest_frame = None
-        self.latest_frame_time = 0
+        self.latest_frame_time = 0.0
         self.total_frames = 0
         self.frame_times = deque(maxlen=30)
         self.process = None
@@ -28,6 +50,8 @@ class StreamBroker:
         self.decode_errors = 0
         self.last_error = ""
         self.browser_render_fps = 0.0
+        self.worker_thread = None
+        self.status = "stopped"  # "connected" | "reconnecting" | "stopped"
 
     def add_subscriber(self, callback):
         with self.lock:
@@ -36,6 +60,35 @@ class StreamBroker:
     def remove_subscriber(self, callback):
         with self.lock:
             self.subscribers.discard(callback)
+
+    def start(self):
+        with self.lock:
+            if self.running:
+                return
+            self.running = True
+            self.status = "reconnecting"
+            self.worker_thread = threading.Thread(
+                target=self._run_ffmpeg,
+                daemon=True,
+                name=f"okam-worker-{self.camera_id}"
+            )
+            self.worker_thread.start()
+
+    def stop(self):
+        with self.lock:
+            self.running = False
+            self.status = "stopped"
+
+        if self.process:
+            try:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+            except Exception:
+                pass
+            self.process = None
 
     def get_metrics(self):
         now = time.time()
@@ -55,22 +108,27 @@ class StreamBroker:
                 latency_ms = round(max(0, (now - self.latest_frame_time) * 1000), 1)
 
             active_clients = len(self.subscribers)
+            status = self.status
 
-            if fps < 8.0 and self.reconnect_count > 0:
+            if status == "connected" and fps >= 10.0:
+                dominant = "Nominal"
+                severity = "nominal"
+                desc = f"RTSP-to-MJPEG pipeline beroperasi normal pada {fps} fps ({self.resolution}) dengan latensi {latency_ms}ms."
+            elif status == "connected" and fps > 0.0:
                 dominant = "CameraSource"
                 severity = "warning"
-                desc = f"RTSP stream mengalami interupsi jaringan LAN ({self.reconnect_count} kali reconnect). FPS saat ini {fps} fps."
-            elif fps >= 11.0:
-                dominant = "Nominal"
-                severity = "nominal"
-                desc = f"RTSP-to-MJPEG pipeline beroperasi normal pada {fps} fps dengan latensi {latency_ms}ms tanpa antrean tumpukan."
+                desc = f"RTSP stream beroperasi dengan framerate tereduksi ({fps} fps)."
+            elif self.reconnect_count > 0:
+                dominant = "CameraSource"
+                severity = "warning"
+                desc = f"RTSP stream mengalami interupsi LAN ({self.reconnect_count} kali reconnect). FPS saat ini {fps} fps."
             else:
-                dominant = "Nominal"
+                dominant = "CameraSource"
                 severity = "nominal"
-                desc = f"RTSP stream beroperasi pada {fps} fps."
+                desc = f"Menunggu koneksi stream untuk {self.name}."
 
             stages = {
-                "cameraDeclaredFps": 15.0,
+                "cameraDeclaredFps": self.target_fps,
                 "sourceFps": fps,
                 "decoderInFps": fps,
                 "decoderOutFps": fps,
@@ -95,7 +153,7 @@ class StreamBroker:
                 "lastError": self.last_error,
                 "cpuUsagePercent": 0.0,
                 "memoryUsageMb": 0.0,
-                "activeFfmpegCount": 1
+                "activeFfmpegCount": 1 if self.process and self.process.poll() is None else 0
             }
 
             bottleneck = {
@@ -105,7 +163,12 @@ class StreamBroker:
             }
 
             return {
+                "cameraId": self.camera_id,
+                "name": self.name,
+                "status": status,
                 "sourceFps": fps,
+                "targetFps": self.target_fps,
+                "resolution": self.resolution,
                 "xcodeInFps": fps,
                 "xcodeOutFps": fps,
                 "xcodeLatencyMs": latency_ms,
@@ -122,10 +185,6 @@ class StreamBroker:
                 "bottleneck": bottleneck
             }
 
-    def start(self):
-        t = threading.Thread(target=self._run_ffmpeg, daemon=True, name="ffmpeg-worker")
-        t.start()
-
     def _run_ffmpeg(self):
         cmd = [
             "ffmpeg",
@@ -133,7 +192,7 @@ class StreamBroker:
             "-loglevel", "error",
             "-fflags", "nobuffer",
             "-flags", "low_delay",
-            "-rtsp_transport", "tcp",
+            "-rtsp_transport", self.rtsp_transport,
             "-i", self.rtsp_url,
             "-an",
             "-c:v", "mjpeg",
@@ -143,9 +202,12 @@ class StreamBroker:
             "pipe:1"
         ]
 
+        clean_url = sanitize_rtsp_url(self.rtsp_url)
+
         while self.running:
-            clean_url = self.rtsp_url.split('@')[-1] if '@' in self.rtsp_url else self.rtsp_url
-            print(f"[OKAM-ADAPTER] Connecting to RTSP: {clean_url}", flush=True)
+            print(f"[OKAM-{self.camera_id}] Connecting to RTSP: {clean_url}", flush=True)
+            self.status = "reconnecting"
+
             try:
                 self.process = subprocess.Popen(
                     cmd,
@@ -164,11 +226,11 @@ class StreamBroker:
                                 with self.lock:
                                     self.decode_errors += 1
                                     self.last_error = text
-                                print(f"[OKAM-FFMPEG] {text}", file=sys.stderr, flush=True)
-                    except:
+                                print(f"[OKAM-FFMPEG-{self.camera_id}] {text}", file=sys.stderr, flush=True)
+                    except Exception:
                         pass
 
-                t_err = threading.Thread(target=read_stderr, daemon=True)
+                t_err = threading.Thread(target=read_stderr, daemon=True, name=f"okam-err-{self.camera_id}")
                 t_err.start()
 
                 stdout = self.process.stdout
@@ -193,7 +255,7 @@ class StreamBroker:
                         frame_data = bytes(buffer[idx:next_idx])
                         del buffer[:next_idx]
 
-                        # Extract JPEG bytes from multipart part
+                        # Extract raw JPEG payload
                         header_end = frame_data.find(b"\r\n\r\n")
                         if header_end != -1:
                             jpeg_bytes = frame_data[header_end + 4:].rstrip(b"\r\n")
@@ -207,32 +269,129 @@ class StreamBroker:
                             if jpeg_bytes:
                                 self.latest_frame = jpeg_bytes
                                 self.latest_frame_time = now
+                                self.status = "connected"
 
                             subs = list(self.subscribers)
 
                         for sub in subs:
                             try:
                                 sub(frame_data)
-                            except:
+                            except Exception:
                                 pass
 
             except Exception as e:
-                print(f"[OKAM-ADAPTER] Error: {e}", file=sys.stderr, flush=True)
+                print(f"[OKAM-{self.camera_id}] Worker error: {e}", file=sys.stderr, flush=True)
+
+            # Cleanup process to prevent zombies
+            if self.process:
+                try:
+                    self.process.terminate()
+                    self.process.wait(timeout=1.0)
+                except Exception:
+                    try:
+                        self.process.kill()
+                    except Exception:
+                        pass
+                self.process = None
 
             if self.running:
                 with self.lock:
                     self.reconnect_count += 1
-                print("[OKAM-ADAPTER] Stream lost, retrying in 3 seconds...", flush=True)
-                time.sleep(3)
+                    self.status = "reconnecting"
+                print(f"[OKAM-{self.camera_id}] Stream disconnected, retrying in 3 seconds...", flush=True)
+                for _ in range(15):
+                    if not self.running:
+                        break
+                    time.sleep(0.2)
+
+
+# Backward compatibility alias for legacy tests / single-camera scripts
+StreamBroker = CameraStreamWorker
+
+
+class MultiCameraManager:
+    """Coordinates multiple independent CameraStreamWorker instances."""
+
+    def __init__(self):
+        self.workers = {}
+        self.aliases = {}
+        self.default_id = None
+        self.lock = threading.Lock()
+
+    def register_camera(self, camera_id: str, name: str, rtsp_url: str,
+                        resolution: str = "1920x1080", rtsp_transport: str = "tcp",
+                        target_fps: float = 15.0, aliases: list = None):
+        with self.lock:
+            worker = CameraStreamWorker(
+                camera_id=camera_id,
+                name=name,
+                rtsp_url=rtsp_url,
+                resolution=resolution,
+                rtsp_transport=rtsp_transport,
+                target_fps=target_fps
+            )
+            self.workers[camera_id] = worker
+            if self.default_id is None:
+                self.default_id = camera_id
+
+            if aliases:
+                for alias in aliases:
+                    self.aliases[alias] = camera_id
+
+    def add_alias(self, alias: str, target_id: str):
+        with self.lock:
+            self.aliases[alias] = target_id
+
+    def get_worker(self, camera_id: str):
+        with self.lock:
+            if not camera_id:
+                camera_id = self.default_id
+            resolved_id = self.aliases.get(camera_id, camera_id)
+            return self.workers.get(resolved_id)
+
+    def get_all_cameras_info(self):
+        info_list = []
+        with self.lock:
+            for cid, w in self.workers.items():
+                m = w.get_metrics()
+                info_list.append({
+                    "id": cid,
+                    "name": w.name,
+                    "rtspUrl": sanitize_rtsp_url(w.rtsp_url),
+                    "streamPath": f"/api/cameras/{cid}/stream.mjpg",
+                    "snapshotPath": f"/api/cameras/{cid}/snapshot",
+                    "metricsPath": f"/api/cameras/{cid}/metrics",
+                    "status": w.status,
+                    "fps": m.get("sourceFps", 0.0),
+                    "resolution": w.resolution,
+                    "latency": m.get("xcodeLatencyMs", 0.0)
+                })
+        return info_list
+
+    def start_all(self):
+        with self.lock:
+            for w in self.workers.values():
+                w.start()
+
+    def stop_all(self):
+        with self.lock:
+            for w in self.workers.values():
+                w.stop()
 
 
 class ThreadedServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def __init__(self, server_address, RequestHandlerClass, manager=None):
+        super().__init__(server_address, RequestHandlerClass)
+        self.manager = manager
+
 
 class HttpHandler(BaseHTTPRequestHandler):
-    broker = None
+    """HTTP request handler supporting both multi-camera /api/cameras/... and legacy endpoints."""
+    manager = None
+    broker = None  # Backward compatibility class attribute
 
     def log_message(self, format, *args):
         pass
@@ -241,33 +400,37 @@ class HttpHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "*")
+        self.send_header("ngrok-skip-browser-warning", "1")
 
     def do_OPTIONS(self):
         try:
             self.send_response(204)
             self.send_cors_headers()
             self.end_headers()
-        except:
+        except Exception:
             pass
 
+    def _resolve_worker(self, camera_id=None):
+        # Prefer server instance manager
+        mgr = getattr(self.server, "manager", None) or self.manager
+        if mgr:
+            return mgr.get_worker(camera_id)
+        # Fallback to class broker attribute
+        return self.broker
+
     def do_GET(self):
-        path_parts = self.path.split("?")
-        path = path_parts[0]
-        query = path_parts[1] if len(path_parts) > 1 else ""
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query = parsed.query
+        qs = parse_qs(query)
 
-        if path == "/api/metrics":
+        mgr = getattr(self.server, "manager", None) or self.manager
+
+        # --- 1. GET /api/cameras ---
+        if path == "/api/cameras" or path == "/api/cameras/":
             try:
-                if "clientFps=" in query:
-                    import urllib.parse
-                    qs = urllib.parse.parse_qs(query)
-                    if "clientFps" in qs:
-                        try:
-                            self.broker.browser_render_fps = float(qs["clientFps"][0])
-                        except:
-                            pass
-
-                metrics = self.broker.get_metrics()
-                body = json.dumps(metrics).encode("utf-8")
+                cams = mgr.get_all_cameras_info() if mgr else []
+                body = json.dumps({"cameras": cams}, indent=2).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
@@ -275,100 +438,308 @@ class HttpHandler(BaseHTTPRequestHandler):
                 self.send_cors_headers()
                 self.end_headers()
                 self.wfile.write(body)
-            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+            except Exception:
                 pass
+            return
+
+        # --- 2. Multi-camera routes: /api/cameras/{camera_id}/(metrics|snapshot|stream.mjpg) ---
+        match = re.match(r"^/api/cameras/([^/]+)/(metrics|snapshot|stream\.mjpg)$", path)
+        if match:
+            target_cid, endpoint = match.group(1), match.group(2)
+            worker = self._resolve_worker(target_cid)
+            if not worker:
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Camera '{target_cid}' not found in adapter registry"}).encode("utf-8"))
+                return
+
+            if endpoint == "metrics":
+                self._handle_metrics(worker, qs)
+                return
+            elif endpoint == "snapshot":
+                self._handle_snapshot(worker)
+                return
+            elif endpoint == "stream.mjpg":
+                self._handle_stream(worker)
+                return
+
+        # --- 3. Legacy single-camera endpoints ---
+        if path == "/api/metrics":
+            worker = self._resolve_worker()
+            if worker:
+                self._handle_metrics(worker, qs)
+            else:
+                self._send_404_or_503("No camera worker available")
             return
 
         if path == "/snapshot":
-            try:
-                frame = self.broker.latest_frame
-                if not frame:
-                    self.send_response(503)
-                    self.send_cors_headers()
-                    self.end_headers()
-                    self.wfile.write(b"No snapshot available yet")
-                    return
-
-                self.send_response(200)
-                self.send_header("Content-Type", "image/jpeg")
-                self.send_header("Content-Length", str(len(frame)))
-                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-                self.send_cors_headers()
-                self.end_headers()
-                self.wfile.write(frame)
-            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
-                pass
+            worker = self._resolve_worker()
+            if worker:
+                self._handle_snapshot(worker)
+            else:
+                self._send_404_or_503("No camera worker available")
             return
 
         if path == "/stream.mjpg":
-            try:
-                self.send_response(200)
-                self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
-                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-                self.send_header("Pragma", "no-cache")
-                self.send_header("Connection", "close")
-                self.send_cors_headers()
-                self.end_headers()
-            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
-                return
-
-            client_alive = [True]
-
-            def on_frame(data):
-                if not client_alive[0]:
-                    return
-                try:
-                    self.wfile.write(data)
-                    self.wfile.flush()
-                except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
-                    client_alive[0] = False
-
-            self.broker.add_subscriber(on_frame)
-            try:
-                while client_alive[0] and self.broker.running:
-                    time.sleep(0.2)
-            except:
-                pass
-            finally:
-                client_alive[0] = False
-                self.broker.remove_subscriber(on_frame)
+            worker = self._resolve_worker()
+            if worker:
+                self._handle_stream(worker)
+            else:
+                self._send_404_or_503("No camera worker available")
             return
 
-        # Default info
+        # --- 4. Default / Info ---
+        try:
+            cams = mgr.get_all_cameras_info() if mgr else []
+            body = (
+                f"CamHUB O-Kam Multi-Camera Adapter running.\n"
+                f"Registered cameras: {len(cams)}\n"
+                f"Endpoints:\n"
+                f"  GET /api/cameras\n"
+                f"  GET /api/cameras/<id>/metrics\n"
+                f"  GET /api/cameras/<id>/snapshot\n"
+                f"  GET /api/cameras/<id>/stream.mjpg\n"
+                f"Legacy Endpoints: /stream.mjpg, /snapshot, /api/metrics\n"
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception:
+            pass
+
+    def _handle_metrics(self, worker: CameraStreamWorker, qs: dict):
+        try:
+            if "clientFps" in qs:
+                try:
+                    worker.browser_render_fps = float(qs["clientFps"][0])
+                except Exception:
+                    pass
+
+            metrics = worker.get_metrics()
+            body = json.dumps(metrics).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+            pass
+
+    def _handle_snapshot(self, worker: CameraStreamWorker):
+        try:
+            frame = worker.latest_frame
+            if not frame:
+                self.send_response(503)
+                self.send_cors_headers()
+                self.end_headers()
+                self.wfile.write(b"No snapshot available yet")
+                return
+
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(frame)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(frame)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+            pass
+
+    def _handle_stream(self, worker: CameraStreamWorker):
         try:
             self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Connection", "close")
+            self.send_cors_headers()
+            self.end_headers()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+            return
+
+        client_alive = [True]
+
+        def on_frame(data):
+            if not client_alive[0]:
+                return
+            try:
+                self.wfile.write(data)
+                self.wfile.flush()
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+                client_alive[0] = False
+
+        worker.add_subscriber(on_frame)
+        try:
+            while client_alive[0] and worker.running:
+                time.sleep(0.2)
+        except Exception:
+            pass
+        finally:
+            client_alive[0] = False
+            worker.remove_subscriber(on_frame)
+
+    def _send_404_or_503(self, message: str):
+        try:
+            self.send_response(503)
             self.send_header("Content-Type", "text/plain")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(b"O-Kam Pro Adapter running. Endpoints: /stream.mjpg, /snapshot, /api/metrics\n")
-        except:
+            self.wfile.write(message.encode("utf-8"))
+        except Exception:
             pass
 
 
-def run_server(rtsp_url, port):
-    broker = StreamBroker(rtsp_url)
-    broker.start()
+DEFAULT_OKAM_CAMERAS = [
+    {
+        "id": "okam_1",
+        "name": "Camera 3 · O-Kam Lens 1 (Main)",
+        "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0",
+        "resolution": "1920x1080",
+        "targetFps": 15.0,
+        "aliases": ["okam-3", "okam-1"]
+    },
+    {
+        "id": "okam_2",
+        "name": "Camera 4 · O-Kam Lens 2 (Wide)",
+        "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10555/tcp/av0_0",
+        "resolution": "1920x1080",
+        "targetFps": 15.0,
+        "aliases": ["okam-2"]
+    },
+    {
+        "id": "okam_3",
+        "name": "Camera 5 · O-Kam Lens 3 (Sub)",
+        "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_1",
+        "resolution": "448x256",
+        "targetFps": 15.0,
+        "aliases": ["okam-sub"]
+    }
+]
 
-    HttpHandler.broker = broker
-    server = ThreadedServer(("0.0.0.0", port), HttpHandler)
+
+def create_manager_from_config(config_path: str = None) -> MultiCameraManager:
+    """Builds a MultiCameraManager from services_config.json or default cameras."""
+    manager = MultiCameraManager()
+
+    cameras_to_load = []
+
+    if config_path and os.path.isfile(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                for cam in cfg.get("cameras", []):
+                    if cam.get("type") == "okam":
+                        if "lenses" in cam and isinstance(cam["lenses"], list):
+                            for idx, lens in enumerate(cam["lenses"]):
+                                lid = f"okam_{lens.get('id', idx + 1)}"
+                                aliases = [f"okam-lens-{lens.get('id', idx + 1)}"]
+                                if idx == 0:
+                                    aliases.extend(["okam-3", "okam-1", "okam_1"])
+                                else:
+                                    aliases.append(f"okam_{lens.get('id', idx + 1)}")
+                                cameras_to_load.append({
+                                    "id": lid,
+                                    "name": f"Camera 3 · {lens.get('name', f'Lens {idx+1}')}",
+                                    "rtspUrl": lens.get("rtspUrl", ""),
+                                    "resolution": lens.get("resolution", "1920x1080"),
+                                    "targetFps": lens.get("targetFps", 15.0),
+                                    "aliases": aliases
+                                })
+                        else:
+                            rtsp_url = cam.get("rtspUrl") or cam.get("rtsp")
+                            if not rtsp_url and "--rtsp" in cam.get("cmd", ""):
+                                cmd_str = cam.get("cmd", "")
+                                match = re.search(r'--rtsp\s+["\']?([^"\']+)["\']?', cmd_str)
+                                if match:
+                                    rtsp_url = match.group(1)
+
+                            if rtsp_url:
+                                cameras_to_load.append({
+                                    "id": cam.get("id"),
+                                    "name": cam.get("name", cam.get("id")),
+                                    "rtspUrl": rtsp_url,
+                                    "resolution": cam.get("resolution", "1920x1080"),
+                                    "targetFps": cam.get("targetFps", 15.0),
+                                    "aliases": cam.get("aliases", [])
+                                })
+        except Exception as e:
+            print(f"[OKAM-ADAPTER] Warning reading config {config_path}: {e}", file=sys.stderr)
+
+    if not cameras_to_load:
+        cameras_to_load = DEFAULT_OKAM_CAMERAS
+
+    for c in cameras_to_load:
+        manager.register_camera(
+            camera_id=c["id"],
+            name=c["name"],
+            rtsp_url=c["rtspUrl"],
+            resolution=c.get("resolution", "1920x1080"),
+            target_fps=c.get("targetFps", 15.0),
+            aliases=c.get("aliases", [])
+        )
+
+    # Ensure backward compatibility alias okam-3 exists
+    if "okam-3" not in manager.workers and "okam_1" in manager.workers:
+        manager.add_alias("okam-3", "okam_1")
+
+    return manager
+
+
+def run_server(rtsp_url: str = None, port: int = 8082, config_path: str = None, camera_id: str = "okam_1"):
+    """Starts the multi-camera HTTP adapter service."""
+    if rtsp_url and not config_path:
+        # Legacy single-camera invocation mode
+        manager = MultiCameraManager()
+        manager.register_camera(
+            camera_id=camera_id,
+            name="O-Kam Pro / VStarcam",
+            rtsp_url=rtsp_url,
+            resolution="1920x1080",
+            aliases=["okam-3"] if camera_id != "okam-3" else []
+        )
+    else:
+        # Multi-camera mode
+        manager = create_manager_from_config(config_path)
+
+    manager.start_all()
+
+    # Set backward-compat class attributes
+    first_worker = manager.get_worker(manager.default_id)
+    HttpHandler.broker = first_worker
+    HttpHandler.manager = manager
+
+    server = ThreadedServer(("0.0.0.0", port), HttpHandler, manager=manager)
     print(f"[OKAM-ADAPTER] HTTP Server running on http://0.0.0.0:{port}", flush=True)
-    print(f"[OKAM-ADAPTER] Stream:   http://127.0.0.1:{port}/stream.mjpg", flush=True)
-    print(f"[OKAM-ADAPTER] Snapshot: http://127.0.0.1:{port}/snapshot", flush=True)
-    print(f"[OKAM-ADAPTER] Metrics:  http://127.0.0.1:{port}/api/metrics", flush=True)
+    print(f"[OKAM-ADAPTER] Registered Cameras: {[w.camera_id for w in manager.workers.values()]}", flush=True)
+    print(f"[OKAM-ADAPTER] Fleet API: http://127.0.0.1:{port}/api/cameras", flush=True)
+    for cid in manager.workers.keys():
+        print(f"  • {cid} -> Stream: http://127.0.0.1:{port}/api/cameras/{cid}/stream.mjpg | Snapshot: http://127.0.0.1:{port}/api/cameras/{cid}/snapshot", flush=True)
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        broker.running = False
+        print("[OKAM-ADAPTER] Shutting down all camera workers...", flush=True)
+        manager.stop_all()
         server.server_close()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="O-Kam Pro / VStarcam Stream Adapter")
-    parser.add_argument("--rtsp", default="rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0", help="RTSP URL")
+    parser = argparse.ArgumentParser(description="CamHUB O-Kam Pro Multi-Camera Stream Adapter")
+    parser.add_argument("--config", default="config/services_config.json", help="Path to services_config.json")
+    parser.add_argument("--rtsp", default="", help="Single camera RTSP URL override")
+    parser.add_argument("--id", default="okam_1", help="Camera ID when using single-camera override")
     parser.add_argument("--port", type=int, default=8082, help="HTTP Port")
     args = parser.parse_args()
 
-    run_server(args.rtsp, args.port)
+    rtsp_override = args.rtsp if args.rtsp else None
+    cfg_file = args.config if (not args.rtsp and os.path.isfile(args.config)) else None
+
+    run_server(rtsp_url=rtsp_override, port=args.port, config_path=cfg_file, camera_id=args.id)

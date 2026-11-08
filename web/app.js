@@ -73,10 +73,10 @@
       shortName: 'Cam 3',
       ip: '192.168.100.6',
       p: '10554',
-      d: 'Port 10554 · VStarcam',
-      streamUrl: '/proxy/stream/okam-3',
-      snapshotUrl: '/proxy/snapshot/okam-3',
-      directStreamUrl: 'http://127.0.0.1:8082/stream.mjpg',
+      d: 'Port 10554 · VStarcam 3-in-1',
+      streamUrl: '/proxy/stream/okam_1',
+      snapshotUrl: '/proxy/snapshot/okam_1',
+      directStreamUrl: 'http://127.0.0.1:8082/api/cameras/okam_1/stream.mjpg',
       w: 80,
       s: 'degraded',
       fps: 0.0,
@@ -127,7 +127,7 @@
   ];
 
   const col = ['#f2f2f2', '#6aa9e8', '#8c8c8c'];
-  const fpsHistory = { 'v380-1': [], 'v380-2': [], 'okam-3': [] };
+  const fpsHistory = { 'v380-1': [], 'v380-2': [], 'okam-3': [], 'okam_1': [] };
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => document.querySelectorAll(s);
@@ -219,7 +219,9 @@
   function toggleRole() {
     currentUserRole = currentUserRole === 'admin' ? 'viewer' : 'admin';
     document.body.dataset.role = currentUserRole;
-    $('#sbf-role').textContent = currentUserRole === 'admin' ? 'Admin' : 'Viewer';
+    const roleTxt = currentUserRole === 'admin' ? 'Admin' : 'Viewer';
+    if ($('#sbf-role')) $('#sbf-role').textContent = roleTxt;
+    if ($('#dock-role-txt')) $('#dock-role-txt').textContent = roleTxt;
     toast(currentUserRole === 'admin' ? 'Admin mode: controls are visible' : 'Viewer mode: controls are hidden');
   }
 
@@ -253,6 +255,55 @@
   try {
     cam1GridLens = localStorage.getItem('camhub_cam1_grid_lens') || '1';
   } catch (_) {}
+
+  let okamLensMode = '1';
+  try {
+    okamLensMode = localStorage.getItem('camhub_okam_lens') || '1';
+  } catch (_) {}
+
+  let okamGridLens = '1';
+  try {
+    okamGridLens = localStorage.getItem('camhub_okam_grid_lens') || '1';
+  } catch (_) {}
+
+  const okamLenses = {
+    '1': {
+      id: '1',
+      name: 'Layar 1 · Panoramic Main (Sensor Tetap)',
+      short: 'L1 Main',
+      streamUrl: '/proxy/stream/okam_1',
+      snapshotUrl: '/proxy/snapshot/okam_1',
+      res: '1920×1080 (16:9)',
+      aspect: '16:9',
+      aspectRatio: '16 / 9',
+      aspectVal: 1.7778,
+      cssClass: ''
+    },
+    '2': {
+      id: '2',
+      name: 'Layar 2 · Area Kiri (Pagar & Jalan)',
+      short: 'L2 Kiri',
+      streamUrl: '/proxy/stream/okam_1',
+      snapshotUrl: '/proxy/snapshot/okam_1',
+      res: '1920×1080 (ROI Kiri)',
+      aspect: '16:9',
+      aspectRatio: '16 / 9',
+      aspectVal: 1.7778,
+      cssClass: 'okam-lens-left'
+    },
+    '3': {
+      id: '3',
+      name: 'Layar 3 · PTZ Motorik (Area Teras & Pintu)',
+      short: 'L3 PTZ',
+      streamUrl: '/proxy/stream/okam_2',
+      snapshotUrl: '/proxy/snapshot/okam_2',
+      res: '1920×1080 (PTZ)',
+      aspect: '16:9',
+      aspectRatio: '16 / 9',
+      aspectVal: 1.7778,
+      cssClass: ''
+    }
+  };
 
   // PTZ Controller State
   let ptzPanelOpen = false;
@@ -351,7 +402,7 @@
 
   const stats = (c) => `<div class="stats"><div><b>${c.fps.toFixed(1)} / 15</b><span>fps</span></div><div><b>${c.latencyMs} ms</b><span>latency</span></div><div><b class="ratio-val">${c.aspect}</b><span>ratio</span></div><div><b>${c.w}</b><span>web</span></div></div>`;
   const acts = (c, f) => {
-    const ptzBtn = (c.id === 'v380-1' || c.id === 'okam-3') ? `<button class="btn sm${ptzPanelOpen ? ' primary' : ''}" data-act="toggle-ptz" title="Toggle PTZ Controller"><svg class="ico"><use href="#i-ptz"/></svg><span>PTZ</span></button>` : '';
+    const ptzBtn = (c.id === 'v380-1' || c.id === 'okam-3' || c.id.startsWith('okam')) ? `<button class="btn sm${ptzPanelOpen ? ' primary' : ''}" data-act="toggle-ptz" title="Toggle PTZ Controller"><svg class="ico"><use href="#i-ptz"/></svg><span>PTZ</span></button>` : '';
     return `<div class="acts">${ptzBtn}${A(c, 'record', c.recording ? 'Stop' : 'Record', 'sm rec adm')}${A(c, 'restart-cam', 'Reload', 'sm adm')}${A(c, c.running ? 'stop-cam' : 'start-cam', c.running ? 'Stop' : 'Start', 'sm adm')}${A(c, 'config', 'Configure', 'sm adm')}${f}</div>`;
   };
 
@@ -360,10 +411,14 @@
     const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
     const fillCls = fitMode === 'cover' ? ' fill' : '';
     const isCam1 = c.id === 'v380-1';
-    const lensCls = isCam1 && cam1GridLens !== 'all' ? ` lens-${cam1GridLens}` : '';
+    const isOkam = c.id === 'okam-3' || c.id.startsWith('okam');
+    const okamLens = okamLenses[okamGridLens] || okamLenses['1'];
+    const okamLensCls = isOkam && okamGridLens === '2' ? ' okam-lens-left' : '';
+    const lensCls = isCam1 && cam1GridLens !== 'all' ? ` lens-${cam1GridLens}` : okamLensCls;
     const cardAspect = isCam1 && cam1GridLens === 'all' ? (c.aspectRatio || '16 / 27') : (c.aspectRatio || '16 / 9');
     const cardRatioVal = isCam1 && cam1GridLens === 'all' ? 0.5926 : (c.aspectVal || 1.7778);
-    const cardRes = isCam1 && cam1GridLens !== 'all' ? '1920×1080 (16:9)' : (c.resolution || '');
+    const cardRes = isCam1 && cam1GridLens !== 'all' ? '1920×1080 (16:9)' : (isOkam ? okamLens.res : (c.resolution || ''));
+    const cardStreamUrl = isOkam ? okamLens.streamUrl : c.streamUrl;
 
     const lensPill = isCam1 ? `
       <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px;">
@@ -375,13 +430,22 @@
           <button data-cam1-lens="3" aria-pressed="${cam1GridLens === '3'}">L3 Bawah</button>
         </div>
       </div>
-    ` : '';
+    ` : (isOkam ? `
+      <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px;">
+        <span style="font-size:11px;color:var(--muted);font-weight:600;">Lensa:</span>
+        <div class="lens-pill">
+          <button data-okam-lens="1" aria-pressed="${okamGridLens === '1'}">L1 Main</button>
+          <button data-okam-lens="2" aria-pressed="${okamGridLens === '2'}">L2 Kiri</button>
+          <button data-okam-lens="3" aria-pressed="${okamGridLens === '3'}">L3 PTZ</button>
+        </div>
+      </div>
+    ` : '');
 
     return `
       <article class="card cam">
         <div class="video${fillCls}${lensCls}" id="feed-${c.id}" style="--cam-aspect: ${cardAspect}; --cam-ratio: ${cardRatioVal};">
           ${bar(c, s)}
-          <img class="mjpeg-stream" id="stream-img-${c.id}" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
+          <img class="mjpeg-stream" id="stream-img-${c.id}" src="${cardStreamUrl}" alt="${escapeHtml(c.n)}" 
             onerror="window.handleStreamError && window.handleStreamError(this, '${c.id}', 'msg-${c.id}');" 
             onload="window.handleStreamLoad && window.handleStreamLoad(this, '${c.id}', 'msg-${c.id}');" 
             style="${isHealthy ? 'display:block;' : 'display:none;'}">
@@ -400,13 +464,16 @@
   const mini = (c, i) => {
     const s = ST[c.s] || ST.degraded;
     const snapUrl = c.snapshotUrl || `/proxy/snapshot/${c.id}`;
+    const isCam1 = c.id === 'v380-1';
+    const thumbStyle = isCam1 ? 'position:absolute; inset:0; width:100% !important; height:100% !important; object-fit:cover !important; object-position:top center !important;' : 'position:absolute; inset:0; width:100% !important; height:100% !important; object-fit:cover !important; object-position:center !important;';
     return `
-      <div class="video" style="aspect-ratio: 16 / 9; width: 100%;">
+      <div class="video" style="aspect-ratio: 16 / 9; width: 100%; overflow: hidden; background: #0a0a0a;">
         <div class="vbar">
           <span><i class="dot ${s[1]}"></i>CAM ${p2(i + 1)}</span>
           <em>${s[2]}</em>
         </div>
         <img src="${snapUrl}?t=${Date.now()}" alt="${escapeHtml(c.n)}" 
+          style="${thumbStyle}"
           onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='block';" 
           onload="this.style.display='block'; if(this.nextElementSibling) this.nextElementSibling.style.display='none';" />
         <svg class="ico nosig" style="width:30px;height:30px;opacity:.45;display:none;"><use href="#i-cam"/></svg>
@@ -423,7 +490,7 @@
   // --- PTZ Controller Operations & Rendering ---
   function renderPTZController(c) {
     const isCam1 = c.id === 'v380-1';
-    const isPTZCapable = isCam1 || c.id === 'okam-3';
+    const isPTZCapable = isCam1 || c.id === 'okam-3' || c.id.startsWith('okam');
     if (!isPTZCapable) return '';
 
     const lens3Badge = isCam1 ? '<span class="res-tag" style="background:rgba(106,169,232,0.12);color:var(--good);border-color:rgba(106,169,232,0.25);">Lensa 3 · Motorized PTZ Base</span>' : '';
@@ -888,7 +955,7 @@
     const s = ST[c.s] || ST.degraded;
     const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
     const fillCls = fitMode === 'cover' ? ' fill' : '';
-    const isPTZCapable = c.id === 'v380-1' || c.id === 'okam-3';
+    const isPTZCapable = c.id === 'v380-1' || c.id === 'okam-3' || c.id.startsWith('okam');
     const locText = c.d && c.d.toLowerCase().includes('port') ? `${c.ip} · ${c.d}` : `${c.ip} · ${c.d} · Port ${c.p}`;
 
     return `
@@ -933,14 +1000,19 @@
     const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
     const fillCls = fitMode === 'cover' ? ' fill' : '';
     const isCam1 = c.id === 'v380-1';
+    const isOkam = c.id === 'okam-3' || c.id.startsWith('okam');
+    const isSplit = (isCam1 && cam1LensMode === 'split') || (isOkam && okamLensMode === 'split');
 
     if (stage) {
-      if (isCam1 && cam1LensMode === 'split') {
+      if (isSplit) {
         stage.classList.add('is-split');
         const otherCams = cams.map((x, i) => ({ cam: x, idx: i })).filter(item => item.cam.id !== c.id);
-        // Multi-Lens Split 3-Channel Grid View
-        stage.innerHTML = `
-          <div class="card cam">
+
+        let splitHeaderHtml = '';
+        let splitCardsHtml = '';
+
+        if (isCam1) {
+          splitHeaderHtml = `
             <div class="lens-bar">
               <span class="lens-bar-label">Sudut Pandang Lensa (Camera 1 · 3-in-1 Hardware):</span>
               <div class="seg" id="lens-selector" role="group" aria-label="Pilih Lensa Kamera 1">
@@ -951,6 +1023,8 @@
                 <button class="btn sm" data-lens="split" aria-pressed="true">Split 3 Lensa</button>
               </div>
             </div>
+          `;
+          splitCardsHtml = `
             <div class="lens-split-grid">
               <div class="cam-split-card">
                 <div class="video lens-1${fillCls}" style="aspect-ratio:16/9;">
@@ -1004,12 +1078,111 @@
                 </div>
               </div>
             </div>
+          `;
+        } else {
+          // Camera 3 (O-Kam Pro Three Screens Mode - Matching Mobile App Option 2)
+          if (!ptzPanelOpen) ptzPanelOpen = true; // Auto-open PTZ controller underneath Screen 3
+          splitHeaderHtml = `
+            <div class="lens-bar">
+              <span class="lens-bar-label">Mode Tampilan O-Kam Pro (3 Layar):</span>
+              <div class="seg" id="okam-lens-selector" role="group" aria-label="Pilih Mode Kamera 3">
+                <button class="btn sm" data-okam-focus-lens="1" aria-pressed="false">L1 · Panoramic</button>
+                <button class="btn sm" data-okam-focus-lens="2" aria-pressed="false">L2 · Area Kiri</button>
+                <button class="btn sm" data-okam-focus-lens="3" aria-pressed="false">L3 · PTZ Motorik</button>
+                <button class="btn sm" data-okam-focus-lens="split" aria-pressed="true" style="color:var(--text);font-weight:700;">
+                  <svg class="ico" style="width:14px;height:14px;margin-right:4px;"><use href="#i-grid"/></svg>
+                  Three Screens (3 Layar Sinkron)
+                </button>
+              </div>
+            </div>
+          `;
+          splitCardsHtml = `
+            <div class="okam-vertical-stack">
+              <!-- Layar 1: Panoramic Overview -->
+              <div class="okam-screen-card">
+                <div class="video${fillCls}" style="aspect-ratio:16/9;">
+                  <div class="vbar">
+                    <span><i class="dot ${s[1]}"></i>Layar 1 · Panoramic Main (Sensor Tetap)</span>
+                    <em>Live · 1920×1080</em>
+                  </div>
+                  <img class="mjpeg-stream" src="/proxy/stream/okam_1" alt="Layar 1 Panoramic" 
+                    onerror="window.handleStreamError && window.handleStreamError(this, 'okam_1', 'msg-okam-1');" 
+                    onload="window.handleStreamLoad && window.handleStreamLoad(this, 'okam_1', 'msg-okam-1');">
+                  ${msg({id: 'okam_1', ip: c.ip, n: 'Layar 1 · Panoramic'}, 'msg-okam-1')}
+                </div>
+                <div class="cmeta" style="padding:10px 14px 10px;">
+                  <div class="mrow">
+                    <div>
+                      <b style="font-size:14px;">Layar 1 · Panoramic Main (Area Luar & Halaman)</b>
+                      <div class="ip" style="font-size:12px;margin-top:2px;">Sensor Utama Tetap · 1920×1080 · 16:9 Widescreen</div>
+                    </div>
+                    <button class="btn sm" data-okam-switch-lens="1" title="Tampilkan Layar 1 sebagai tampilan tunggal">Perbesar Layar 1</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Layar 2: Area Kiri (Pagar & Jalan) -->
+              <div class="okam-screen-card">
+                <div class="video okam-lens-left${fillCls}" style="aspect-ratio:16/9;">
+                  <div class="vbar">
+                    <span><i class="dot ${s[1]}"></i>Layar 2 · Area Kiri (Gerbang & Jalan Lingkungan)</span>
+                    <em>Live · 1920×1080 (ROI)</em>
+                  </div>
+                  <img class="mjpeg-stream" src="/proxy/stream/okam_1" alt="Layar 2 Area Kiri" 
+                    onerror="window.handleStreamError && window.handleStreamError(this, 'okam_1', 'msg-okam-2');" 
+                    onload="window.handleStreamLoad && window.handleStreamLoad(this, 'okam_1', 'msg-okam-2');">
+                  ${msg({id: 'okam_1', ip: c.ip, n: 'Layar 2 · Area Kiri'}, 'msg-okam-2')}
+                </div>
+                <div class="cmeta" style="padding:10px 14px 10px;">
+                  <div class="mrow">
+                    <div>
+                      <b style="font-size:14px;">Layar 2 · Area Kiri (Pagar, Lampu Tiang & Gerbang)</b>
+                      <div class="ip" style="font-size:12px;margin-top:2px;">Electronic ROI Slicing · 1920×1080 · Sudut Pantau Gerbang</div>
+                    </div>
+                    <button class="btn sm" data-okam-switch-lens="2" title="Tampilkan Layar 2 sebagai tampilan tunggal">Perbesar Layar 2</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Layar 3: PTZ Motorik (Aktif) -->
+              <div class="okam-screen-card is-active-ptz">
+                <div class="video${fillCls}" style="aspect-ratio:16/9;">
+                  <div class="vbar" style="background:rgba(0, 229, 255, 0.15); border-bottom:1px solid rgba(0, 229, 255, 0.35);">
+                    <span><i class="dot" style="background:#00e5ff;box-shadow:0 0 8px #00e5ff;"></i>Layar 3 · PTZ Motorik (Aktif · Kontrol Rotasi)</span>
+                    <em style="color:#00e5ff;font-weight:700;">Live PTZ · 1920×1080</em>
+                  </div>
+                  <img class="mjpeg-stream" src="/proxy/stream/okam_2" alt="Layar 3 PTZ" 
+                    onerror="window.handleStreamError && window.handleStreamError(this, 'okam_2', 'msg-okam-3');" 
+                    onload="window.handleStreamLoad && window.handleStreamLoad(this, 'okam_2', 'msg-okam-3');">
+                  ${msg({id: 'okam_2', ip: c.ip, n: 'Layar 3 · PTZ Motorik'}, 'msg-okam-3')}
+                </div>
+                <div class="cmeta" style="padding:12px 14px 10px;">
+                  <div class="mrow">
+                    <div>
+                      <b style="font-size:14px;color:#00e5ff;">Layar 3 · Sensor Motorik PTZ (Teras, Pintu & Parkir)</b>
+                      <div class="ip" style="font-size:12px;margin-top:2px;">Sensor Rotasi Independen (Port 10555) · Terhubung ke Kontroler PTZ di Bawah</div>
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                      <button class="btn sm primary" data-open-ptz="okam-3" style="background:rgba(0, 229, 255, 0.2);border-color:#00e5ff;color:#00e5ff;"><svg class="ico"><use href="#i-ptz"/></svg> <span>Kontrol PTZ</span></button>
+                      <button class="btn sm" data-okam-switch-lens="3" title="Tampilkan Layar 3 sebagai tampilan tunggal">Perbesar Layar 3</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        stage.innerHTML = `
+          <div class="card cam">
+            ${splitHeaderHtml}
+            ${splitCardsHtml}
             ${renderPTZController(c)}
             <div class="cmeta" style="margin-top:14px;">
               <div class="mrow">
                 <div>
                   <b class="nm">${escapeHtml(c.n)} (3 Lensa Aktif Simultan)</b>
-                  <div class="ip">${c.ip} · ${c.d} · Port ${c.p} <span class="res-tag">3x 1920×1080</span></div>
+                  <div class="ip">${c.ip} · ${c.d} · Port ${c.p} <span class="res-tag">3 Lensa Simultan</span></div>
                 </div>
                 ${acts(c, '')}
               </div>
@@ -1042,8 +1215,9 @@
         const lensCls = isCam1 && cam1LensMode !== 'all' ? ` lens-${cam1LensMode}` : '';
         const stageAspect = isCam1 && cam1LensMode !== 'all' ? '16 / 9' : (c.aspectRatio || '16 / 9');
         const stageRatioVal = isCam1 && cam1LensMode !== 'all' ? 1.7778 : (c.aspectVal || 1.7778);
-        const stageRes = isCam1 && cam1LensMode !== 'all' ? '1920×1080 (16:9)' : (c.resolution || '');
-        const lensTitle = isCam1 && cam1LensMode === '1' ? 'Camera 1 · Lensa 1 (Atas - Panoramic)' : (isCam1 && cam1LensMode === '2' ? 'Camera 1 · Lensa 2 (Tengah - Fixed Tele)' : (isCam1 && cam1LensMode === '3' ? 'Camera 1 · Lensa 3 (Bawah - PTZ Rotasi)' : c.n));
+        const stageRes = isCam1 && cam1LensMode !== 'all' ? '1920×1080 (16:9)' : (isOkam ? (okamLenses[okamLensMode] || okamLenses['1']).res : (c.resolution || ''));
+        const lensTitle = isCam1 && cam1LensMode === '1' ? 'Camera 1 · Lensa 1 (Atas - Panoramic)' : (isCam1 && cam1LensMode === '2' ? 'Camera 1 · Lensa 2 (Tengah - Fixed Tele)' : (isCam1 && cam1LensMode === '3' ? 'Camera 1 · Lensa 3 (Bawah - PTZ Rotasi)' : (isOkam ? `Camera 3 · ${(okamLenses[okamLensMode] || okamLenses['1']).name}` : c.n)));
+        const stageStreamUrl = isOkam ? (okamLenses[okamLensMode] || okamLenses['1']).streamUrl : c.streamUrl;
 
         const lensBar = isCam1 ? `
           <div class="lens-bar">
@@ -1056,7 +1230,17 @@
               <button class="btn sm" data-lens="split" aria-pressed="false">Split 3 Lensa</button>
             </div>
           </div>
-        ` : '';
+        ` : (isOkam ? `
+          <div class="lens-bar">
+            <span class="lens-bar-label">Mode Tampilan O-Kam Pro (3 Layar):</span>
+            <div class="seg" id="okam-lens-selector" role="group" aria-label="Pilih Mode Kamera 3">
+              <button class="btn sm" data-okam-focus-lens="1" aria-pressed="${okamLensMode === '1'}">L1 · Panoramic</button>
+              <button class="btn sm" data-okam-focus-lens="2" aria-pressed="${okamLensMode === '2'}">L2 · Area Kiri</button>
+              <button class="btn sm" data-okam-focus-lens="3" aria-pressed="${okamLensMode === '3'}">L3 · PTZ Motorik</button>
+              <button class="btn sm" data-okam-focus-lens="split" aria-pressed="false">Three Screens (3 Layar)</button>
+            </div>
+          </div>
+        ` : '');
 
         stage.innerHTML = `
           <div class="card cam">
@@ -1065,7 +1249,7 @@
               ${bar(c, s)}
               <div class="video-viewport" id="video-viewport" title="Scroll untuk Zoom · Drag untuk Pan · Double-click untuk Reset/Toggle">
                 <div class="video-zoom-stage" id="video-zoom-stage">
-                  <img class="mjpeg-stream" id="stream-img-main" src="${c.streamUrl}" alt="${escapeHtml(c.n)}" 
+                  <img class="mjpeg-stream" id="stream-img-main" src="${stageStreamUrl}" alt="${escapeHtml(c.n)}" 
                     onerror="window.handleStreamError && window.handleStreamError(this, '${c.id}', 'msg-main');" 
                     onload="window.handleStreamLoad && window.handleStreamLoad(this, '${c.id}', 'msg-main');"
                     style="${isHealthy ? 'display:block;' : 'display:none;'}">
@@ -1076,7 +1260,7 @@
                 <span class="ts"></span>
                 <span class="res-tag">${stageRes}</span>
                 <div class="zoom">
-                  ${(isCam1 || c.id === 'okam-3') ? `
+                  ${(isCam1 || isOkam) ? `
                   <button class="btn ptz-toggle-btn${ptzPanelOpen ? ' active' : ''}" id="btn-toggle-ptz" title="Toggle PTZ Tactical Controller">
                     <svg class="ico"><use href="#i-ptz"/></svg><span>PTZ</span>
                   </button>
@@ -1116,6 +1300,11 @@
 
     const camsGrid = $('#cams');
     if (camsGrid) camsGrid.innerHTML = cams.map(card).join('');
+
+    // Ensure layout visibility is strictly synchronized
+    const isGrid = $('#layouts button[data-l="grid"]')?.getAttribute('aria-pressed') === 'true';
+    layout(isGrid ? 'grid' : 'focus');
+
     bindPTZControls();
     bindVideoZoomAndPan();
     applyZoomTransform();
@@ -1373,24 +1562,95 @@
 
   function initTabs() {
     if (!track) return;
-    track.innerHTML = '<span class="pill" id="pill"></span>' + tabs
-      .map((t, i) => `<button class="tab" data-go="${i}">${t[0]}${t[2] !== undefined ? `<i>${t[2]}</i>` : ''}</button>`)
-      .join('');
+    const primaryHtml = tabs.slice(0, 4).map((t, i) =>
+      `<button class="tab" data-go="${i}">${t[0]}${t[2] !== undefined ? `<i>${t[2]}</i>` : ''}</button>`
+    ).join('');
+
+    const notifItem = tabs[6];
+    const notifCount = notifItem && notifItem[2] ? notifItem[2] : 0;
+
+    const moreHtml = `
+      <div class="tab-more-wrap" id="tab-more-wrap">
+        <button type="button" class="tab tab-more-btn" id="tab-more-btn" aria-haspopup="menu" aria-expanded="false">
+          <span id="tab-more-label">More</span>
+          <svg class="ico sm" style="width:14px;height:14px"><use href="#i-arrow-down"/></svg>
+        </button>
+        <div class="tab-more-menu" id="tab-more-menu" role="menu">
+          <button type="button" class="tab-more-item" data-go="4" role="menuitem">
+            <svg class="ico"><use href="#i-db"/></svg>
+            <span>Storage &amp; Retention</span>
+          </button>
+          <button type="button" class="tab-more-item" data-go="5" role="menuitem">
+            <svg class="ico"><use href="#i-pulse"/></svg>
+            <span>Diagnostics</span>
+          </button>
+          <button type="button" class="tab-more-item" data-go="6" role="menuitem">
+            <svg class="ico"><use href="#i-bell"/></svg>
+            <span>Notifications</span>
+            <i id="more-notif-cnt" style="${notifCount > 0 ? '' : 'display:none'}">${notifCount}</i>
+          </button>
+          <button type="button" class="tab-more-item" data-go="7" role="menuitem">
+            <svg class="ico"><use href="#i-gear"/></svg>
+            <span>Setup &amp; Security</span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    track.innerHTML = '<span class="pill" id="pill"></span>' + primaryHtml + moreHtml;
   }
 
   function move() {
     const p = $('#pill');
-    const a = track ? track.querySelector('[aria-current="page"]') : null;
-    if (p && a) {
-      p.style.width = a.offsetWidth + 'px';
-      p.style.transform = `translateX(${a.offsetLeft}px)`;
+    const a = track ? track.querySelector('.tab[aria-current="page"]') : null;
+    if (p) {
+      if (a) {
+        p.style.opacity = '1';
+        p.style.width = a.offsetWidth + 'px';
+        p.style.transform = `translateX(${a.offsetLeft}px)`;
+      } else {
+        p.style.opacity = '0';
+      }
     }
   }
 
   function go(i) {
-    if (!track) return;
-    track.querySelectorAll('.tab').forEach((t, k) => {
-      if (k === i) t.setAttribute('aria-current', 'page');
+    if (track) {
+      // Primary tab buttons (0..3)
+      track.querySelectorAll('.tab[data-go]').forEach((t) => {
+        if (+t.dataset.go === i) t.setAttribute('aria-current', 'page');
+        else t.removeAttribute('aria-current');
+      });
+
+      // More button and menu items (4..7)
+      const moreBtn = $('#tab-more-btn');
+      const moreLabel = $('#tab-more-label');
+      const moreItems = track.querySelectorAll('.tab-more-item');
+
+      moreItems.forEach((it) => {
+        if (+it.dataset.go === i) it.setAttribute('aria-current', 'page');
+        else it.removeAttribute('aria-current');
+      });
+
+      if (i >= 4 && i <= 7) {
+        if (moreBtn) moreBtn.setAttribute('aria-current', 'page');
+        if (moreLabel) {
+          const shortNames = { 4: 'Storage', 5: 'Diagnostics', 6: 'Alerts', 7: 'Setup' };
+          moreLabel.textContent = shortNames[i] || tabs[i][0];
+        }
+      } else {
+        if (moreBtn) moreBtn.removeAttribute('aria-current');
+        if (moreLabel) moreLabel.textContent = 'More';
+      }
+    }
+
+    // Close more dropdown if open
+    $('#tab-more-wrap')?.classList.remove('open');
+    $('#tab-more-btn')?.setAttribute('aria-expanded', 'false');
+
+    // Synchronize active indicator on left dock
+    document.querySelectorAll('.dock [data-go]').forEach((t) => {
+      if (+t.dataset.go === i) t.setAttribute('aria-current', 'page');
       else t.removeAttribute('aria-current');
     });
 
@@ -1428,8 +1688,28 @@
 
   function layout(l) {
     const g = l === 'grid';
-    if ($('#stage')) $('#stage').hidden = g;
-    if ($('#cams')) $('#cams').hidden = !g;
+    const stageEl = $('#stage');
+    const camsEl = $('#cams');
+    if (stageEl) {
+      stageEl.hidden = g;
+      if (g) {
+        stageEl.setAttribute('hidden', '');
+        stageEl.style.setProperty('display', 'none', 'important');
+      } else {
+        stageEl.removeAttribute('hidden');
+        stageEl.style.removeProperty('display');
+      }
+    }
+    if (camsEl) {
+      camsEl.hidden = !g;
+      if (!g) {
+        camsEl.setAttribute('hidden', '');
+        camsEl.style.setProperty('display', 'none', 'important');
+      } else {
+        camsEl.removeAttribute('hidden');
+        camsEl.style.removeProperty('display');
+      }
+    }
     $$('#layouts button').forEach((x) => x.setAttribute('aria-pressed', x.dataset.l === l));
   }
 
@@ -1749,6 +2029,8 @@
 
       const tabItem = tabs.find((t) => t[1] === 'v-events');
       if (tabItem) tabItem[2] = eventsCache.length;
+      const dockEvDot = $('#dock-events-dot');
+      if (dockEvDot) dockEvDot.style.display = eventsCache.length > 0 ? 'block' : 'none';
       initTabs();
       move();
     } catch (err) {
@@ -2077,6 +2359,8 @@
       const unreadCount = notificationsCache.filter((n) => !n.acknowledged).length;
       const tabItem = tabs.find((t) => t[1] === 'v-notif');
       if (tabItem) tabItem[2] = unreadCount;
+      const dockNotifDot = $('#dock-notif-dot');
+      if (dockNotifDot) dockNotifDot.style.display = unreadCount > 0 ? 'block' : 'none';
       initTabs();
       move();
     } catch (err) {
@@ -2226,7 +2510,10 @@
 
       if (healthRes && healthRes.cameras) {
         Object.entries(healthRes.cameras).forEach(([cid, camData]) => {
-          const localCam = cams.find((c) => c.id === cid);
+          let localCam = cams.find((c) => c.id === cid);
+          if (!localCam && (cid === 'okam_1' || cid === 'okam-1' || cid === 'okam-3' || cid.startsWith('okam'))) {
+            localCam = cams.find((c) => c.id === 'okam-3');
+          }
           if (localCam) {
             localCam.s = (camData.status || 'degraded').toLowerCase();
             if (camData.checks) localCam.checks = camData.checks;
@@ -2237,15 +2524,19 @@
               localCam.decodeErrors = camData.metrics.decodeErrors || 0;
             }
 
-            if (!fpsHistory[cid]) fpsHistory[cid] = [];
-            fpsHistory[cid].push(localCam.fps);
-            if (fpsHistory[cid].length > 30) fpsHistory[cid].shift();
+            const historyKey = localCam.id;
+            if (!fpsHistory[historyKey]) fpsHistory[historyKey] = [];
+            fpsHistory[historyKey].push(localCam.fps);
+            if (fpsHistory[historyKey].length > 30) fpsHistory[historyKey].shift();
           }
         });
 
         if (servicesRes && servicesRes.services) {
           Object.entries(servicesRes.services).forEach(([cid, sData]) => {
-            const localCam = cams.find((c) => c.id === cid);
+            let localCam = cams.find((c) => c.id === cid);
+            if (!localCam && (cid === 'okam_1' || cid === 'okam-1' || cid === 'okam-3' || cid.startsWith('okam'))) {
+              localCam = cams.find((c) => c.id === 'okam-3');
+            }
             if (localCam) {
               localCam.running = sData.running;
               localCam.circuitBreakerTripped = sData.circuitBreakerTripped || false;
@@ -2295,6 +2586,20 @@
     const c = (s) => e.target.closest(s);
     let m;
 
+    const moreBtn = c('#tab-more-btn');
+    if (moreBtn) {
+      const wrap = $('#tab-more-wrap');
+      if (wrap) {
+        const isOpen = wrap.classList.toggle('open');
+        moreBtn.setAttribute('aria-expanded', isOpen);
+      }
+      return;
+    }
+    if (!c('#tab-more-wrap')) {
+      $('#tab-more-wrap')?.classList.remove('open');
+      $('#tab-more-btn')?.setAttribute('aria-expanded', 'false');
+    }
+
     if ((m = c('[data-go]'))) return go(+m.dataset.go);
 
     if ((m = c('[data-act]'))) {
@@ -2302,6 +2607,19 @@
       const cid = m.dataset.cid;
       const targetCam = cams.find((x) => x.id === cid) || cams[sel];
 
+      if (act === 'quick-search') return openQuickSearch();
+      if (act === 'theme') return toggleTheme(e);
+      if (act === 'add-cam') {
+        go(7);
+        setTimeout(() => {
+          const inp = $('#cam-name');
+          if (inp) {
+            inp.focus();
+            inp.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 150);
+        return;
+      }
       if (act === 'record') return toggleRecording(cid);
       if (act === 'start-cam') return startCamera(cid);
       if (act === 'stop-cam') return stopCamera(cid);
@@ -2335,7 +2653,7 @@
       return live();
     }
 
-    // Camera 1 Multi-Lens selection
+    // Camera 1 & Camera 3 Multi-Lens selection
     if ((m = c('[data-lens]'))) {
       cam1LensMode = m.dataset.lens;
       try { localStorage.setItem('camhub_cam1_lens', cam1LensMode); } catch (_) {}
@@ -2346,10 +2664,26 @@
       try { localStorage.setItem('camhub_cam1_lens', cam1LensMode); } catch (_) {}
       return live();
     }
+    if ((m = c('[data-okam-focus-lens]'))) {
+      okamLensMode = m.dataset.okamFocusLens;
+      try { localStorage.setItem('camhub_okam_lens', okamLensMode); } catch (_) {}
+      return live();
+    }
+    if ((m = c('[data-okam-switch-lens]'))) {
+      okamLensMode = m.dataset.okamSwitchLens;
+      try { localStorage.setItem('camhub_okam_lens', okamLensMode); } catch (_) {}
+      return live();
+    }
     if ((m = c('[data-open-ptz]'))) {
-      cam1LensMode = '3';
+      const targetCid = m.dataset.openPtz;
+      if (targetCid === 'okam-3' || targetCid?.startsWith('okam')) {
+        okamLensMode = '3';
+        try { localStorage.setItem('camhub_okam_lens', okamLensMode); } catch (_) {}
+      } else {
+        cam1LensMode = '3';
+        try { localStorage.setItem('camhub_cam1_lens', cam1LensMode); } catch (_) {}
+      }
       ptzPanelOpen = true;
-      try { localStorage.setItem('camhub_cam1_lens', cam1LensMode); } catch (_) {}
       return live();
     }
     if (c('#btn-toggle-ptz') || (m = c('[data-act="toggle-ptz"]'))) {
@@ -2375,6 +2709,30 @@
       });
       return;
     }
+    if ((m = c('[data-okam-lens]'))) {
+      okamGridLens = m.dataset.okamLens;
+      try { localStorage.setItem('camhub_okam_grid_lens', okamGridLens); } catch (_) {}
+      const targetLens = okamLenses[okamGridLens] || okamLenses['1'];
+      const okamCard = $('#feed-okam-3')?.closest('.card');
+      if (okamCard) {
+        const streamImg = okamCard.querySelector('#stream-img-okam-3');
+        if (streamImg) streamImg.src = targetLens.streamUrl;
+        const feedOkam = okamCard.querySelector('#feed-okam-3');
+        if (feedOkam) {
+          if (okamGridLens === '2') {
+            feedOkam.classList.add('okam-lens-left');
+          } else {
+            feedOkam.classList.remove('okam-lens-left');
+          }
+        }
+        const resTag = okamCard.querySelector('.res-tag');
+        if (resTag) resTag.textContent = targetLens.res;
+      }
+      document.querySelectorAll('[data-okam-lens]').forEach((b) => {
+        b.setAttribute('aria-pressed', b.dataset.okamLens === okamGridLens ? 'true' : 'false');
+      });
+      return;
+    }
 
     // Digital Zoom controls
     const zoomBtn = c('[data-zoom]');
@@ -2396,10 +2754,11 @@
       return toast('Feeds & telemetry refreshed');
     }
 
-    if (c('#restart')) return ask('restart');
+    if (c('#restart') || c('#dock-power')) return ask('restart');
     if (c('#btn-stop-all')) return ask('stop');
     if (c('#btn-run-all')) return runAllCameras();
-    if (c('#btn-toggle-role')) return toggleRole();
+    if (c('#btn-toggle-role') || c('#dock-role')) return toggleRole();
+    if (c('#btn-theme') || c('#dock-theme')) return toggleTheme(e);
 
     // Dialog handlers
     if (c('#no')) return $('#dlg')?.close();
@@ -2470,10 +2829,330 @@
     $('#config-dialog')?.close();
   });
 
+  // --- Light & Dark Theme Toggle with Circular Reveal Animation ---
+  function getTheme() {
+    return document.documentElement.getAttribute('data-theme') || 'dark';
+  }
+
+  function applyThemeState(newTheme) {
+    if (newTheme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+    try {
+      localStorage.setItem('camhub_theme', newTheme);
+    } catch (_) {}
+
+    // Update tooltips and titles
+    const dockThemeTip = $('#dock-theme .dock__tip');
+    if (dockThemeTip) {
+      dockThemeTip.innerHTML = `${newTheme === 'light' ? 'Dark' : 'Light'} Mode <kbd>T</kbd>`;
+    }
+    const btnTheme = $('#btn-theme');
+    if (btnTheme) {
+      btnTheme.title = `Switch to ${newTheme === 'light' ? 'dark' : 'light'} theme`;
+    }
+  }
+
+  function toggleTheme(event) {
+    const currentTheme = getTheme();
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+
+    // Get origin coordinates from click event or fallback to button center
+    let x = window.innerWidth / 2;
+    let y = window.innerHeight / 2;
+
+    if (event && (event.clientX || event.clientY)) {
+      x = event.clientX;
+      y = event.clientY;
+    } else {
+      const btn = $('#dock-theme') || $('#btn-theme');
+      if (btn) {
+        const rect = btn.getBoundingClientRect();
+        x = rect.left + rect.width / 2;
+        y = rect.top + rect.height / 2;
+      }
+    }
+
+    // Distance to furthest screen corner
+    const endRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y)
+    );
+
+    // 1. Modern View Transitions API with CSS Circular Reveal Animation
+    if (document.startViewTransition) {
+      const transition = document.startViewTransition(() => {
+        applyThemeState(newTheme);
+      });
+
+      transition.ready.then(() => {
+        document.documentElement.animate(
+          {
+            clipPath: [
+              `circle(0px at ${x}px ${y}px)`,
+              `circle(${endRadius}px at ${x}px ${y}px)`
+            ]
+          },
+          {
+            duration: 520,
+            easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+            pseudoElement: '::view-transition-new(root)'
+          }
+        );
+      });
+      return;
+    }
+
+    // 2. High-performance Fallback circular reveal overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'theme-reveal-overlay';
+    overlay.style.background = newTheme === 'light' ? '#f1f2ef' : '#000000';
+    overlay.style.clipPath = `circle(0px at ${x}px ${y}px)`;
+    document.body.appendChild(overlay);
+
+    overlay.offsetHeight; // force reflow
+
+    overlay.style.clipPath = `circle(${endRadius}px at ${x}px ${y}px)`;
+    setTimeout(() => {
+      applyThemeState(newTheme);
+      setTimeout(() => {
+        overlay.style.opacity = '0';
+        overlay.style.transition = 'opacity 150ms ease';
+        setTimeout(() => overlay.remove(), 160);
+      }, 50);
+    }, 480);
+  }
+
+  // --- Quick Finder / Command Palette (Murmura Style) ---
+  const finderDlg = $('#finder-dialog');
+  const finderInput = $('#finder-input');
+  const finderResults = $('#finder-results');
+  let finderIndex = 0;
+
+  function buildFinderItems() {
+    const list = [];
+    // Cameras
+    cams.forEach((c, idx) => {
+      list.push({
+        type: 'camera',
+        title: `${c.n}`,
+        subtitle: `Focus live stream · ${c.ip}`,
+        icon: 'i-cam',
+        badge: `Camera ${idx + 1}`,
+        action: () => {
+          sel = idx;
+          zoomLevel = 1.0;
+          panX = 0;
+          panY = 0;
+          live();
+          layout('focus');
+          go(0);
+        }
+      });
+    });
+
+    // Navigation Tabs
+    const tabIcons = ['i-live', 'i-grid', 'i-play', 'i-spark', 'i-db', 'i-pulse', 'i-bell', 'i-gear'];
+    tabs.forEach((t, idx) => {
+      list.push({
+        type: 'tab',
+        title: t[0],
+        subtitle: sentences[idx] || `Switch to ${t[0]}`,
+        icon: tabIcons[idx] || 'i-live',
+        badge: `Tab ${idx + 1}`,
+        action: () => go(idx)
+      });
+    });
+
+    // Quick Actions
+    list.push({
+      type: 'action',
+      title: 'Add / Discover Camera',
+      subtitle: 'Open camera setup & configuration form',
+      icon: 'i-plus',
+      badge: 'Setup',
+      action: () => {
+        go(7);
+        setTimeout(() => {
+          const inp = $('#cam-name');
+          if (inp) {
+            inp.focus();
+            inp.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 150);
+      }
+    });
+    list.push({
+      type: 'action',
+      title: 'Restart All Cameras',
+      subtitle: 'Gracefully restart camera worker decoders',
+      icon: 'i-pwr',
+      badge: 'Action',
+      action: () => ask('restart')
+    });
+    list.push({
+      type: 'action',
+      title: 'Run All Cameras',
+      subtitle: 'Start all camera decoders',
+      icon: 'i-play',
+      badge: 'Action',
+      action: () => runAllCameras()
+    });
+    list.push({
+      type: 'action',
+      title: 'Stop All Cameras',
+      subtitle: 'Halt all camera streaming and decoding processes',
+      icon: 'i-stop',
+      badge: 'Action',
+      action: () => ask('stop')
+    });
+    list.push({
+      type: 'action',
+      title: `Switch Role (Current: ${currentUserRole === 'admin' ? 'Admin' : 'Viewer'})`,
+      subtitle: 'Toggle Admin or Viewer UI mode',
+      icon: 'i-shield',
+      badge: 'Role',
+      action: () => toggleRole()
+    });
+    list.push({
+      type: 'action',
+      title: `Toggle Theme (Switch to ${getTheme() === 'light' ? 'Dark' : 'Light'} Mode)`,
+      subtitle: 'Circular reveal light and dark mode transition',
+      icon: getTheme() === 'light' ? 'i-moon' : 'i-sun',
+      badge: 'Theme',
+      action: () => toggleTheme()
+    });
+
+    return list;
+  }
+
+  function renderFinderResults(query = '') {
+    if (!finderResults) return;
+    const q = query.trim().toLowerCase();
+    const all = buildFinderItems();
+    const filtered = q
+      ? all.filter(it => it.title.toLowerCase().includes(q) || it.subtitle.toLowerCase().includes(q) || it.badge.toLowerCase().includes(q))
+      : all;
+
+    finderIndex = Math.min(finderIndex, Math.max(0, filtered.length - 1));
+
+    if (!filtered.length) {
+      finderResults.innerHTML = `<div class="empty" style="padding:28px 16px;text-align:center;"><p style="color:var(--muted)">No matching items found for "${escapeHtml(query)}"</p></div>`;
+      return;
+    }
+
+    finderResults.innerHTML = filtered.map((it, idx) => `
+      <div class="finder-item ${idx === finderIndex ? 'active' : ''}" data-finder-idx="${idx}">
+        <svg class="ico"><use href="#${it.icon}"/></svg>
+        <div class="finder-item-txt">
+          <b>${escapeHtml(it.title)}</b>
+          <small>${escapeHtml(it.subtitle)}</small>
+        </div>
+        <span class="finder-item-badge">${escapeHtml(it.badge)}</span>
+      </div>
+    `).join('');
+
+    finderResults.querySelectorAll('.finder-item').forEach((el, idx) => {
+      el.addEventListener('click', () => {
+        finderDlg?.close();
+        filtered[idx].action();
+      });
+      el.addEventListener('mouseenter', () => {
+        finderResults.querySelectorAll('.finder-item').forEach(x => x.classList.remove('active'));
+        el.classList.add('active');
+        finderIndex = idx;
+      });
+    });
+  }
+
+  function openQuickSearch() {
+    if (!finderDlg) return;
+    finderIndex = 0;
+    if (finderInput) finderInput.value = '';
+    renderFinderResults();
+    finderDlg.showModal();
+    finderInput?.focus();
+  }
+
+  if (finderInput) {
+    finderInput.addEventListener('input', (e) => {
+      finderIndex = 0;
+      renderFinderResults(e.target.value);
+    });
+    finderInput.addEventListener('keydown', (e) => {
+      const items = finderResults ? finderResults.querySelectorAll('.finder-item') : [];
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (items.length) {
+          finderIndex = (finderIndex + 1) % items.length;
+          items.forEach((x, k) => x.classList.toggle('active', k === finderIndex));
+          items[finderIndex]?.scrollIntoView({ block: 'nearest' });
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (items.length) {
+          finderIndex = (finderIndex - 1 + items.length) % items.length;
+          items.forEach((x, k) => x.classList.toggle('active', k === finderIndex));
+          items[finderIndex]?.scrollIntoView({ block: 'nearest' });
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const active = items[finderIndex];
+        if (active) active.click();
+      }
+    });
+  }
+  if ($('#finder-close')) {
+    $('#finder-close').addEventListener('click', () => finderDlg?.close());
+  }
+  if (finderDlg) {
+    finderDlg.addEventListener('click', (e) => {
+      if (e.target === finderDlg) finderDlg.close();
+    });
+  }
+
   // --- Tactical Keyboard Listener for PTZ, Zoom & Fullscreen ---
   window.addEventListener('keydown', (e) => {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+
+    // Global Shortcuts (Murmura style):
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      openQuickSearch();
+      return;
+    }
+    if ((e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      go(7);
+      setTimeout(() => {
+        const inp = $('#cam-name');
+        if (inp) {
+          inp.focus();
+          inp.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 150);
+      return;
+    }
+    // Theme toggle shortcut: T or t
+    if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      toggleTheme();
+      return;
+    }
+
     const vLive = $('#v-live');
+    const isPtzActive = vLive && !vLive.hidden && ptzPanelOpen;
+    if (!isPtzActive && !e.ctrlKey && !e.metaKey && !e.altKey && e.key >= '1' && e.key <= '8') {
+      const targetIdx = parseInt(e.key, 10) - 1;
+      if (targetIdx >= 0 && targetIdx < tabs.length) {
+        e.preventDefault();
+        go(targetIdx);
+        return;
+      }
+    }
+
     if (!vLive || vLive.hidden) return;
 
     // Fullscreen toggle
@@ -2488,7 +3167,7 @@
     // Digital Zoom / PTZ Zoom
     if (e.key === '+' || e.key === '=') {
       e.preventDefault();
-      if ((c.id === 'v380-1' || c.id === 'okam-3') && ptzPanelOpen) {
+      if ((c.id === 'v380-1' || c.id === 'okam-3' || c.id.startsWith('okam')) && ptzPanelOpen) {
         sendPtzZoom(c.id, 'in', ptzSpeed);
       } else {
         setZoom(zoomLevel + 0.25);
@@ -2496,7 +3175,7 @@
       return;
     } else if (e.key === '-' || e.key === '_') {
       e.preventDefault();
-      if ((c.id === 'v380-1' || c.id === 'okam-3') && ptzPanelOpen) {
+      if ((c.id === 'v380-1' || c.id === 'okam-3' || c.id.startsWith('okam')) && ptzPanelOpen) {
         sendPtzZoom(c.id, 'out', ptzSpeed);
       } else {
         setZoom(zoomLevel - 0.25);
@@ -2508,7 +3187,7 @@
       return;
     }
 
-    if (c.id !== 'v380-1' && c.id !== 'okam-3') return;
+    if (c.id !== 'v380-1' && c.id !== 'okam-3' && !c.id.startsWith('okam')) return;
 
     let dir = null;
     if (e.key === 'ArrowUp') dir = 'up';
@@ -2550,7 +3229,7 @@
     if (!vLive || vLive.hidden) return;
 
     const c = cams[sel] || cams[0];
-    if (c.id !== 'v380-1' && c.id !== 'okam-3') return;
+    if (c.id !== 'v380-1' && c.id !== 'okam-3' && !c.id.startsWith('okam')) return;
 
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
       e.preventDefault();
@@ -2583,6 +3262,16 @@
     notifFilterSev = b.dataset.sev || '';
     renderNotificationsList();
   });
+
+  // Initialize theme from localStorage or system preference
+  try {
+    const savedTheme = localStorage.getItem('camhub_theme');
+    if (savedTheme === 'light') {
+      applyThemeState('light');
+    } else if (!savedTheme && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+      applyThemeState('light');
+    }
+  } catch (_) {}
 
   dash();
   live();

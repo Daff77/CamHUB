@@ -290,6 +290,8 @@ class CamHubDiagnosticsService:
                 }
 
             ports_report["cameras"][cid] = cam_entry
+            for alias in cam.get("aliases", []):
+                ports_report["cameras"][alias] = cam_entry
 
         return ports_report
 

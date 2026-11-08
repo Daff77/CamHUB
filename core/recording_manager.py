@@ -323,6 +323,9 @@ class RecordingManager:
             if rtsp_port:
                 return f"rtsp://127.0.0.1:{rtsp_port}/live/ch0"
 
+            if cam.get("rtspUrl"):
+                return cam["rtspUrl"]
+
             # Priority 2: Direct RTSP in camera adapter command
             if cam.get("type") == "okam":
                 rtsp_cmd = cam.get("cmd", "")
@@ -343,7 +346,8 @@ class RecordingManager:
 
         # Fallback to local MJPEG stream
         port = cam.get("port", 8080)
-        return f"http://127.0.0.1:{port}/stream.mjpg"
+        stream_path = cam.get("streamPath") or (f"/api/cameras/{cid}/stream.mjpg" if cam.get("type") == "okam" else "/stream.mjpg")
+        return f"http://127.0.0.1:{port}{stream_path}"
 
     def start_recording(self, cid: str, mode: str = "manual", duration: int = 0) -> tuple[bool, str]:
         # Check disk space warning before launching

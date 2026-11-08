@@ -362,7 +362,8 @@ class MotionDetectorService:
                 cid = cam.get("id")
                 name = cam.get("name", cid)
                 port = cam.get("port", 8080)
-                snapshot_url = f"http://127.0.0.1:{port}/snapshot"
+                snap_path = cam.get("snapshotPath") or (f"/api/cameras/{cid}/snapshot" if cam.get("type") == "okam" else "/snapshot")
+                snapshot_url = f"http://127.0.0.1:{port}{snap_path}"
                 active_ids.add(cid)
 
                 merged_cfg = dict(DEFAULT_MOTION_CONFIG)

@@ -100,7 +100,7 @@ class CamHubPTZService:
             return None
         cfg = self.config_loader()
         for cam in cfg.get("cameras", []):
-            if cam.get("id") == camera_id:
+            if cam.get("id") == camera_id or camera_id in cam.get("aliases", []):
                 return cam
         return None
 
@@ -477,7 +477,7 @@ class CamHubPTZService:
 
         # Determine capabilities based on camera model and configuration
         is_v380 = cam_type == "v380" or "v380" in camera_id
-        is_ptz_capable = is_v380 or camera_id == "v380-1" or camera_id == "okam-3"
+        is_ptz_capable = is_v380 or camera_id == "v380-1" or "okam" in camera_id
 
         motion = self.motion_state.get(camera_id, {
             "is_moving": False,

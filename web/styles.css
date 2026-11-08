@@ -21,10 +21,98 @@
   --font: "Urbanist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --shadow: 0 1px 2px #0006, 0 18px 40px -24px #000c;
+  --dock: rgba(18, 18, 18, 0.94);
+  --on-dock: #f2f2f2;
+  --dock-x: 18px;
+  --dock-w: 66px;
+  --gutter: clamp(14px, 1.8vw, 26px);
+  --top-bg: rgba(13, 13, 13, 0.9);
+  --tip-bg: #181818;
+  --finder-bg: #121212;
+  --dialog-bg: #171717;
   color-scheme: dark;
   box-sizing: border-box;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Light Theme Variables (Murmura Aesthetic) */
+[data-theme="light"] {
+  --bg: #f1f2ef;
+  --surface: #ffffff;
+  --raised: #f7f8f5;
+  --well: rgba(22, 26, 30, 0.05);
+  --line: rgba(22, 26, 30, 0.09);
+  --line-2: rgba(22, 26, 30, 0.16);
+  --text: #16191d;
+  --muted: #5b6064;
+  --faint: #8a8f94;
+  --primary: #16191d;
+  --on-primary: #ffffff;
+  --good: #11745a;
+  --warn: #d48b15;
+  --bad: #c43c30;
+  --shadow: 0 1px 3px rgba(22, 26, 30, 0.06), 0 20px 40px -20px rgba(22, 26, 30, 0.12);
+  --dock: rgba(255, 255, 255, 0.94);
+  --on-dock: #16191d;
+  --top-bg: rgba(255, 255, 255, 0.92);
+  --tip-bg: #ffffff;
+  --finder-bg: #fdfdfb;
+  --dialog-bg: #ffffff;
+  color-scheme: light;
+}
+
+[data-theme="light"] .mark {
+  background: linear-gradient(145deg, #16191d, #2e3338);
+  color: #ffffff;
+}
+
+[data-theme="light"] .btn:hover {
+  background: rgba(22, 26, 30, 0.07);
+}
+
+[data-theme="light"] .btn.primary {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+[data-theme="light"] .btn.primary:hover {
+  background: #000;
+}
+
+[data-theme="light"] .dock__btn:hover,
+[data-theme="light"] .dock__btn:focus-visible {
+  background: rgba(0, 0, 0, 0.07);
+}
+
+[data-theme="light"] .dock__btn[aria-current="page"] {
+  background: rgba(0, 0, 0, 0.1);
+  color: #000;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+[data-theme="light"] .dock__tip {
+  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .tab-more-menu {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: var(--line-2);
+  box-shadow: 0 20px 45px -12px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .finder-input-row {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme="light"] .finder-item:hover,
+[data-theme="light"] .finder-item.active {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] dialog::backdrop,
+[data-theme="light"] .finder-dlg::backdrop {
+  background: rgba(0, 0, 0, 0.45);
 }
 *, *:before, *:after { box-sizing: inherit; }
 [hidden] { display: none !important; }
@@ -52,7 +140,12 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   stroke-linejoin: round;
   flex: none;
 }
-.app { max-width: 1480px; margin: 0 auto; padding: 14px clamp(12px, 1.8vw, 26px) 48px; }
+.app {
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 14px var(--gutter) 48px calc(var(--dock-x) + var(--dock-w) + var(--gutter));
+  transition: padding-left 0.3s var(--ease);
+}
 
 /* Top Floating Nav Bar */
 .top {
@@ -65,7 +158,7 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   flex-wrap: wrap;
   padding: 10px 12px;
   border-radius: 30px;
-  background: rgba(13, 13, 13, 0.9);
+  background: var(--top-bg, rgba(13, 13, 13, 0.9));
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
   backdrop-filter: blur(14px) saturate(1.3);
@@ -98,18 +191,23 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   letter-spacing: 0;
   margin-top: 2px;
 }
-.tabs { flex: 1; min-width: 0; display: flex; justify-content: center; }
+.tabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  overflow: visible;
+}
 .track {
   position: relative;
   display: flex;
+  align-items: center;
   gap: 2px;
   padding: 4px;
   border-radius: 999px;
   background: var(--raised);
   box-shadow: inset 0 0 0 1px var(--line);
-  max-width: 100%;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow: visible;
 }
 .pill {
   position: absolute;
@@ -119,22 +217,23 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   width: 0;
   border-radius: 999px;
   background: var(--text);
-  transition: transform 0.45s var(--ease), width 0.45s var(--ease);
+  transition: transform 0.45s var(--ease), width 0.45s var(--ease), opacity 0.25s var(--ease);
   pointer-events: none;
 }
 .tab {
   position: relative;
   z-index: 1;
-  height: 40px;
-  padding: 0 16px;
+  height: 38px;
+  padding: 0 14px;
   display: inline-flex;
   align-items: center;
   gap: 7px;
   border-radius: 999px;
   font-weight: 600;
+  font-size: 13.5px;
   color: var(--muted);
   white-space: nowrap;
-  transition: color 0.3s;
+  transition: color 0.25s;
 }
 .tab:hover { color: var(--text); }
 .tab[aria-current="page"] { color: var(--bg); }
@@ -147,6 +246,89 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   background: var(--well);
 }
 .tab[aria-current="page"] i { background: rgba(0, 0, 0, 0.12); color: var(--bg); }
+
+/* More Dropdown in Top Tab Bar */
+.tab-more-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  z-index: 2;
+}
+.tab-more-btn {
+  gap: 5px;
+}
+.tab-more-btn .ico {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.22s var(--ease);
+}
+.tab-more-wrap.open .tab-more-btn .ico {
+  transform: rotate(180deg);
+}
+.tab-more-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 220px;
+  background: rgba(18, 18, 18, 0.96);
+  border: 1px solid var(--line-2);
+  border-radius: 18px;
+  box-shadow: 0 20px 45px -12px rgba(0, 0, 0, 0.85), 0 2px 8px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  padding: 6px;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 100;
+}
+.tab-more-wrap.open .tab-more-menu {
+  display: flex;
+  animation: tabMoreSlide 0.18s var(--ease);
+}
+@keyframes tabMoreSlide {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tab-more-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  text-align: left;
+  border: 0;
+  background: none;
+  width: 100%;
+}
+.tab-more-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+.tab-more-item[aria-current="page"] {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+.tab-more-item .ico {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.tab-more-item i {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bad);
+  color: #fff;
+}
 .tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .chip {
   display: inline-flex;
@@ -284,7 +466,7 @@ h1, h2, h3, p, dl, dd { margin: 0; }
 .cams.c2 { grid-template-columns: repeat(2, 1fr); align-items: start; }
 .cams.c1 { grid-template-columns: 1fr; align-items: start; }
 .cam { padding: 12px; overflow: hidden; }
-[hidden], .cam[hidden], .view[hidden], .stage[hidden], .cams[hidden] { display: none !important; }
+[hidden], .cam[hidden], .view[hidden], .stage[hidden], .cams[hidden], #stage[hidden], #cams[hidden] { display: none !important; }
 
 /* Video View Container */
 .video {
@@ -371,7 +553,7 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   top: -200% !important;
 }
 
-/* 3-Lens Split Grid Layout */
+/* 3-Lens Split Grid Layout (Camera 1) */
 .lens-split-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -391,17 +573,76 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   }
 }
 
-/* Split Mode Layout & Other Cameras Grid */
-.stage.is-split {
-  grid-template-columns: 1fr !important;
-  gap: 28px !important;
+/* Electronic ROI Left Area Crop for O-Kam (Layar 2 / Lensa 2) */
+.video.okam-lens-left {
+  overflow: hidden !important;
+  position: relative !important;
+  aspect-ratio: 16 / 9 !important;
 }
-.split-fleet-section {
+.video.okam-lens-left img,
+.video.okam-lens-left .mjpeg-stream,
+.video.okam-lens-left #video-zoom-stage img {
+  position: absolute !important;
+  width: 155% !important;
+  height: 155% !important;
+  left: 0% !important;
+  top: -14% !important;
+  object-fit: cover !important;
+  object-position: left center !important;
+  max-width: none !important;
+  max-height: none !important;
+}
+
+/* O-Kam Pro Three Screens Vertical Stack Layout (Matching Mobile App) */
+.okam-vertical-stack {
   display: flex;
   flex-direction: column;
   gap: 16px;
   width: 100%;
-  margin-top: 10px;
+  max-width: 980px;
+  margin: 0 auto 12px;
+}
+.okam-screen-card {
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.okam-screen-card:hover {
+  border-color: var(--line-2);
+}
+.okam-screen-card.is-active-ptz {
+  border: 2px solid #00e5ff !important;
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.45) !important;
+}
+.okam-screen-card .video {
+  width: 100% !important;
+  aspect-ratio: 16 / 9 !important;
+  border-radius: 16px 16px 0 0;
+  overflow: hidden;
+  position: relative;
+  background: #000;
+  margin: 0 !important;
+}
+
+/* Split Mode Layout & Other Cameras Grid */
+.stage.is-split {
+  grid-template-columns: 1fr !important;
+  gap: 32px !important;
+}
+.split-fleet-section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  margin-top: 36px;
+  padding: 24px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line);
+  box-sizing: border-box;
 }
 .split-fleet-header {
   display: flex;
@@ -469,11 +710,12 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   margin: 0 !important;
 }
 .split-other-card .video img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: top center !important;
 }
 .split-other-card .cmeta {
   padding: 16px 18px 14px;
@@ -610,7 +852,8 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   border-color: var(--text);
   background: rgba(255, 255, 255, 0.04);
 }
-.thumb .video {
+.thumb .video,
+#prev .video {
   width: 100% !important;
   aspect-ratio: 16 / 9 !important;
   max-height: none !important;
@@ -620,13 +863,14 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   background: #080808;
   margin: 0 !important;
 }
-.thumb .video img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top center;
+.thumb .video img,
+#prev .video img {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: top center !important;
 }
 .thumb .tl {
   display: flex;
@@ -924,7 +1168,7 @@ dd { margin: 0; font-weight: 600; font-family: var(--mono); }
 dialog {
   border: 1px solid var(--line-2);
   border-radius: var(--r);
-  background: var(--raised);
+  background: var(--dialog-bg, var(--raised));
   color: var(--text);
   padding: 24px;
   max-width: 440px;
@@ -1224,6 +1468,319 @@ dialog .acts { display: flex; gap: 8px; justify-content: flex-end; }
   color: var(--muted);
 }
 
+/* ==========================================================================
+   Left Side Floating Dock Navigation (Murmura Template Style)
+   ========================================================================== */
+.dock {
+  z-index: 30;
+  position: fixed;
+  left: var(--dock-x);
+  top: 0;
+  bottom: 0;
+  margin: auto 0;
+  height: fit-content;
+  background: var(--dock);
+  color: var(--on-dock);
+  border-radius: 999px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  display: flex;
+  border: 1px solid var(--line);
+  box-shadow: 0 20px 45px -18px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+}
+
+.dock__btn {
+  opacity: 0.72;
+  border-radius: 50%;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  display: grid;
+  position: relative;
+  transition: opacity 0.18s var(--ease), background 0.18s var(--ease), transform 0.18s var(--ease), color 0.18s var(--ease);
+  color: var(--on-dock);
+  cursor: pointer;
+}
+
+.dock__btn .ico {
+  width: 20px;
+  height: 20px;
+}
+
+.dock__btn:hover,
+.dock__btn:focus-visible {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dock__btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.dock__btn[aria-current="page"] {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+.dock__btn--new {
+  background: var(--primary);
+  color: var(--on-primary);
+  opacity: 1;
+}
+
+.dock__btn--new:hover,
+.dock__btn--new:focus-visible {
+  background: #ffffff;
+  transform: scale(1.06);
+}
+
+.dock__sep {
+  background: var(--line);
+  height: 1px;
+  margin: 4px 10px;
+}
+
+.dock__tip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(100% + 14px);
+  margin: auto 0;
+  height: fit-content;
+  background: var(--tip-bg, #181818);
+  color: var(--text);
+  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--line-2);
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-5px);
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-weight: 600;
+  z-index: 100;
+}
+
+.dock__tip kbd {
+  font-family: var(--font);
+  color: var(--muted);
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
+.dock__btn:hover .dock__tip,
+.dock__btn:focus-visible .dock__tip {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.dock__dot {
+  background: var(--bad);
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 0 2px var(--surface);
+  border-radius: 50%;
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  animation: dock-pulse 2s infinite;
+}
+
+@keyframes dock-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.25); opacity: 0.8; }
+}
+
+/* Hide admin-only dock buttons when viewer */
+body[data-role="viewer"] .dock__btn.adm {
+  display: none !important;
+}
+
+/* Theme Toggle Button Icons */
+.dock__theme .ico,
+.btn-theme-toggle .ico {
+  transition: transform 0.4s var(--ease), opacity 0.25s var(--ease);
+}
+:root:not([data-theme="light"]) .ico--sun {
+  display: block;
+}
+:root:not([data-theme="light"]) .ico--moon {
+  display: none;
+}
+[data-theme="light"] .ico--sun {
+  display: none;
+}
+[data-theme="light"] .ico--moon {
+  display: block;
+}
+
+/* Circular Reveal View Transition (W3C Standard) */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 999999;
+}
+
+/* Fallback circular reveal overlay */
+.theme-reveal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  pointer-events: none;
+  clip-path: circle(0px at 50% 50%);
+  transition: clip-path 520ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Quick Finder / Command Palette Modal (Murmura Style) */
+.finder-dlg {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  max-width: 100vw;
+  margin: 12vh auto auto;
+}
+
+.finder-dlg::backdrop {
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.finder-box {
+  width: min(600px, calc(100vw - 32px));
+  background: var(--finder-bg, #121212);
+  border: 1px solid var(--line-2);
+  border-radius: 20px;
+  box-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.8), 0 2px 8px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font);
+}
+
+.finder-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.finder-input-row .ico {
+  width: 22px;
+  height: 22px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.finder-input-row input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: 600 15px/1.4 var(--font);
+  outline: none;
+}
+
+.finder-input-row input::placeholder {
+  color: var(--faint);
+  font-weight: 500;
+}
+
+.finder-close {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.finder-close kbd {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.finder-results {
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.finder-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.finder-item:hover,
+.finder-item.active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.finder-item .ico {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.finder-item-txt {
+  flex: 1;
+  min-width: 0;
+}
+
+.finder-item-txt b {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.finder-item-txt small {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.finder-item-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--well);
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+
 /* Responsive Media Queries */
 @media (max-width: 1650px) {
   .tabs { order: 3; flex-basis: 100%; margin-top: 8px; }
@@ -1241,6 +1798,42 @@ dialog .acts { display: flex; gap: 8px; justify-content: flex-end; }
     max-height: clamp(300px, calc(100vh - 240px), 720px);
   }
   .threshold-strip { grid-template-columns: 1fr; }
+}
+@media (max-width: 768px) {
+  .app {
+    padding-left: var(--gutter);
+    padding-bottom: 96px;
+  }
+  .dock {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    flex-direction: row;
+    width: fit-content;
+    max-width: calc(100vw - 20px);
+    overflow-x: auto;
+    scrollbar-width: none;
+    height: auto;
+    margin: 0 auto;
+    padding: 6px 8px;
+    z-index: 50;
+    border-radius: 999px;
+  }
+  .dock::-webkit-scrollbar { display: none; }
+  .dock__btn {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+  .dock__tip {
+    display: none !important;
+  }
+  .dock__sep {
+    width: 1px;
+    height: 24px;
+    margin: auto 4px;
+  }
 }
 @media (max-width: 720px) {
   .cams, .cams.c2 { grid-template-columns: 1fr; }

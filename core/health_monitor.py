@@ -404,11 +404,17 @@ class CameraHealthMonitor:
                 if "healthThresholds" in cam:
                     merged_thresh.update(cam["healthThresholds"])
 
+                metrics_path = cam.get("metricsPath") or (f"/api/cameras/{cid}/metrics" if cam.get("type") == "okam" else "/api/metrics")
+                snapshot_path = cam.get("snapshotPath") or (f"/api/cameras/{cid}/snapshot" if cam.get("type") == "okam" else "/snapshot")
+
                 if cid not in self.trackers:
                     self.trackers[cid] = CameraHealthTracker(cid, name, port, merged_thresh)
                 else:
                     self.trackers[cid].port = port
                     self.trackers[cid].thresholds = merged_thresh
+
+                self.trackers[cid].metrics_path = metrics_path
+                self.trackers[cid].snapshot_path = snapshot_path
 
             # Remove deleted cameras
             to_remove = [cid for cid in self.trackers if cid not in active_ids]
@@ -428,7 +434,8 @@ class CameraHealthMonitor:
 
         # 2. HTTP Metrics fetch (non-blocking with timeout)
         metrics_data = None
-        metrics_url = f"http://127.0.0.1:{port}/api/metrics"
+        metrics_path = getattr(tracker, "metrics_path", "/api/metrics")
+        metrics_url = f"http://127.0.0.1:{port}{metrics_path}"
         try:
             req = Request(metrics_url, headers={"User-Agent": "CamHub-HealthMonitor/1.0"})
             with urlopen(req, timeout=timeout) as resp:
@@ -444,7 +451,8 @@ class CameraHealthMonitor:
             fps = float(metrics_data.get("sourceFps") or 0.0)
             if fps < 3.0:
                 try:
-                    snap_url = f"http://127.0.0.1:{port}/snapshot"
+                    snap_path = getattr(tracker, "snapshot_path", "/snapshot")
+                    snap_url = f"http://127.0.0.1:{port}{snap_path}"
                     s_req = Request(snap_url, headers={"User-Agent": "CamHub-HealthMonitor/1.0"})
                     with urlopen(s_req, timeout=1.0) as s_resp:
                         if s_resp.status == 200:

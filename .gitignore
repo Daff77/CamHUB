@@ -14,4 +14,7 @@ events/events_index.json
 notifications/notifications.json
 diagnostics/*.zip
 diagnostics/*.tmp
+tmp_channels/
+tmp_probe/
+Overview · Murmura*.html
 

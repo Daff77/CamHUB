@@ -11,6 +11,7 @@ import shutil
 import socket
 import argparse
 import subprocess
+import re
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
@@ -108,7 +109,7 @@ class ProcessManager:
 
     def start_camera(self, cid):
         cfg = load_config()
-        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == cid), None)
+        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == cid or cid in c.get("aliases", [])), None)
         if not cam:
             return False, f"Camera '{cid}' not found in configuration"
 
@@ -135,7 +136,7 @@ class ProcessManager:
 
     def stop_camera(self, cid):
         cfg = load_config()
-        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == cid), None)
+        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == cid or cid in c.get("aliases", [])), None)
         if not cam:
             return False, f"Camera '{cid}' not found in configuration"
 
@@ -324,7 +325,7 @@ class CamHubHandler(SimpleHTTPRequestHandler):
 
     def proxy_mjpeg_stream(self, camera_id):
         cfg = load_config()
-        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == camera_id), None)
+        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == camera_id or camera_id in c.get("aliases", [])), None)
         if not cam:
             self.send_json(404, {"error": f"Camera '{camera_id}' not found in configuration"})
             return
@@ -334,13 +335,18 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             self.send_json(503, {"error": f"Camera '{camera_id}' decoder service is offline on port {port}"})
             return
 
+        if camera_id in ("okam_1", "okam_2", "okam_3") or camera_id.startswith("okam_"):
+            stream_path = f"/api/cameras/{camera_id}/stream.mjpg"
+        else:
+            stream_path = cam.get("streamPath") or (f"/api/cameras/{camera_id}/stream.mjpg" if cam.get("type") == "okam" else "/stream.mjpg")
+
         sock = None
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5.0)
             sock.connect(("127.0.0.1", port))
             # Request HTTP/1.0 to prevent upstream servers (like Kestrel) from applying chunked transfer encoding
-            req = f"GET /stream.mjpg HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n".encode("utf-8")
+            req = f"GET {stream_path} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n".encode("utf-8")
             sock.sendall(req)
 
             header_data = b""
@@ -432,7 +438,7 @@ class CamHubHandler(SimpleHTTPRequestHandler):
 
     def proxy_snapshot(self, camera_id):
         cfg = load_config()
-        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == camera_id), None)
+        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == camera_id or camera_id in c.get("aliases", [])), None)
         if not cam:
             self.send_json(404, {"error": f"Camera '{camera_id}' not found"})
             return
@@ -442,8 +448,13 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             self.send_json(503, {"error": f"Camera '{camera_id}' decoder service is offline on port {port}"})
             return
 
+        if camera_id in ("okam_1", "okam_2", "okam_3") or camera_id.startswith("okam_"):
+            snap_path = f"/api/cameras/{camera_id}/snapshot"
+        else:
+            snap_path = cam.get("snapshotPath") or (f"/api/cameras/{camera_id}/snapshot" if cam.get("type") == "okam" else "/snapshot")
+
         try:
-            req = Request(f"http://127.0.0.1:{port}/snapshot")
+            req = Request(f"http://127.0.0.1:{port}{snap_path}")
             req.add_header("User-Agent", "CamHub-Proxy/1.0")
             req.add_header("ngrok-skip-browser-warning", "1")
             with urlopen(req, timeout=2.5) as resp:
@@ -462,7 +473,7 @@ class CamHubHandler(SimpleHTTPRequestHandler):
 
     def proxy_metrics(self, camera_id, qs):
         cfg = load_config()
-        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == camera_id), None)
+        cam = next((c for c in cfg.get("cameras", []) if c.get("id") == camera_id or camera_id in c.get("aliases", [])), None)
         if not cam:
             self.send_json(404, {"error": f"Camera '{camera_id}' not found"})
             return
@@ -472,11 +483,16 @@ class CamHubHandler(SimpleHTTPRequestHandler):
             self.send_json(503, {"error": f"Camera '{camera_id}' decoder service is offline on port {port}"})
             return
 
+        if camera_id in ("okam_1", "okam_2", "okam_3") or camera_id.startswith("okam_"):
+            metrics_path = f"/api/cameras/{camera_id}/metrics"
+        else:
+            metrics_path = cam.get("metricsPath") or (f"/api/cameras/{camera_id}/metrics" if cam.get("type") == "okam" else "/api/metrics")
+
         client_fps = qs.get("clientFps", [None])[0]
         query = f"?clientFps={client_fps}" if client_fps else ""
 
         try:
-            req = Request(f"http://127.0.0.1:{port}/api/metrics{query}")
+            req = Request(f"http://127.0.0.1:{port}{metrics_path}{query}")
             req.add_header("User-Agent", "CamHub-Proxy/1.0")
             req.add_header("ngrok-skip-browser-warning", "1")
             with urlopen(req, timeout=2.0) as resp:
@@ -496,6 +512,50 @@ class CamHubHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         qs = parse_qs(url.query)
+
+        # Multi-camera REST API endpoints
+        if url.path == "/api/cameras" or url.path == "/api/cameras/":
+            cfg = load_config()
+            cam_list = []
+            health_all = HEALTH_MONITOR.get_all_health().get("cameras", {})
+            for cam in cfg.get("cameras", []):
+                cid = cam.get("id")
+                port = cam.get("port")
+                h = health_all.get(cid, {})
+                m = h.get("metrics", {})
+                status_str = h.get("state", "UNKNOWN").lower()
+                cam_list.append({
+                    "id": cid,
+                    "name": cam.get("name", cid),
+                    "type": cam.get("type", "unknown"),
+                    "port": port,
+                    "status": status_str,
+                    "fps": m.get("fps", 0.0),
+                    "resolution": cam.get("resolution", "1920x1080"),
+                    "latency": m.get("latencyMs", 0.0),
+                    "streamPath": cam.get("streamPath") or f"/api/cameras/{cid}/stream.mjpg",
+                    "snapshotPath": cam.get("snapshotPath") or f"/api/cameras/{cid}/snapshot",
+                    "metricsPath": cam.get("metricsPath") or f"/api/cameras/{cid}/metrics",
+                    "proxyStreamUrl": f"/proxy/stream/{cid}",
+                    "proxySnapshotUrl": f"/proxy/snapshot/{cid}",
+                    "proxyMetricsUrl": f"/proxy/metrics/{cid}",
+                    "aliases": cam.get("aliases", [])
+                })
+            self.send_json(200, {"cameras": cam_list})
+            return
+
+        match_cam_api = re.match(r"^/api/cameras/([^/]+)/(metrics|snapshot|stream\.mjpg)$", url.path)
+        if match_cam_api:
+            target_cid, endpoint = match_cam_api.group(1), match_cam_api.group(2)
+            if endpoint == "metrics":
+                self.proxy_metrics(target_cid, qs)
+                return
+            elif endpoint == "snapshot":
+                self.proxy_snapshot(target_cid)
+                return
+            elif endpoint == "stream.mjpg":
+                self.proxy_mjpeg_stream(target_cid)
+                return
 
         # Reverse Proxy endpoints for Ngrok & remote HTTPS access (avoids Mixed Content & extra port forwards)
         if url.path.startswith("/proxy/stream/"):
