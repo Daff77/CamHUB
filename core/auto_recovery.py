@@ -128,9 +128,16 @@ class CameraSupervisor:
                     self._set_state(SupervisorState.RUNNING, "Adapter worker active")
                     return True, f"Camera '{self.camera_id}' worker is active on port {self.port}"
 
-            # If failed, require explicit reset or manual restart
-            if self.state == SupervisorState.FAILED and reason != "manual_start" and reason != "user_reset":
-                return False, f"Camera '{self.camera_id}' in FAILED state. Reset circuit breaker before restarting."
+            # Manual user actions automatically reset a tripped circuit breaker;
+            # only automated recovery is blocked when in FAILED state.
+            is_manual = str(reason).startswith("manual_") or reason == "user_reset"
+            if self.state == SupervisorState.FAILED:
+                if not is_manual:
+                    return False, f"Camera '{self.camera_id}' in FAILED state. Reset circuit breaker before restarting."
+                self.recovery_attempts = 0
+                self.restart_history.clear()
+                self.current_backoff = self.config.get("initialBackoffSeconds", 2.0)
+                self.next_restart_allowed_at = 0.0
 
             self._set_state(SupervisorState.STARTING, reason)
 
@@ -154,6 +161,7 @@ class CameraSupervisor:
                     self.cmd,
                     shell=True,
                     cwd=BASE_DIR,
+                    stdin=subprocess.DEVNULL,
                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
                 )
                 self.pid = self.process.pid

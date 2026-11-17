@@ -232,6 +232,17 @@ class AuthManager:
             else:
                 self._api_tokens = []
 
+            now_init = time.time()
+            sessions_disk = disk_data.get("sessions", {})
+            if isinstance(sessions_disk, dict):
+                self._sessions = {
+                    sid_h: s
+                    for sid_h, s in sessions_disk.items()
+                    if isinstance(s, dict) and s.get("expiresAt", 0) > now_init
+                }
+            else:
+                self._sessions = {}
+
             # Support environment variable user/token provisioning without storing plaintext
             env_admin_pw = os.environ.get("CAMHUB_ADMIN_PASSWORD", "")
             if env_admin_pw and "admin" not in self._users:
@@ -280,11 +291,14 @@ class AuthManager:
             })
 
     def _save_locked(self, secret_hex: Optional[str] = None) -> None:
+        now = time.time()
+        self._sessions = {sid_h: s for sid_h, s in self._sessions.items() if s.get("expiresAt", 0) > now}
         persisted_tokens = [t for t in self._api_tokens if not t.get("ephemeral")]
         payload = {
             "secretKey": secret_hex or self._secret_key.decode("utf-8"),
             "users": self._users,
             "apiTokens": persisted_tokens,
+            "sessions": self._sessions,
         }
         _atomic_write_json(self.auth_file, payload)
 
@@ -414,17 +428,16 @@ class AuthManager:
 
     def _issue_session_locked(self, username: str, role: str) -> Dict[str, Any]:
         now = time.time()
-        # Prune expired sessions opportunistically
-        self._sessions = {sid: s for sid, s in self._sessions.items() if s["expiresAt"] > now}
-
         session_id = secrets.token_urlsafe(24)
+        sid_hash = hash_api_token(session_id)
         expires_at = now + self.session_ttl_seconds
-        self._sessions[session_id] = {
+        self._sessions[sid_hash] = {
             "username": username,
             "role": role,
             "createdAt": int(now),
             "expiresAt": int(expires_at),
         }
+        self._save_locked()
         token = self._sign_session_id(session_id)
         return {
             "authenticated": True,
@@ -471,18 +484,20 @@ class AuthManager:
                 session_id, sig = tok.split(".", 1)
                 expected_sig = hmac.new(self._secret_key, session_id.encode("utf-8"), hashlib.sha256).hexdigest()
                 if hmac.compare_digest(sig, expected_sig):
-                    sess = self._sessions.get(session_id)
+                    sid_hash = hash_api_token(session_id)
+                    sess = self._sessions.get(sid_hash)
                     if sess:
                         if sess["expiresAt"] > now:
                             return {
                                 "authenticated": True,
                                 "username": sess["username"],
                                 "role": sess["role"],
-                                "sessionId": session_id,
+                                "sessionId": sid_hash,
                                 "authType": "session",
                             }
                         else:
-                            self._sessions.pop(session_id, None)
+                            self._sessions.pop(sid_hash, None)
+                            self._save_locked()
                             return None
 
             # 2. Registered API token (hashed SHA-256 comparison)
@@ -546,7 +561,10 @@ class AuthManager:
         if not sid:
             return False
         with self._lock:
-            return self._sessions.pop(sid, None) is not None
+            removed = self._sessions.pop(sid, None) is not None
+            if removed:
+                self._save_locked()
+            return removed
 
     def build_session_cookie(self, token: str, max_age: int, is_secure: bool = False) -> str:
         parts = [
@@ -617,6 +635,19 @@ class AuthManager:
 
         if parsed.netloc.lower() in candidate_hosts:
             return True
+
+        # Treat localhost and 127.0.0.1 on the exact same port as equivalent local loopback origins
+        loopback_names = {"localhost", "127.0.0.1", "[::1]"}
+        orig_host, _, orig_port = parsed.netloc.lower().rpartition(":")
+        if not orig_host:
+            orig_host, orig_port = parsed.netloc.lower(), ""
+        if orig_host in loopback_names:
+            for ch in candidate_hosts:
+                ch_host, _, ch_port = ch.rpartition(":")
+                if not ch_host:
+                    ch_host, ch_port = ch, ""
+                if ch_host in loopback_names and ch_port == orig_port:
+                    return True
 
         return False
 

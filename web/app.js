@@ -1424,6 +1424,35 @@
     tick();
   }
 
+  function refreshImgSrc(img, baseUrl) {
+    if (!img || !baseUrl) return;
+    const cleanBase = baseUrl.split('?')[0];
+    img.src = `${cleanBase}?_r=${Date.now()}`;
+  }
+
+  function reloadAllStreams(targetCid) {
+    const activeCam = cams[sel] || cams[0];
+    if (!targetCid || (activeCam && activeCam.id === targetCid)) {
+      const mainImg = $('#stream-img-main');
+      if (mainImg && activeCam) {
+        mainImg.style.display = 'block';
+        const mainMsg = $('#msg-main');
+        if (mainMsg) mainMsg.style.display = 'none';
+        refreshImgSrc(mainImg, activeCam.streamUrl);
+      }
+    }
+    cams.forEach((cam) => {
+      if (targetCid && cam.id !== targetCid) return;
+      const gImg = $(`#stream-img-${cam.id}`);
+      if (gImg) {
+        gImg.style.display = 'block';
+        const gMsg = $(`#msg-${cam.id}`);
+        if (gMsg) gMsg.style.display = 'none';
+        refreshImgSrc(gImg, cam.streamUrl);
+      }
+    });
+  }
+
   function updateLiveStats() {
     const c = cams[sel] || cams[0];
     const s = ST[c.s] || ST.degraded;
@@ -1432,12 +1461,10 @@
     // Auto-restore main stream if camera is alive
     const mainImg = $('#stream-img-main');
     const mainMsg = $('#msg-main');
-    if (isMainAlive && mainImg && (mainImg.style.display === 'none' || (mainMsg && mainMsg.style.display !== 'none'))) {
+    if (isMainAlive && mainImg && (mainImg.style.display === 'none' || !mainImg.naturalWidth || (mainMsg && mainMsg.style.display !== 'none'))) {
       mainImg.style.display = 'block';
       if (mainMsg) mainMsg.style.display = 'none';
-      if (!mainImg.src || mainImg.src.includes('about:blank')) {
-        mainImg.src = c.streamUrl;
-      }
+      refreshImgSrc(mainImg, c.streamUrl);
     }
 
     // Update main stage OSD bar & stats
@@ -1482,9 +1509,10 @@
         const streamImg = cardEl.querySelector('.mjpeg-stream');
         const msgBox = cardEl.querySelector('.msg-box');
         const isCamAlive = cam.s === 'healthy' || (cam.checks && cam.checks.feedAlive);
-        if (isCamAlive && streamImg && msgBox && msgBox.style.display !== 'none') {
+        if (isCamAlive && streamImg && (streamImg.style.display === 'none' || !streamImg.naturalWidth || (msgBox && msgBox.style.display !== 'none'))) {
           streamImg.style.display = 'block';
-          msgBox.style.display = 'none';
+          if (msgBox) msgBox.style.display = 'none';
+          refreshImgSrc(streamImg, cam.streamUrl);
         }
       }
     });
@@ -1825,30 +1853,50 @@
   }
 
   // --- AGENT 1: Service Operations ---
-  async function runAllCameras() {
-    toast(`Starting all ${cams.length} cameras…`);
+  async function servicePost(url, successMsg, targetCid) {
     try {
-      const res = await fetch('/api/services/start-all', { method: 'POST' });
-      const data = await res.json();
+      const res = await fetch(url, { method: 'POST', credentials: 'same-origin' });
+      if (res.status === 401) {
+        applyServerRole(null, null, false);
+        openAuthDialog();
+        toast('Silakan login sebagai Admin terlebih dahulu.');
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 403) {
+        toast(data.error || 'Akses ditolak: membutuhkan akun Admin.');
+        return;
+      }
       if (res.ok) {
-        toast('All camera decoders started successfully.');
-        setTimeout(pollBackendHealth, 1000);
+        toast(successMsg);
+        setTimeout(() => {
+          pollBackendHealth();
+          reloadAllStreams(targetCid || null);
+        }, 1200);
       } else {
-        toast(`Start notice: ${data.message || 'Starting workers'}`);
+        toast(`Notice: ${data.message || data.error || 'Operation failed'}`);
       }
     } catch (err) {
       toast(`Error: ${err.message}`);
     }
   }
 
+  async function runAllCameras() {
+    toast(`Starting all ${cams.length} cameras…`);
+    await servicePost('/api/services/start-all', 'All camera decoders started successfully.', null);
+  }
+
   async function stopAllCameras() {
     toast(`Stopping all ${cams.length} cameras…`);
     try {
-      const res = await fetch('/api/services/stop-all', { method: 'POST' });
-      const data = await res.json();
+      const res = await fetch('/api/services/stop-all', { method: 'POST', credentials: 'same-origin' });
+      if (res.status === 401) return openAuthDialog();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         toast('All camera decoders stopped.');
         setTimeout(pollBackendHealth, 1000);
+      } else {
+        toast(`Stop notice: ${data.message || data.error || 'Failed'}`);
       }
     } catch (err) {
       toast(`Error: ${err.message}`);
@@ -1857,36 +1905,23 @@
 
   async function restartAllCameras() {
     toast(`Restarting all ${cams.length} cameras…`);
-    try {
-      const res = await fetch('/api/services/restart-all', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        toast('All camera decoders restarted successfully.');
-        setTimeout(pollBackendHealth, 1500);
-      }
-    } catch (err) {
-      toast(`Error: ${err.message}`);
-    }
+    await servicePost('/api/services/restart-all', 'All camera decoders restarted successfully.', null);
   }
 
   async function startCamera(cid) {
-    try {
-      const res = await fetch(`/api/services/start?id=${encodeURIComponent(cid)}`, { method: 'POST' });
-      if (res.ok) {
-        toast(`Started decoder for ${cid}`);
-        setTimeout(pollBackendHealth, 1000);
-      }
-    } catch (err) {
-      toast(`Start error: ${err.message}`);
-    }
+    await servicePost(`/api/services/start?id=${encodeURIComponent(cid)}`, `Started decoder for ${cid}`, cid);
   }
 
   async function stopCamera(cid) {
     try {
-      const res = await fetch(`/api/services/stop?id=${encodeURIComponent(cid)}`, { method: 'POST' });
+      const res = await fetch(`/api/services/stop?id=${encodeURIComponent(cid)}`, { method: 'POST', credentials: 'same-origin' });
+      if (res.status === 401) return openAuthDialog();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         toast(`Stopped decoder for ${cid}`);
         setTimeout(pollBackendHealth, 1000);
+      } else {
+        toast(`Stop error: ${data.message || data.error || 'Failed'}`);
       }
     } catch (err) {
       toast(`Stop error: ${err.message}`);
@@ -1894,27 +1929,11 @@
   }
 
   async function restartCamera(cid) {
-    try {
-      const res = await fetch(`/api/services/restart?id=${encodeURIComponent(cid)}`, { method: 'POST' });
-      if (res.ok) {
-        toast(`Restarted decoder for ${cid}`);
-        setTimeout(pollBackendHealth, 1000);
-      }
-    } catch (err) {
-      toast(`Restart error: ${err.message}`);
-    }
+    await servicePost(`/api/services/restart?id=${encodeURIComponent(cid)}`, `Restarted decoder for ${cid}`, cid);
   }
 
   async function resetCircuitBreaker(cid) {
-    try {
-      const res = await fetch(`/api/recovery/reset?id=${encodeURIComponent(cid)}`, { method: 'POST' });
-      if (res.ok) {
-        toast(`Circuit breaker reset for ${cid}. Ready to start.`);
-        setTimeout(pollBackendHealth, 1000);
-      }
-    } catch (err) {
-      toast(`Reset error: ${err.message}`);
-    }
+    await servicePost(`/api/recovery/reset?id=${encodeURIComponent(cid)}`, `Circuit breaker reset for ${cid}. Ready to start.`, cid);
   }
 
   // --- AGENT 4: Local Recording & Playback ---
@@ -2969,6 +2988,7 @@
         $('#auth-dialog')?.close();
         toast(`Signed in as ${data.username} (${data.role})`);
         live();
+        reloadAllStreams(null);
         pollBackendHealth();
       } else if (errEl) {
         errEl.textContent = data.error || 'Authentication failed';

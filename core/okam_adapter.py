@@ -249,9 +249,11 @@ class CameraStreamWorker:
 
         cmd = [
             "ffmpeg",
+            "-nostdin",
             "-hide_banner",
             "-loglevel", "error",
             "-rtsp_transport", transport,
+            "-timeout", "5000000",
             "-fflags", "nobuffer+discardcorrupt",
             "-flags", "low_delay",
             "-probesize", "1000000",
@@ -277,13 +279,28 @@ class CameraStreamWorker:
             try:
                 self.process = subprocess.Popen(
                     cmd,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    bufsize=1048576,
+                    bufsize=0,
                     creationflags=creation_flags
                 )
 
                 proc_ref = self.process
+                last_io = [time.time()]
+
+                def stall_watchdog(p=proc_ref, io_ref=last_io):
+                    while self.running and p.poll() is None:
+                        if (time.time() - io_ref[0]) > 12.0:
+                            print(f"[OKAM-{self.camera_id}] RTSP stream stalled >12s, restarting FFmpeg...", flush=True)
+                            try:
+                                p.kill()
+                            except Exception:
+                                pass
+                            break
+                        time.sleep(1.0)
+
+                threading.Thread(target=stall_watchdog, daemon=True, name=f"okam-wd-{self.camera_id}").start()
 
                 def read_stderr(p=proc_ref):
                     try:
@@ -307,9 +324,10 @@ class CameraStreamWorker:
                 delimiter = b"--frame\r\n"
 
                 while self.running and proc_ref.poll() is None:
-                    chunk = stdout.read(16384)
+                    chunk = stdout.read(32768)
                     if not chunk:
                         break
+                    last_io[0] = time.time()
                     buffer.extend(chunk)
 
                     while True:
