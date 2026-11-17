@@ -4,8 +4,12 @@
 (function () {
   'use strict';
 
-  // --- Current User Role (Agent 7 RBAC: Admin vs Viewer) ---
-  let currentUserRole = 'admin'; // 'admin' | 'viewer'
+  // --- Server-Verified Session State (Agent 7 RBAC: Admin vs Viewer) ---
+  let currentUserRole = 'viewer'; // 'admin' | 'viewer'
+  let authUsername = null;
+  let isAuthenticated = false;
+  let authSetupRequired = false;
+  let recordingFilterCid = '';
 
   // --- Core State & Camera Fleet Definition ---
   const cams = [
@@ -18,6 +22,7 @@
       d: 'ID 124095217 · Port 8080',
       streamUrl: '/proxy/stream/v380-1',
       snapshotUrl: '/proxy/snapshot/v380-1',
+      metricsUrl: '/api/cameras/v380-1/metrics',
       directStreamUrl: 'http://127.0.0.1:8080/stream.mjpg',
       w: 1,
       s: 'degraded',
@@ -47,6 +52,7 @@
       d: 'ID 97357757 · Port 8081',
       streamUrl: '/proxy/stream/v380-2',
       snapshotUrl: '/proxy/snapshot/v380-2',
+      metricsUrl: '/api/cameras/v380-2/metrics',
       directStreamUrl: 'http://127.0.0.1:8081/stream.mjpg',
       w: 1,
       s: 'degraded',
@@ -68,16 +74,17 @@
       checks: { portListening: true, feedAlive: false, streamFrozen: false, fpsAdequate: false }
     },
     {
-      id: 'okam-3',
-      n: 'Camera 3, O Kam Pro',
-      shortName: 'Cam 3',
+      id: 'okam_1',
+      n: 'O-Kam 1 · Panoramic Main (Sensor Tetap)',
+      shortName: 'O-Kam 1',
       ip: '192.168.100.6',
-      p: '10554',
-      d: 'Port 10554 · VStarcam 3-in-1',
-      streamUrl: '/proxy/stream/okam_1',
-      snapshotUrl: '/proxy/snapshot/okam_1',
+      p: '8082',
+      d: 'RTSP 10554/av0_0 · Port 8082',
+      streamUrl: '/api/cameras/okam_1/stream.mjpg',
+      snapshotUrl: '/api/cameras/okam_1/snapshot',
+      metricsUrl: '/api/cameras/okam_1/metrics',
       directStreamUrl: 'http://127.0.0.1:8082/api/cameras/okam_1/stream.mjpg',
-      w: 80,
+      w: 1,
       s: 'degraded',
       fps: 0.0,
       targetFps: 15.0,
@@ -95,11 +102,72 @@
       recording: false,
       recordStartTime: null,
       checks: { portListening: true, feedAlive: false, streamFrozen: false, fpsAdequate: false }
+    },
+    {
+      id: 'okam_2',
+      n: 'O-Kam 2 · PTZ Motorik (Area Teras & Pintu)',
+      shortName: 'O-Kam 2',
+      ip: '192.168.100.6',
+      p: '8082',
+      d: 'RTSP 10555/av0_0 · Port 8082',
+      streamUrl: '/api/cameras/okam_2/stream.mjpg',
+      snapshotUrl: '/api/cameras/okam_2/snapshot',
+      metricsUrl: '/api/cameras/okam_2/metrics',
+      directStreamUrl: 'http://127.0.0.1:8082/api/cameras/okam_2/stream.mjpg',
+      w: 1,
+      s: 'degraded',
+      fps: 0.0,
+      targetFps: 15.0,
+      latencyMs: 0,
+      aspect: '16:9',
+      resolution: '1920×1080',
+      aspectRatio: '16 / 9',
+      aspectVal: 1.7778,
+      queue: '0 / 0',
+      decodeErrors: 0,
+      lastFrame: '--',
+      stage: 'Camera source',
+      running: true,
+      circuitBreakerTripped: false,
+      recording: false,
+      recordStartTime: null,
+      checks: { portListening: true, feedAlive: false, streamFrozen: false, fpsAdequate: false }
+    },
+    {
+      id: 'okam_3',
+      n: 'O-Kam 3 · Sub-Stream Sensor (Wide Aux)',
+      shortName: 'O-Kam 3',
+      ip: '192.168.100.6',
+      p: '8082',
+      d: 'RTSP 10554/av0_1 · Port 8082',
+      streamUrl: '/api/cameras/okam_3/stream.mjpg',
+      snapshotUrl: '/api/cameras/okam_3/snapshot',
+      metricsUrl: '/api/cameras/okam_3/metrics',
+      directStreamUrl: 'http://127.0.0.1:8082/api/cameras/okam_3/stream.mjpg',
+      w: 1,
+      s: 'degraded',
+      fps: 0.0,
+      targetFps: 15.0,
+      latencyMs: 0,
+      aspect: '7:4',
+      resolution: '448×256',
+      aspectRatio: '7 / 4',
+      aspectVal: 1.75,
+      queue: '0 / 0',
+      decodeErrors: 0,
+      lastFrame: '--',
+      stage: 'Camera source',
+      running: true,
+      circuitBreakerTripped: false,
+      recording: false,
+      recordStartTime: null,
+      checks: { portListening: true, feedAlive: false, streamFrozen: false, fpsAdequate: false }
     }
   ];
 
   const ST = {
     healthy: ['Healthy', 'good-t', 'Live'],
+    recovering: ['Healthy', 'good-t', 'Live'],
     degraded: ['Degraded', 'warn-t', 'No signal'],
     offline: ['Offline', 'bad-t', 'Offline']
   };
@@ -117,7 +185,7 @@
 
   const sentences = [
     'Watch every camera in one place. Select a camera to focus on it.',
-    '0 of 3 cameras connected. All three are waiting for frames.',
+    '0 of 5 cameras connected. Waiting for camera frames.',
     'Local MP4 recording archives and stream playback.',
     'Motion detection and edge neural vision events.',
     'Predictable storage management and policy pruning.',
@@ -126,8 +194,8 @@
     'Zero-cloud local camera bridge and remote access setup.'
   ];
 
-  const col = ['#f2f2f2', '#6aa9e8', '#8c8c8c'];
-  const fpsHistory = { 'v380-1': [], 'v380-2': [], 'okam-3': [], 'okam_1': [] };
+  const col = ['#f2f2f2', '#6aa9e8', '#3be8b0', '#f5a623', '#b88cff', '#8c8c8c'];
+  const fpsHistory = { 'v380-1': [], 'v380-2': [], 'okam_1': [], 'okam_2': [], 'okam_3': [], 'okam-3': [] };
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => document.querySelectorAll(s);
@@ -216,13 +284,73 @@
     $('#dlg').showModal();
   }
 
-  function toggleRole() {
-    currentUserRole = currentUserRole === 'admin' ? 'viewer' : 'admin';
+  function applyServerRole(role, username, authenticated) {
+    isAuthenticated = !!authenticated;
+    authUsername = username || null;
+    currentUserRole = authenticated && role === 'admin' ? 'admin' : 'viewer';
     document.body.dataset.role = currentUserRole;
-    const roleTxt = currentUserRole === 'admin' ? 'Admin' : 'Viewer';
+    const roleTxt = !isAuthenticated
+      ? 'Sign in'
+      : `${authUsername || currentUserRole} (${currentUserRole === 'admin' ? 'Admin' : 'Viewer'})`;
     if ($('#sbf-role')) $('#sbf-role').textContent = roleTxt;
-    if ($('#dock-role-txt')) $('#dock-role-txt').textContent = roleTxt;
-    toast(currentUserRole === 'admin' ? 'Admin mode: controls are visible' : 'Viewer mode: controls are hidden');
+    if ($('#dock-role-txt')) $('#dock-role-txt').textContent = currentUserRole === 'admin' ? 'Admin' : 'Viewer';
+  }
+
+  function openAuthDialog() {
+    const dlg = $('#auth-dialog');
+    if (!dlg) return;
+    const errEl = $('#auth-error-msg');
+    if (errEl) {
+      errEl.style.display = 'none';
+      errEl.textContent = '';
+    }
+    const bootGroup = $('#auth-bootstrap-group');
+    const viewerGroup = $('#auth-viewer-pw-group');
+    const logoutBtn = $('#auth-logout-btn');
+    const titleEl = $('#auth-dlg-title');
+    const subEl = $('#auth-dlg-sub');
+    const submitBtn = $('#auth-submit-btn');
+
+    if (authSetupRequired) {
+      if (titleEl) titleEl.textContent = 'Initial CamHUB Admin Setup';
+      if (subEl) subEl.textContent = 'Enter the host bootstrap token and choose an Admin password (min 8 chars).';
+      if (bootGroup) bootGroup.style.display = 'block';
+      if (viewerGroup) viewerGroup.style.display = 'block';
+      if (submitBtn) submitBtn.textContent = 'Complete Setup';
+      if (logoutBtn) logoutBtn.style.display = 'none';
+    } else {
+      if (titleEl) titleEl.textContent = isAuthenticated ? `Signed in as ${authUsername}` : 'CamHUB Sign In';
+      if (subEl) {
+        subEl.textContent = isAuthenticated
+          ? `Current server role: ${currentUserRole.toUpperCase()}. Sign in as another user or sign out.`
+          : 'Authenticate with your server-verified Admin or Viewer account.';
+      }
+      if (bootGroup) bootGroup.style.display = 'none';
+      if (viewerGroup) viewerGroup.style.display = 'none';
+      if (submitBtn) submitBtn.textContent = 'Sign In';
+      if (logoutBtn) logoutBtn.style.display = isAuthenticated ? 'inline-flex' : 'none';
+    }
+    if (!dlg.open) dlg.showModal();
+  }
+
+  async function syncAuthSession(promptIfUnauth = false) {
+    try {
+      const res = await fetch('/api/auth/session', { credentials: 'same-origin' });
+      if (!res.ok) return false;
+      const data = await res.json();
+      authSetupRequired = !!data.setupRequired;
+      applyServerRole(data.role, data.username, data.authenticated);
+      if (!data.authenticated && promptIfUnauth) {
+        openAuthDialog();
+      }
+      return !!data.authenticated;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function toggleRole() {
+    openAuthDialog();
   }
 
   // Action button template
@@ -256,23 +384,16 @@
     cam1GridLens = localStorage.getItem('camhub_cam1_grid_lens') || '1';
   } catch (_) {}
 
-  let okamLensMode = '1';
-  try {
-    okamLensMode = localStorage.getItem('camhub_okam_lens') || '1';
-  } catch (_) {}
-
-  let okamGridLens = '1';
-  try {
-    okamGridLens = localStorage.getItem('camhub_okam_grid_lens') || '1';
-  } catch (_) {}
+  let okamLensMode = 'single';
 
   const okamLenses = {
     '1': {
       id: '1',
-      name: 'Layar 1 · Panoramic Main (Sensor Tetap)',
-      short: 'L1 Main',
-      streamUrl: '/proxy/stream/okam_1',
-      snapshotUrl: '/proxy/snapshot/okam_1',
+      camId: 'okam_1',
+      name: 'O-Kam 1 · Panoramic Main (Sensor Tetap)',
+      short: 'O-Kam 1',
+      streamUrl: '/api/cameras/okam_1/stream.mjpg',
+      snapshotUrl: '/api/cameras/okam_1/snapshot',
       res: '1920×1080 (16:9)',
       aspect: '16:9',
       aspectRatio: '16 / 9',
@@ -281,26 +402,28 @@
     },
     '2': {
       id: '2',
-      name: 'Layar 2 · Area Kiri (Pagar & Jalan)',
-      short: 'L2 Kiri',
-      streamUrl: '/proxy/stream/okam_1',
-      snapshotUrl: '/proxy/snapshot/okam_1',
-      res: '1920×1080 (ROI Kiri)',
-      aspect: '16:9',
-      aspectRatio: '16 / 9',
-      aspectVal: 1.7778,
-      cssClass: 'okam-lens-left'
-    },
-    '3': {
-      id: '3',
-      name: 'Layar 3 · PTZ Motorik (Area Teras & Pintu)',
-      short: 'L3 PTZ',
-      streamUrl: '/proxy/stream/okam_2',
-      snapshotUrl: '/proxy/snapshot/okam_2',
+      camId: 'okam_2',
+      name: 'O-Kam 2 · PTZ Motorik (Area Teras & Pintu)',
+      short: 'O-Kam 2',
+      streamUrl: '/api/cameras/okam_2/stream.mjpg',
+      snapshotUrl: '/api/cameras/okam_2/snapshot',
       res: '1920×1080 (PTZ)',
       aspect: '16:9',
       aspectRatio: '16 / 9',
       aspectVal: 1.7778,
+      cssClass: ''
+    },
+    '3': {
+      id: '3',
+      camId: 'okam_3',
+      name: 'O-Kam 3 · Sub-Stream Sensor (Wide Aux)',
+      short: 'O-Kam 3',
+      streamUrl: '/api/cameras/okam_3/stream.mjpg',
+      snapshotUrl: '/api/cameras/okam_3/snapshot',
+      res: '448×256 (16:9)',
+      aspect: '16:9',
+      aspectRatio: '16 / 9',
+      aspectVal: 1.75,
       cssClass: ''
     }
   };
@@ -411,14 +534,11 @@
     const isHealthy = c.s === 'healthy' || (c.checks && c.checks.feedAlive);
     const fillCls = fitMode === 'cover' ? ' fill' : '';
     const isCam1 = c.id === 'v380-1';
-    const isOkam = c.id === 'okam-3' || c.id.startsWith('okam');
-    const okamLens = okamLenses[okamGridLens] || okamLenses['1'];
-    const okamLensCls = isOkam && okamGridLens === '2' ? ' okam-lens-left' : '';
-    const lensCls = isCam1 && cam1GridLens !== 'all' ? ` lens-${cam1GridLens}` : okamLensCls;
+    const lensCls = isCam1 && cam1GridLens !== 'all' ? ` lens-${cam1GridLens}` : '';
     const cardAspect = isCam1 && cam1GridLens === 'all' ? (c.aspectRatio || '16 / 27') : (c.aspectRatio || '16 / 9');
     const cardRatioVal = isCam1 && cam1GridLens === 'all' ? 0.5926 : (c.aspectVal || 1.7778);
-    const cardRes = isCam1 && cam1GridLens !== 'all' ? '1920×1080 (16:9)' : (isOkam ? okamLens.res : (c.resolution || ''));
-    const cardStreamUrl = isOkam ? okamLens.streamUrl : c.streamUrl;
+    const cardRes = isCam1 && cam1GridLens !== 'all' ? '1920×1080 (16:9)' : (c.resolution || '1920×1080');
+    const cardStreamUrl = c.streamUrl;
 
     const lensPill = isCam1 ? `
       <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px;">
@@ -430,16 +550,7 @@
           <button data-cam1-lens="3" aria-pressed="${cam1GridLens === '3'}">L3 Bawah</button>
         </div>
       </div>
-    ` : (isOkam ? `
-      <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px;">
-        <span style="font-size:11px;color:var(--muted);font-weight:600;">Lensa:</span>
-        <div class="lens-pill">
-          <button data-okam-lens="1" aria-pressed="${okamGridLens === '1'}">L1 Main</button>
-          <button data-okam-lens="2" aria-pressed="${okamGridLens === '2'}">L2 Kiri</button>
-          <button data-okam-lens="3" aria-pressed="${okamGridLens === '3'}">L3 PTZ</button>
-        </div>
-      </div>
-    ` : '');
+    ` : '';
 
     return `
       <article class="card cam">
@@ -1080,92 +1191,92 @@
             </div>
           `;
         } else {
-          // Camera 3 (O-Kam Pro Three Screens Mode - Matching Mobile App Option 2)
-          if (!ptzPanelOpen) ptzPanelOpen = true; // Auto-open PTZ controller underneath Screen 3
+          // O-Kam Pro Multi-Camera Three Screens Mode (3 Independent Streams)
+          if (!ptzPanelOpen) ptzPanelOpen = true;
           splitHeaderHtml = `
             <div class="lens-bar">
-              <span class="lens-bar-label">Mode Tampilan O-Kam Pro (3 Layar):</span>
-              <div class="seg" id="okam-lens-selector" role="group" aria-label="Pilih Mode Kamera 3">
-                <button class="btn sm" data-okam-focus-lens="1" aria-pressed="false">L1 · Panoramic</button>
-                <button class="btn sm" data-okam-focus-lens="2" aria-pressed="false">L2 · Area Kiri</button>
-                <button class="btn sm" data-okam-focus-lens="3" aria-pressed="false">L3 · PTZ Motorik</button>
+              <span class="lens-bar-label">Mode Tampilan O-Kam Pro (3 Kamera Independen):</span>
+              <div class="seg" id="okam-lens-selector" role="group" aria-label="Pilih Kamera O-Kam">
+                <button class="btn sm" data-okam-focus-lens="1" aria-pressed="false">O-Kam 1 · Panoramic</button>
+                <button class="btn sm" data-okam-focus-lens="2" aria-pressed="false">O-Kam 2 · PTZ Motorik</button>
+                <button class="btn sm" data-okam-focus-lens="3" aria-pressed="false">O-Kam 3 · Sub-Stream</button>
                 <button class="btn sm" data-okam-focus-lens="split" aria-pressed="true" style="color:var(--text);font-weight:700;">
                   <svg class="ico" style="width:14px;height:14px;margin-right:4px;"><use href="#i-grid"/></svg>
-                  Three Screens (3 Layar Sinkron)
+                  Three Screens (3 Kamera Sinkron)
                 </button>
               </div>
             </div>
           `;
           splitCardsHtml = `
             <div class="okam-vertical-stack">
-              <!-- Layar 1: Panoramic Overview -->
+              <!-- O-Kam 1: Panoramic Main (10554/tcp/av0_0) -->
               <div class="okam-screen-card">
                 <div class="video${fillCls}" style="aspect-ratio:16/9;">
                   <div class="vbar">
-                    <span><i class="dot ${s[1]}"></i>Layar 1 · Panoramic Main (Sensor Tetap)</span>
+                    <span><i class="dot ${s[1]}"></i>O-Kam 1 · Panoramic Main (Sensor Tetap · Port 10554)</span>
                     <em>Live · 1920×1080</em>
                   </div>
-                  <img class="mjpeg-stream" src="/proxy/stream/okam_1" alt="Layar 1 Panoramic" 
+                  <img class="mjpeg-stream" src="/api/cameras/okam_1/stream.mjpg" alt="O-Kam 1 Panoramic" 
                     onerror="window.handleStreamError && window.handleStreamError(this, 'okam_1', 'msg-okam-1');" 
                     onload="window.handleStreamLoad && window.handleStreamLoad(this, 'okam_1', 'msg-okam-1');">
-                  ${msg({id: 'okam_1', ip: c.ip, n: 'Layar 1 · Panoramic'}, 'msg-okam-1')}
+                  ${msg({id: 'okam_1', ip: c.ip, n: 'O-Kam 1 · Panoramic'}, 'msg-okam-1')}
                 </div>
                 <div class="cmeta" style="padding:10px 14px 10px;">
                   <div class="mrow">
                     <div>
-                      <b style="font-size:14px;">Layar 1 · Panoramic Main (Area Luar & Halaman)</b>
-                      <div class="ip" style="font-size:12px;margin-top:2px;">Sensor Utama Tetap · 1920×1080 · 16:9 Widescreen</div>
+                      <b style="font-size:14px;">O-Kam 1 · Panoramic Main (Sensor Tetap)</b>
+                      <div class="ip" style="font-size:12px;margin-top:2px;">RTSP Port 10554 (/tcp/av0_0) · 1920×1080 · 16:9 Widescreen</div>
                     </div>
-                    <button class="btn sm" data-okam-switch-lens="1" title="Tampilkan Layar 1 sebagai tampilan tunggal">Perbesar Layar 1</button>
+                    <button class="btn sm" data-okam-switch-lens="1" title="Fokus ke O-Kam 1">Fokus O-Kam 1</button>
                   </div>
                 </div>
               </div>
 
-              <!-- Layar 2: Area Kiri (Pagar & Jalan) -->
-              <div class="okam-screen-card">
-                <div class="video okam-lens-left${fillCls}" style="aspect-ratio:16/9;">
-                  <div class="vbar">
-                    <span><i class="dot ${s[1]}"></i>Layar 2 · Area Kiri (Gerbang & Jalan Lingkungan)</span>
-                    <em>Live · 1920×1080 (ROI)</em>
-                  </div>
-                  <img class="mjpeg-stream" src="/proxy/stream/okam_1" alt="Layar 2 Area Kiri" 
-                    onerror="window.handleStreamError && window.handleStreamError(this, 'okam_1', 'msg-okam-2');" 
-                    onload="window.handleStreamLoad && window.handleStreamLoad(this, 'okam_1', 'msg-okam-2');">
-                  ${msg({id: 'okam_1', ip: c.ip, n: 'Layar 2 · Area Kiri'}, 'msg-okam-2')}
-                </div>
-                <div class="cmeta" style="padding:10px 14px 10px;">
-                  <div class="mrow">
-                    <div>
-                      <b style="font-size:14px;">Layar 2 · Area Kiri (Pagar, Lampu Tiang & Gerbang)</b>
-                      <div class="ip" style="font-size:12px;margin-top:2px;">Electronic ROI Slicing · 1920×1080 · Sudut Pantau Gerbang</div>
-                    </div>
-                    <button class="btn sm" data-okam-switch-lens="2" title="Tampilkan Layar 2 sebagai tampilan tunggal">Perbesar Layar 2</button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Layar 3: PTZ Motorik (Aktif) -->
+              <!-- O-Kam 2: PTZ Motorik (10555/tcp/av0_0) -->
               <div class="okam-screen-card is-active-ptz">
                 <div class="video${fillCls}" style="aspect-ratio:16/9;">
                   <div class="vbar" style="background:rgba(0, 229, 255, 0.15); border-bottom:1px solid rgba(0, 229, 255, 0.35);">
-                    <span><i class="dot" style="background:#00e5ff;box-shadow:0 0 8px #00e5ff;"></i>Layar 3 · PTZ Motorik (Aktif · Kontrol Rotasi)</span>
+                    <span><i class="dot" style="background:#00e5ff;box-shadow:0 0 8px #00e5ff;"></i>O-Kam 2 · PTZ Motorik (Area Teras & Pintu · Port 10555)</span>
                     <em style="color:#00e5ff;font-weight:700;">Live PTZ · 1920×1080</em>
                   </div>
-                  <img class="mjpeg-stream" src="/proxy/stream/okam_2" alt="Layar 3 PTZ" 
-                    onerror="window.handleStreamError && window.handleStreamError(this, 'okam_2', 'msg-okam-3');" 
-                    onload="window.handleStreamLoad && window.handleStreamLoad(this, 'okam_2', 'msg-okam-3');">
-                  ${msg({id: 'okam_2', ip: c.ip, n: 'Layar 3 · PTZ Motorik'}, 'msg-okam-3')}
+                  <img class="mjpeg-stream" src="/api/cameras/okam_2/stream.mjpg" alt="O-Kam 2 PTZ" 
+                    onerror="window.handleStreamError && window.handleStreamError(this, 'okam_2', 'msg-okam-2');" 
+                    onload="window.handleStreamLoad && window.handleStreamLoad(this, 'okam_2', 'msg-okam-2');">
+                  ${msg({id: 'okam_2', ip: c.ip, n: 'O-Kam 2 · PTZ Motorik'}, 'msg-okam-2')}
                 </div>
                 <div class="cmeta" style="padding:12px 14px 10px;">
                   <div class="mrow">
                     <div>
-                      <b style="font-size:14px;color:#00e5ff;">Layar 3 · Sensor Motorik PTZ (Teras, Pintu & Parkir)</b>
-                      <div class="ip" style="font-size:12px;margin-top:2px;">Sensor Rotasi Independen (Port 10555) · Terhubung ke Kontroler PTZ di Bawah</div>
+                      <b style="font-size:14px;color:#00e5ff;">O-Kam 2 · Sensor Motorik PTZ (Teras, Pintu & Parkir)</b>
+                      <div class="ip" style="font-size:12px;margin-top:2px;">RTSP Port 10555 (/tcp/av0_0) · 1920×1080 · Terhubung ke Kontroler PTZ</div>
                     </div>
                     <div style="display:flex;gap:6px;">
-                      <button class="btn sm primary" data-open-ptz="okam-3" style="background:rgba(0, 229, 255, 0.2);border-color:#00e5ff;color:#00e5ff;"><svg class="ico"><use href="#i-ptz"/></svg> <span>Kontrol PTZ</span></button>
-                      <button class="btn sm" data-okam-switch-lens="3" title="Tampilkan Layar 3 sebagai tampilan tunggal">Perbesar Layar 3</button>
+                      <button class="btn sm primary" data-open-ptz="okam_2" style="background:rgba(0, 229, 255, 0.2);border-color:#00e5ff;color:#00e5ff;"><svg class="ico"><use href="#i-ptz"/></svg> <span>Kontrol PTZ</span></button>
+                      <button class="btn sm" data-okam-switch-lens="2" title="Fokus ke O-Kam 2">Fokus O-Kam 2</button>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- O-Kam 3: Sub-Stream Sensor (10554/tcp/av0_1) -->
+              <div class="okam-screen-card">
+                <div class="video${fillCls}" style="aspect-ratio:16/9;">
+                  <div class="vbar">
+                    <span><i class="dot ${s[1]}"></i>O-Kam 3 · Sub-Stream Sensor (Wide Aux · Port 10554)</span>
+                    <em>Live · 448×256</em>
+                  </div>
+                  <img class="mjpeg-stream" src="/api/cameras/okam_3/stream.mjpg" alt="O-Kam 3 Sub-Stream" 
+                    onerror="window.handleStreamError && window.handleStreamError(this, 'okam_3', 'msg-okam-3');" 
+                    onload="window.handleStreamLoad && window.handleStreamLoad(this, 'okam_3', 'msg-okam-3');">
+                  ${msg({id: 'okam_3', ip: c.ip, n: 'O-Kam 3 · Sub-Stream Sensor'}, 'msg-okam-3')}
+                </div>
+                <div class="cmeta" style="padding:10px 14px 10px;">
+                  <div class="mrow">
+                    <div>
+                      <b style="font-size:14px;">O-Kam 3 · Sub-Stream Sensor (Wide Aux Low-Bandwidth)</b>
+                      <div class="ip" style="font-size:12px;margin-top:2px;">RTSP Port 10554 (/tcp/av0_1) · 448×256 · Independent Worker</div>
+                    </div>
+                    <button class="btn sm" data-okam-switch-lens="3" title="Fokus ke O-Kam 3">Fokus O-Kam 3</button>
                   </div>
                 </div>
               </div>
@@ -1181,8 +1292,8 @@
             <div class="cmeta" style="margin-top:14px;">
               <div class="mrow">
                 <div>
-                  <b class="nm">${escapeHtml(c.n)} (3 Lensa Aktif Simultan)</b>
-                  <div class="ip">${c.ip} · ${c.d} · Port ${c.p} <span class="res-tag">3 Lensa Simultan</span></div>
+                  <b class="nm">${escapeHtml(c.n)} (3 Kamera Aktif Simultan)</b>
+                  <div class="ip">${c.ip} · ${c.d} · Port ${c.p} <span class="res-tag">3 Stream Independen</span></div>
                 </div>
                 ${acts(c, '')}
               </div>
@@ -1215,9 +1326,9 @@
         const lensCls = isCam1 && cam1LensMode !== 'all' ? ` lens-${cam1LensMode}` : '';
         const stageAspect = isCam1 && cam1LensMode !== 'all' ? '16 / 9' : (c.aspectRatio || '16 / 9');
         const stageRatioVal = isCam1 && cam1LensMode !== 'all' ? 1.7778 : (c.aspectVal || 1.7778);
-        const stageRes = isCam1 && cam1LensMode !== 'all' ? '1920×1080 (16:9)' : (isOkam ? (okamLenses[okamLensMode] || okamLenses['1']).res : (c.resolution || ''));
-        const lensTitle = isCam1 && cam1LensMode === '1' ? 'Camera 1 · Lensa 1 (Atas - Panoramic)' : (isCam1 && cam1LensMode === '2' ? 'Camera 1 · Lensa 2 (Tengah - Fixed Tele)' : (isCam1 && cam1LensMode === '3' ? 'Camera 1 · Lensa 3 (Bawah - PTZ Rotasi)' : (isOkam ? `Camera 3 · ${(okamLenses[okamLensMode] || okamLenses['1']).name}` : c.n)));
-        const stageStreamUrl = isOkam ? (okamLenses[okamLensMode] || okamLenses['1']).streamUrl : c.streamUrl;
+        const stageRes = isCam1 && cam1LensMode !== 'all' ? '1920×1080 (16:9)' : (c.resolution || '1920×1080');
+        const lensTitle = isCam1 && cam1LensMode === '1' ? 'Camera 1 · Lensa 1 (Atas - Panoramic)' : (isCam1 && cam1LensMode === '2' ? 'Camera 1 · Lensa 2 (Tengah - Fixed Tele)' : (isCam1 && cam1LensMode === '3' ? 'Camera 1 · Lensa 3 (Bawah - PTZ Rotasi)' : c.n));
+        const stageStreamUrl = c.streamUrl;
 
         const lensBar = isCam1 ? `
           <div class="lens-bar">
@@ -1232,12 +1343,12 @@
           </div>
         ` : (isOkam ? `
           <div class="lens-bar">
-            <span class="lens-bar-label">Mode Tampilan O-Kam Pro (3 Layar):</span>
-            <div class="seg" id="okam-lens-selector" role="group" aria-label="Pilih Mode Kamera 3">
-              <button class="btn sm" data-okam-focus-lens="1" aria-pressed="${okamLensMode === '1'}">L1 · Panoramic</button>
-              <button class="btn sm" data-okam-focus-lens="2" aria-pressed="${okamLensMode === '2'}">L2 · Area Kiri</button>
-              <button class="btn sm" data-okam-focus-lens="3" aria-pressed="${okamLensMode === '3'}">L3 · PTZ Motorik</button>
-              <button class="btn sm" data-okam-focus-lens="split" aria-pressed="false">Three Screens (3 Layar)</button>
+            <span class="lens-bar-label">Pilih Kamera O-Kam Pro (Multi-Camera):</span>
+            <div class="seg" id="okam-lens-selector" role="group" aria-label="Pilih Kamera O-Kam">
+              <button class="btn sm" data-okam-focus-lens="1" aria-pressed="${c.id === 'okam_1' && okamLensMode !== 'split'}">O-Kam 1 · Panoramic</button>
+              <button class="btn sm" data-okam-focus-lens="2" aria-pressed="${c.id === 'okam_2' && okamLensMode !== 'split'}">O-Kam 2 · PTZ Motorik</button>
+              <button class="btn sm" data-okam-focus-lens="3" aria-pressed="${c.id === 'okam_3' && okamLensMode !== 'split'}">O-Kam 3 · Sub-Stream</button>
+              <button class="btn sm" data-okam-focus-lens="split" aria-pressed="${okamLensMode === 'split'}">Three Screens (3 Kamera)</button>
             </div>
           </div>
         ` : '');
@@ -1815,7 +1926,14 @@
     if (!listEl) return;
 
     try {
-      const res = await fetch('/api/recordings');
+      const recUrl = recordingFilterCid
+        ? `/api/recordings?cameraId=${encodeURIComponent(recordingFilterCid)}`
+        : '/api/recordings';
+      const res = await fetch(recUrl);
+      if (res.status === 401) {
+        openAuthDialog();
+        return;
+      }
       const data = await res.json();
       recordingsCache = data.recordings || [];
 
@@ -1962,7 +2080,7 @@
 
     if (dlBtn) {
       dlBtn.href = `/api/recordings/download?id=${encodeURIComponent(id)}`;
-      dlBtn.download = rec.filename || `${id}.mp4`;
+      dlBtn.download = rec.fileName || rec.filename || `${id}.mp4`;
       dlBtn.style.display = 'inline-flex';
     }
 
@@ -2502,17 +2620,23 @@
   // --- Background Telemetry Polling Loop ---
   async function pollBackendHealth() {
     try {
+      const healthResp = await fetch('/api/health', { credentials: 'same-origin' });
+      if (healthResp.status === 401) {
+        applyServerRole(null, null, false);
+        openAuthDialog();
+        return;
+      }
       const [healthRes, storageRes, servicesRes] = await Promise.all([
-        fetch('/api/health').then((r) => (r.ok ? r.json() : null)),
-        fetch('/api/storage/status').then((r) => (r.ok ? r.json() : null)),
-        fetch('/api/services/status').then((r) => (r.ok ? r.json() : null))
+        healthResp.ok ? healthResp.json() : null,
+        fetch('/api/storage/status', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)),
+        fetch('/api/services/status', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null))
       ]);
 
       if (healthRes && healthRes.cameras) {
         Object.entries(healthRes.cameras).forEach(([cid, camData]) => {
           let localCam = cams.find((c) => c.id === cid);
-          if (!localCam && (cid === 'okam_1' || cid === 'okam-1' || cid === 'okam-3' || cid.startsWith('okam'))) {
-            localCam = cams.find((c) => c.id === 'okam-3');
+          if (!localCam && cid === 'okam-3') {
+            localCam = cams.find((c) => c.id === 'okam_1');
           }
           if (localCam) {
             localCam.s = (camData.status || 'degraded').toLowerCase();
@@ -2522,6 +2646,9 @@
               localCam.latencyMs = Math.round(camData.metrics.latencyMs || 0);
               localCam.queue = `${camData.metrics.queueDepth || 0} / 0`;
               localCam.decodeErrors = camData.metrics.decodeErrors || 0;
+              if (camData.metrics.resolution && camData.metrics.resolution !== 'unknown') {
+                localCam.resolution = String(camData.metrics.resolution).replace('x', '×');
+              }
             }
 
             const historyKey = localCam.id;
@@ -2534,8 +2661,8 @@
         if (servicesRes && servicesRes.services) {
           Object.entries(servicesRes.services).forEach(([cid, sData]) => {
             let localCam = cams.find((c) => c.id === cid);
-            if (!localCam && (cid === 'okam_1' || cid === 'okam-1' || cid === 'okam-3' || cid.startsWith('okam'))) {
-              localCam = cams.find((c) => c.id === 'okam-3');
+            if (!localCam && cid === 'okam-3') {
+              localCam = cams.find((c) => c.id === 'okam_1');
             }
             if (localCam) {
               localCam.running = sData.running;
@@ -2543,6 +2670,14 @@
             }
           });
         }
+
+        const totalFps = cams.reduce((acc, c) => acc + (c.fps || 0), 0);
+        const activeCams = cams.filter((c) => c.fps > 0);
+        const avgLat = activeCams.length
+          ? Math.round(activeCams.reduce((acc, c) => acc + (c.latencyMs || 0), 0) / activeCams.length)
+          : 0;
+        if ($('#tp-fps')) $('#tp-fps').textContent = `${totalFps.toFixed(1)} fps`;
+        if ($('#tp-lat')) $('#tp-lat').textContent = `${avgLat} ms`;
 
         if (healthRes.system) {
           const cpu = Math.round(healthRes.system.cpu_percent || 28);
@@ -2664,21 +2799,24 @@
       try { localStorage.setItem('camhub_cam1_lens', cam1LensMode); } catch (_) {}
       return live();
     }
-    if ((m = c('[data-okam-focus-lens]'))) {
-      okamLensMode = m.dataset.okamFocusLens;
-      try { localStorage.setItem('camhub_okam_lens', okamLensMode); } catch (_) {}
-      return live();
-    }
-    if ((m = c('[data-okam-switch-lens]'))) {
-      okamLensMode = m.dataset.okamSwitchLens;
-      try { localStorage.setItem('camhub_okam_lens', okamLensMode); } catch (_) {}
+    if ((m = c('[data-okam-focus-lens]')) || (m = c('[data-okam-switch-lens]'))) {
+      const target = m.dataset.okamFocusLens || m.dataset.okamSwitchLens;
+      if (target === 'split') {
+        okamLensMode = 'split';
+      } else {
+        okamLensMode = 'single';
+        const targetCid = `okam_${target}`;
+        const idx = cams.findIndex((x) => x.id === targetCid);
+        if (idx >= 0) sel = idx;
+      }
       return live();
     }
     if ((m = c('[data-open-ptz]'))) {
       const targetCid = m.dataset.openPtz;
       if (targetCid === 'okam-3' || targetCid?.startsWith('okam')) {
-        okamLensMode = '3';
-        try { localStorage.setItem('camhub_okam_lens', okamLensMode); } catch (_) {}
+        okamLensMode = 'single';
+        const idx = cams.findIndex((x) => x.id === 'okam_2');
+        if (idx >= 0) sel = idx;
       } else {
         cam1LensMode = '3';
         try { localStorage.setItem('camhub_cam1_lens', cam1LensMode); } catch (_) {}
@@ -2706,30 +2844,6 @@
       }
       document.querySelectorAll('[data-cam1-lens]').forEach((b) => {
         b.setAttribute('aria-pressed', b.dataset.cam1Lens === cam1GridLens ? 'true' : 'false');
-      });
-      return;
-    }
-    if ((m = c('[data-okam-lens]'))) {
-      okamGridLens = m.dataset.okamLens;
-      try { localStorage.setItem('camhub_okam_grid_lens', okamGridLens); } catch (_) {}
-      const targetLens = okamLenses[okamGridLens] || okamLenses['1'];
-      const okamCard = $('#feed-okam-3')?.closest('.card');
-      if (okamCard) {
-        const streamImg = okamCard.querySelector('#stream-img-okam-3');
-        if (streamImg) streamImg.src = targetLens.streamUrl;
-        const feedOkam = okamCard.querySelector('#feed-okam-3');
-        if (feedOkam) {
-          if (okamGridLens === '2') {
-            feedOkam.classList.add('okam-lens-left');
-          } else {
-            feedOkam.classList.remove('okam-lens-left');
-          }
-        }
-        const resTag = okamCard.querySelector('.res-tag');
-        if (resTag) resTag.textContent = targetLens.res;
-      }
-      document.querySelectorAll('[data-okam-lens]').forEach((b) => {
-        b.setAttribute('aria-pressed', b.dataset.okamLens === okamGridLens ? 'true' : 'false');
       });
       return;
     }
@@ -2813,6 +2927,69 @@
 
     // Config dialog cancel
     if (c('#cfg-cancel')) return $('#config-dialog')?.close();
+    if (c('#auth-cancel-btn')) return $('#auth-dialog')?.close();
+  });
+
+  $('#auth-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = $('#auth-error-msg');
+    if (errEl) errEl.style.display = 'none';
+    const username = $('#auth-username')?.value?.trim() || 'admin';
+    const password = $('#auth-password')?.value || '';
+
+    try {
+      let res;
+      if (authSetupRequired) {
+        const bootstrapToken = $('#auth-bootstrap')?.value?.trim() || '';
+        const viewerPassword = $('#auth-viewer-password')?.value || '';
+        res = await fetch('/api/auth/setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            bootstrapToken,
+            adminUsername: username,
+            adminPassword: password,
+            viewerPassword: viewerPassword || undefined
+          })
+        });
+      } else {
+        res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ username, password })
+        });
+      }
+      const data = await res.json();
+      if (res.ok && data.authenticated) {
+        authSetupRequired = false;
+        applyServerRole(data.role, data.username, true);
+        if ($('#auth-password')) $('#auth-password').value = '';
+        $('#auth-dialog')?.close();
+        toast(`Signed in as ${data.username} (${data.role})`);
+        live();
+        pollBackendHealth();
+      } else if (errEl) {
+        errEl.textContent = data.error || 'Authentication failed';
+        errEl.style.display = 'block';
+      }
+    } catch (err) {
+      if (errEl) {
+        errEl.textContent = err.message;
+        errEl.style.display = 'block';
+      }
+    }
+  });
+
+  $('#auth-logout-btn')?.addEventListener('click', async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    } catch (_) {}
+    applyServerRole(null, null, false);
+    $('#auth-dialog')?.close();
+    toast('Signed out');
+    openAuthDialog();
   });
 
   // Config form submit
@@ -3254,6 +3431,10 @@
     path();
   });
   seg('#range', () => drawFps());
+  seg('#recordings-cam-filter', (b) => {
+    recordingFilterCid = b.dataset.recCid || '';
+    loadRecordings();
+  });
   seg('#events-cam-filter', (b) => {
     eventFilterCid = b.dataset.cid || '';
     renderEventsList();
@@ -3281,7 +3462,11 @@
     document.fonts.ready.then(move);
   }
 
-  // Periodic polling
-  pollBackendHealth();
-  setInterval(pollBackendHealth, 3000);
+  // Verify server session first, then start periodic polling
+  syncAuthSession(true).then((authed) => {
+    if (authed) pollBackendHealth();
+  });
+  setInterval(() => {
+    if (isAuthenticated) pollBackendHealth();
+  }, 3000);
 })();

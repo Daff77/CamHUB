@@ -25,6 +25,37 @@ def sanitize_rtsp_url(url: str) -> str:
     return re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", url)
 
 
+def extract_jpeg_dimensions(jpeg_bytes: bytes):
+    """Extracts (width, height) from JPEG SOF0/SOF1/SOF2 markers without external dependencies."""
+    if not jpeg_bytes or len(jpeg_bytes) < 24 or jpeg_bytes[0:2] != b"\xff\xd8":
+        return None
+    idx = 2
+    length = len(jpeg_bytes)
+    while idx < length - 8:
+        if jpeg_bytes[idx] != 0xFF:
+            idx += 1
+            continue
+        marker = jpeg_bytes[idx + 1]
+        if marker == 0xFF:
+            idx += 1
+            continue
+        if marker in (0xD8, 0xD9) or (0xD0 <= marker <= 0xD7):
+            idx += 2
+            continue
+        seg_len = (jpeg_bytes[idx + 2] << 8) | jpeg_bytes[idx + 3]
+        if seg_len < 2:
+            break
+        if marker in (0xC0, 0xC1, 0xC2):
+            if idx + 8 < length:
+                h = (jpeg_bytes[idx + 5] << 8) | jpeg_bytes[idx + 6]
+                w = (jpeg_bytes[idx + 7] << 8) | jpeg_bytes[idx + 8]
+                if w > 0 and h > 0:
+                    return w, h
+            break
+        idx += 2 + seg_len
+    return None
+
+
 class CameraStreamWorker:
     """Independent RTSP-to-MJPEG stream worker and frame buffer for a single camera."""
 
@@ -74,21 +105,47 @@ class CameraStreamWorker:
             )
             self.worker_thread.start()
 
+    def _terminate_process(self):
+        proc = self.process
+        self.process = None
+        if proc:
+            try:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    try:
+                        proc.wait(timeout=1.0)
+                    except Exception:
+                        pass
+                if proc.stdout:
+                    try:
+                        proc.stdout.close()
+                    except Exception:
+                        pass
+                if proc.stderr:
+                    try:
+                        proc.stderr.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
     def stop(self):
         with self.lock:
             self.running = False
             self.status = "stopped"
+            self.frame_times.clear()
+        self._terminate_process()
+        with self.lock:
+            self.status = "stopped"
+            self.frame_times.clear()
 
-        if self.process:
-            try:
-                self.process.terminate()
-                try:
-                    self.process.wait(timeout=1.0)
-                except subprocess.TimeoutExpired:
-                    self.process.kill()
-            except Exception:
-                pass
-            self.process = None
+    def restart(self):
+        self.stop()
+        time.sleep(0.2)
+        self.start()
 
     def get_metrics(self):
         now = time.time()
@@ -186,16 +243,24 @@ class CameraStreamWorker:
             }
 
     def _run_ffmpeg(self):
+        transport = (self.rtsp_transport or "tcp").lower()
+        if transport not in ("tcp", "udp"):
+            transport = "tcp"
+
         cmd = [
             "ffmpeg",
             "-hide_banner",
             "-loglevel", "error",
-            "-fflags", "nobuffer",
+            "-rtsp_transport", transport,
+            "-fflags", "nobuffer+discardcorrupt",
             "-flags", "low_delay",
-            "-rtsp_transport", self.rtsp_transport,
+            "-probesize", "1000000",
+            "-analyzeduration", "1000000",
             "-i", self.rtsp_url,
             "-an",
+            "-fps_mode", "passthrough",
             "-c:v", "mjpeg",
+            "-pix_fmt", "yuvj420p",
             "-q:v", "5",
             "-f", "mpjpeg",
             "-boundary_tag", "frame",
@@ -203,9 +268,10 @@ class CameraStreamWorker:
         ]
 
         clean_url = sanitize_rtsp_url(self.rtsp_url)
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
         while self.running:
-            print(f"[OKAM-{self.camera_id}] Connecting to RTSP: {clean_url}", flush=True)
+            print(f"[OKAM-{self.camera_id}] Connecting to RTSP ({transport.upper()}): {clean_url}", flush=True)
             self.status = "reconnecting"
 
             try:
@@ -213,31 +279,34 @@ class CameraStreamWorker:
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    bufsize=1048576
+                    bufsize=1048576,
+                    creationflags=creation_flags
                 )
 
-                def read_stderr():
+                proc_ref = self.process
+
+                def read_stderr(p=proc_ref):
                     try:
-                        for line in self.process.stderr:
+                        for line in p.stderr:
                             if not self.running:
                                 break
-                            text = line.decode('utf-8', errors='ignore').strip()
+                            text = line.decode("utf-8", errors="ignore").strip()
                             if text:
                                 with self.lock:
                                     self.decode_errors += 1
-                                    self.last_error = text
-                                print(f"[OKAM-FFMPEG-{self.camera_id}] {text}", file=sys.stderr, flush=True)
+                                    self.last_error = sanitize_rtsp_url(text)
+                                print(f"[OKAM-FFMPEG-{self.camera_id}] {sanitize_rtsp_url(text)}", file=sys.stderr, flush=True)
                     except Exception:
                         pass
 
                 t_err = threading.Thread(target=read_stderr, daemon=True, name=f"okam-err-{self.camera_id}")
                 t_err.start()
 
-                stdout = self.process.stdout
+                stdout = proc_ref.stdout
                 buffer = bytearray()
                 delimiter = b"--frame\r\n"
 
-                while self.running and self.process.poll() is None:
+                while self.running and proc_ref.poll() is None:
                     chunk = stdout.read(16384)
                     if not chunk:
                         break
@@ -262,10 +331,14 @@ class CameraStreamWorker:
                         else:
                             jpeg_bytes = None
 
+                        dims = extract_jpeg_dimensions(jpeg_bytes) if jpeg_bytes else None
+
                         now = time.time()
                         with self.lock:
                             self.total_frames += 1
                             self.frame_times.append(now)
+                            if dims:
+                                self.resolution = f"{dims[0]}x{dims[1]}"
                             if jpeg_bytes:
                                 self.latest_frame = jpeg_bytes
                                 self.latest_frame_time = now
@@ -283,16 +356,7 @@ class CameraStreamWorker:
                 print(f"[OKAM-{self.camera_id}] Worker error: {e}", file=sys.stderr, flush=True)
 
             # Cleanup process to prevent zombies
-            if self.process:
-                try:
-                    self.process.terminate()
-                    self.process.wait(timeout=1.0)
-                except Exception:
-                    try:
-                        self.process.kill()
-                    except Exception:
-                        pass
-                self.process = None
+            self._terminate_process()
 
             if self.running:
                 with self.lock:
@@ -322,6 +386,23 @@ class MultiCameraManager:
                         resolution: str = "1920x1080", rtsp_transport: str = "tcp",
                         target_fps: float = 15.0, aliases: list = None):
         with self.lock:
+            # Prevent spawning duplicate decoder processes for the exact same RTSP URL
+            if rtsp_url:
+                for existing_cid, existing_w in self.workers.items():
+                    if existing_cid != camera_id and existing_w.rtsp_url == rtsp_url:
+                        self.aliases[camera_id] = existing_cid
+                        if aliases:
+                            for alias in aliases:
+                                self.aliases[alias] = existing_cid
+                        return existing_w
+
+            # Stop existing worker if re-registering same camera_id to prevent duplicate decoder processes
+            if camera_id in self.workers:
+                try:
+                    self.workers[camera_id].stop()
+                except Exception:
+                    pass
+
             worker = CameraStreamWorker(
                 camera_id=camera_id,
                 name=name,
@@ -337,6 +418,7 @@ class MultiCameraManager:
             if aliases:
                 for alias in aliases:
                     self.aliases[alias] = camera_id
+            return worker
 
     def add_alias(self, alias: str, target_id: str):
         with self.lock:
@@ -563,6 +645,21 @@ class HttpHandler(BaseHTTPRequestHandler):
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
             return
 
+        # Deliver latest frame immediately if available so browser renders without delay
+        init_frame = worker.latest_frame
+        if init_frame:
+            try:
+                part = (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(init_frame)).encode("ascii") + b"\r\n\r\n"
+                    + init_frame + b"\r\n"
+                )
+                self.wfile.write(part)
+                self.wfile.flush()
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+                return
+
         client_alive = [True]
 
         def on_frame(data):
@@ -584,6 +681,49 @@ class HttpHandler(BaseHTTPRequestHandler):
             client_alive[0] = False
             worker.remove_subscriber(on_frame)
 
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        match = re.match(r"^/api/cameras/([^/]+)/(start|stop|restart)$", path)
+        if match:
+            target_cid, action = match.group(1), match.group(2)
+            worker = self._resolve_worker(target_cid)
+            if not worker:
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Camera '{target_cid}' not found"}).encode("utf-8"))
+                return
+
+            if action == "start":
+                worker.start()
+            elif action == "stop":
+                worker.stop()
+            elif action == "restart":
+                worker.restart()
+
+            body = json.dumps({
+                "success": True,
+                "cameraId": worker.camera_id,
+                "action": action,
+                "status": worker.status
+            }).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        self.send_response(404)
+        self.send_header("Content-Type", "application/json")
+        self.send_cors_headers()
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": "Endpoint not found"}).encode("utf-8"))
+
     def _send_404_or_503(self, message: str):
         try:
             self.send_response(503)
@@ -598,24 +738,27 @@ class HttpHandler(BaseHTTPRequestHandler):
 DEFAULT_OKAM_CAMERAS = [
     {
         "id": "okam_1",
-        "name": "Camera 3 · O-Kam Lens 1 (Main)",
+        "name": "O-Kam 1 · Panoramic Main (Sensor Tetap)",
         "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0",
+        "rtspTransport": "tcp",
         "resolution": "1920x1080",
         "targetFps": 15.0,
         "aliases": ["okam-3", "okam-1"]
     },
     {
         "id": "okam_2",
-        "name": "Camera 4 · O-Kam Lens 2 (Wide)",
+        "name": "O-Kam 2 · PTZ Motorik (Area Teras & Pintu)",
         "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10555/tcp/av0_0",
+        "rtspTransport": "tcp",
         "resolution": "1920x1080",
         "targetFps": 15.0,
         "aliases": ["okam-2"]
     },
     {
         "id": "okam_3",
-        "name": "Camera 5 · O-Kam Lens 3 (Sub)",
+        "name": "O-Kam 3 · Sub-Stream Sensor (Wide Aux)",
         "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_1",
+        "rtspTransport": "tcp",
         "resolution": "448x256",
         "targetFps": 15.0,
         "aliases": ["okam-sub"]
@@ -628,27 +771,31 @@ def create_manager_from_config(config_path: str = None) -> MultiCameraManager:
     manager = MultiCameraManager()
 
     cameras_to_load = []
+    seen_rtsp = set()
 
     if config_path and os.path.isfile(config_path):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
                 for cam in cfg.get("cameras", []):
-                    if cam.get("type") == "okam":
+                    if cam.get("type") == "okam" or str(cam.get("id", "")).startswith("okam"):
                         if "lenses" in cam and isinstance(cam["lenses"], list):
                             for idx, lens in enumerate(cam["lenses"]):
                                 lid = f"okam_{lens.get('id', idx + 1)}"
+                                rtsp_url = lens.get("rtspUrl", "")
+                                if not rtsp_url or rtsp_url in seen_rtsp:
+                                    continue
+                                seen_rtsp.add(rtsp_url)
                                 aliases = [f"okam-lens-{lens.get('id', idx + 1)}"]
                                 if idx == 0:
-                                    aliases.extend(["okam-3", "okam-1", "okam_1"])
-                                else:
-                                    aliases.append(f"okam_{lens.get('id', idx + 1)}")
+                                    aliases.extend(["okam-3", "okam-1"])
                                 cameras_to_load.append({
                                     "id": lid,
-                                    "name": f"Camera 3 · {lens.get('name', f'Lens {idx+1}')}",
-                                    "rtspUrl": lens.get("rtspUrl", ""),
+                                    "name": f"{cam.get('name', 'O-Kam')} · {lens.get('name', f'Lens {idx+1}')}",
+                                    "rtspUrl": rtsp_url,
+                                    "rtspTransport": lens.get("rtspTransport", cam.get("rtspTransport", "tcp")),
                                     "resolution": lens.get("resolution", "1920x1080"),
-                                    "targetFps": lens.get("targetFps", 15.0),
+                                    "targetFps": lens.get("targetFps", cam.get("targetFps", 15.0)),
                                     "aliases": aliases
                                 })
                         else:
@@ -659,11 +806,13 @@ def create_manager_from_config(config_path: str = None) -> MultiCameraManager:
                                 if match:
                                     rtsp_url = match.group(1)
 
-                            if rtsp_url:
+                            if rtsp_url and rtsp_url not in seen_rtsp:
+                                seen_rtsp.add(rtsp_url)
                                 cameras_to_load.append({
                                     "id": cam.get("id"),
                                     "name": cam.get("name", cam.get("id")),
                                     "rtspUrl": rtsp_url,
+                                    "rtspTransport": cam.get("rtspTransport", "tcp"),
                                     "resolution": cam.get("resolution", "1920x1080"),
                                     "targetFps": cam.get("targetFps", 15.0),
                                     "aliases": cam.get("aliases", [])
@@ -680,6 +829,7 @@ def create_manager_from_config(config_path: str = None) -> MultiCameraManager:
             name=c["name"],
             rtsp_url=c["rtspUrl"],
             resolution=c.get("resolution", "1920x1080"),
+            rtsp_transport=c.get("rtspTransport", "tcp"),
             target_fps=c.get("targetFps", 15.0),
             aliases=c.get("aliases", [])
         )

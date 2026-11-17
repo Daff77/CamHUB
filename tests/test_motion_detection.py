@@ -165,13 +165,15 @@ class TestMotionDetection(unittest.TestCase):
     def test_retention_policy_age_and_capacity(self):
         """Expired events or exceeding max storage should be pruned safely."""
         config_provider = lambda: {
-            "cameras": [{"id": "cam-test", "name": "Test Cam", "port": 8080}],
+            "cameras": [{"id": "cam-test", "name": "Test Cam", "port": 59980}],
+            "aiDetection": {"enabled": False},
             "motionDetection": {
                 "retentionDays": 2,
                 "maxStorageMb": 0.001  # ~1 KB capacity to force capacity purge
             }
         }
         service = MotionDetectorService(config_provider, base_dir=self.temp_dir)
+        self.addCleanup(service.stop)
         now = time.time()
 
         # Add 3 mock events
@@ -239,8 +241,9 @@ class TestMotionDetection(unittest.TestCase):
 
     def test_api_list_and_delete_event(self):
         """List events with filtering and delete event cleanly."""
-        config_provider = lambda: {"cameras": [], "motionDetection": {}}
+        config_provider = lambda: {"cameras": [], "aiDetection": {"enabled": False}, "motionDetection": {}}
         service = MotionDetectorService(config_provider, base_dir=self.temp_dir)
+        self.addCleanup(service.stop)
         now = time.time()
 
         service._record_event({

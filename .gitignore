@@ -17,4 +17,6 @@ diagnostics/*.tmp
 tmp_channels/
 tmp_probe/
 Overview · Murmura*.html
+config/auth_config.json
+config/auth_bootstrap.token
 

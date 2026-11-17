@@ -16,7 +16,9 @@ from core.okam_adapter import (
     MultiCameraManager,
     ThreadedServer,
     HttpHandler,
-    sanitize_rtsp_url
+    sanitize_rtsp_url,
+    extract_jpeg_dimensions,
+    create_manager_from_config
 )
 
 
@@ -142,6 +144,55 @@ class TestOkamMultiCamera(unittest.TestCase):
 
         w1.remove_subscriber(cb1)
         w2.remove_subscriber(cb2)
+
+    def test_duplicate_rtsp_url_prevention(self):
+        # Attempting to register a 4th camera with an identical RTSP URL to okam_1
+        # must reuse the existing worker rather than spawning a duplicate decoder process
+        w_dup = self.manager.register_camera(
+            camera_id="okam_dup",
+            name="Duplicate Camera",
+            rtsp_url="rtsp://admin:SecretPass1@192.168.100.6:10554/tcp/av0_0",
+            resolution="1920x1080"
+        )
+        w1 = self.manager.get_worker("okam_1")
+        self.assertIs(w_dup, w1)
+        self.assertEqual(len(self.manager.workers), 3)
+        self.assertIs(self.manager.get_worker("okam_dup"), w1)
+
+    def test_create_manager_from_services_config(self):
+        mgr = create_manager_from_config()
+        self.assertEqual(len(mgr.workers), 3)
+        self.assertIn("okam_1", mgr.workers)
+        self.assertIn("okam_2", mgr.workers)
+        self.assertIn("okam_3", mgr.workers)
+        urls = {w.rtsp_url for w in mgr.workers.values()}
+        self.assertEqual(len(urls), 3, "All 3 O-Kam cameras must have distinct RTSP URLs")
+
+    def test_one_offline_two_active_isolation(self):
+        w1 = self.manager.get_worker("okam_1")
+        w2 = self.manager.get_worker("okam_2")
+        w3 = self.manager.get_worker("okam_3")
+
+        now = time.time()
+        with w1.lock:
+            w1.status = "connected"
+            w1.latest_frame_time = now
+            w1.frame_times.extend([now - 0.2, now - 0.1, now])
+        with w2.lock:
+            w2.status = "connected"
+            w2.latest_frame_time = now
+            w2.frame_times.extend([now - 0.2, now - 0.1, now])
+        with w3.lock:
+            w3.status = "offline"
+            w3.frame_times.clear()
+
+        summary = {c["id"]: c for c in self.manager.get_all_cameras_info()}
+        self.assertEqual(summary["okam_1"]["status"], "connected")
+        self.assertEqual(summary["okam_2"]["status"], "connected")
+        self.assertEqual(summary["okam_3"]["status"], "offline")
+        self.assertGreater(summary["okam_1"]["fps"], 0.0)
+        self.assertGreater(summary["okam_2"]["fps"], 0.0)
+        self.assertEqual(summary["okam_3"]["fps"], 0.0)
 
 
 class TestOkamHttpApi(unittest.TestCase):
@@ -277,6 +328,19 @@ class TestOkamHttpApi(unittest.TestCase):
         with urlopen(Request(url_s), timeout=2.0) as resp:
             snap = resp.read()
         self.assertIn(b"_FAKE_CAM1_JPEG_", snap)
+
+    def test_mjpeg_stream_endpoint_per_camera(self):
+        for cid, marker in [
+            ("okam_1", b"_FAKE_CAM1_JPEG_"),
+            ("okam_2", b"_FAKE_CAM2_JPEG_"),
+            ("okam_3", b"_FAKE_CAM3_JPEG_"),
+        ]:
+            url = f"http://127.0.0.1:{self.port}/api/cameras/{cid}/stream.mjpg"
+            with urlopen(Request(url), timeout=2.0) as resp:
+                self.assertEqual(resp.status, 200)
+                chunk = resp.read(128)
+                self.assertIn(b"--frame", chunk)
+                self.assertIn(marker, chunk)
 
 
 if __name__ == "__main__":

@@ -126,46 +126,57 @@
       "fastRtsCmd": "python -u \"C:\\DaffaP\\Project df\\CamHUB\\core\\okam_adapter.py\" --port 8081 --rtsp \"rtsp://192.168.100.4:554/\""
     },
     {
-      "id": "okam-3",
-      "name": "Camera 3 · O-Kam Pro",
+      "id": "okam_1",
+      "name": "O-Kam 1 · Panoramic Main (Sensor Tetap)",
       "port": 8082,
       "type": "okam",
       "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0",
+      "rtspTransport": "tcp",
       "streamPath": "/api/cameras/okam_1/stream.mjpg",
       "snapshotPath": "/api/cameras/okam_1/snapshot",
       "metricsPath": "/api/cameras/okam_1/metrics",
+      "status": "disconnected",
+      "fps": 0.0,
       "resolution": "1920x1080",
+      "latency": 0.0,
       "targetFps": 15.0,
-      "aliases": ["okam_1", "okam_2", "okam_3", "okam-1", "okam-2"],
-      "lenses": [
-        {
-          "id": "1",
-          "name": "Layar 1 · Panoramic Main (Sensor Tetap)",
-          "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0",
-          "resolution": "1920x1080",
-          "streamPath": "/api/cameras/okam_1/stream.mjpg",
-          "snapshotPath": "/api/cameras/okam_1/snapshot",
-          "metricsPath": "/api/cameras/okam_1/metrics"
-        },
-        {
-          "id": "2",
-          "name": "Layar 2 · Area Kiri (Pagar & Jalan)",
-          "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_0",
-          "resolution": "1920x1080",
-          "streamPath": "/api/cameras/okam_1/stream.mjpg",
-          "snapshotPath": "/api/cameras/okam_1/snapshot",
-          "metricsPath": "/api/cameras/okam_1/metrics"
-        },
-        {
-          "id": "3",
-          "name": "Layar 3 · PTZ Motorik (Area Teras)",
-          "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10555/tcp/av0_0",
-          "resolution": "1920x1080",
-          "streamPath": "/api/cameras/okam_2/stream.mjpg",
-          "snapshotPath": "/api/cameras/okam_2/snapshot",
-          "metricsPath": "/api/cameras/okam_2/metrics"
-        }
-      ],
+      "aliases": ["okam-3", "okam-1"],
+      "cmd": "python -u \"C:\\DaffaP\\Project df\\CamHUB\\core\\okam_adapter.py\" --config config/services_config.json --port 8082"
+    },
+    {
+      "id": "okam_2",
+      "name": "O-Kam 2 · PTZ Motorik (Area Teras & Pintu)",
+      "port": 8082,
+      "type": "okam",
+      "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10555/tcp/av0_0",
+      "rtspTransport": "tcp",
+      "streamPath": "/api/cameras/okam_2/stream.mjpg",
+      "snapshotPath": "/api/cameras/okam_2/snapshot",
+      "metricsPath": "/api/cameras/okam_2/metrics",
+      "status": "disconnected",
+      "fps": 0.0,
+      "resolution": "1920x1080",
+      "latency": 0.0,
+      "targetFps": 15.0,
+      "aliases": ["okam-2"],
+      "cmd": "python -u \"C:\\DaffaP\\Project df\\CamHUB\\core\\okam_adapter.py\" --config config/services_config.json --port 8082"
+    },
+    {
+      "id": "okam_3",
+      "name": "O-Kam 3 · Sub-Stream Sensor (Wide Aux)",
+      "port": 8082,
+      "type": "okam",
+      "rtspUrl": "rtsp://admin:Danendra07.@192.168.100.6:10554/tcp/av0_1",
+      "rtspTransport": "tcp",
+      "streamPath": "/api/cameras/okam_3/stream.mjpg",
+      "snapshotPath": "/api/cameras/okam_3/snapshot",
+      "metricsPath": "/api/cameras/okam_3/metrics",
+      "status": "disconnected",
+      "fps": 0.0,
+      "resolution": "448x256",
+      "latency": 0.0,
+      "targetFps": 15.0,
+      "aliases": [],
       "cmd": "python -u \"C:\\DaffaP\\Project df\\CamHUB\\core\\okam_adapter.py\" --config config/services_config.json --port 8082"
     }
   ]

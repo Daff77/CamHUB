@@ -35,7 +35,7 @@ class TestAutoRecovery(unittest.TestCase):
             "unhealthyThresholdSeconds": 5.0,
             "stableDurationToResetAttempts": 10.0
         })
-        self.sup = CameraSupervisor("cam-test-1", "Test Indoor", 8080, "dummy-cmd", self.config)
+        self.sup = CameraSupervisor("cam-test-1", "Test Indoor", 59980, "dummy-cmd", self.config)
 
     def test_initial_state_is_stopped(self):
         self.assertEqual(self.sup.state, SupervisorState.STOPPED)
@@ -60,24 +60,25 @@ class TestAutoRecovery(unittest.TestCase):
 
     def test_exponential_backoff_calculation(self):
         now = 1000.0
-        # Trigger 1
-        self.sup._trigger_auto_recovery("Test failure 1", now)
-        self.assertEqual(self.sup.recovery_attempts, 1)
-        self.assertEqual(self.sup.current_backoff, 1.0)
-        self.assertEqual(self.sup.next_restart_allowed_at, now + 1.0)
+        with patch.object(self.sup, "_execute_auto_restart"):
+            # Trigger 1
+            self.sup._trigger_auto_recovery("Test failure 1", now)
+            self.assertEqual(self.sup.recovery_attempts, 1)
+            self.assertEqual(self.sup.current_backoff, 1.0)
+            self.assertEqual(self.sup.next_restart_allowed_at, now + 1.0)
 
-        # Trigger 2 (after backoff elapsed)
-        now += 2.0
-        self.sup._trigger_auto_recovery("Test failure 2", now)
-        self.assertEqual(self.sup.recovery_attempts, 2)
-        self.assertEqual(self.sup.current_backoff, 2.0)
-        self.assertEqual(self.sup.next_restart_allowed_at, now + 2.0)
+            # Trigger 2 (after backoff elapsed)
+            now += 2.0
+            self.sup._trigger_auto_recovery("Test failure 2", now)
+            self.assertEqual(self.sup.recovery_attempts, 2)
+            self.assertEqual(self.sup.current_backoff, 2.0)
+            self.assertEqual(self.sup.next_restart_allowed_at, now + 2.0)
 
-        # Trigger 3 (after backoff elapsed)
-        now += 3.0
-        self.sup._trigger_auto_recovery("Test failure 3", now)
-        self.assertEqual(self.sup.recovery_attempts, 3)
-        self.assertEqual(self.sup.current_backoff, 4.0)
+            # Trigger 3 (after backoff elapsed)
+            now += 3.0
+            self.sup._trigger_auto_recovery("Test failure 3", now)
+            self.assertEqual(self.sup.recovery_attempts, 3)
+            self.assertEqual(self.sup.current_backoff, 4.0)
 
     def test_circuit_breaker_trips_to_failed(self):
         """After maxRestartAttempts (3) within window, state must transition to FAILED and stop restarts."""
@@ -91,7 +92,8 @@ class TestAutoRecovery(unittest.TestCase):
 
         # 4th failure occurs within 60s window
         now += 8.0
-        self.sup._trigger_auto_recovery("Repeated failure", now)
+        with patch("core.auto_recovery.kill_port_owner"):
+            self.sup._trigger_auto_recovery("Repeated failure", now)
 
         self.assertEqual(self.sup.state, SupervisorState.FAILED)
         self.assertTrue(self.sup.to_dict()["circuitBreakerTripped"])

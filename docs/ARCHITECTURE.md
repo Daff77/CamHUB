@@ -28,7 +28,9 @@ CamHUB/
 │
 ├── docs/                         # Technical documentation & architecture
 │   ├── ARCHITECTURE.md           # This architecture and directory layout guide
+│   ├── AUDIT-2026-11-18.md       # Security & storage reliability audit report
 │   ├── DESIGN.md                 # Design decisions & requirements specification
+│   ├── FEATURE_BACKLOG.md        # Prioritized post-audit feature backlog & acceptance criteria
 │   └── NGROK_SETUP.md            # Ngrok remote HTTPS configuration & setup guide
 │
 ├── scripts/                      # Operational automation & launcher scripts

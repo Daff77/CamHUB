@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400..700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css?v=5.9">
 </head>
-<body data-role="admin">
+<body data-role="viewer">
 <!-- SVG Icon Defs -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
 <symbol id="i-cam" viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM15 11l6-3v8l-6-3"/></symbol>
@@ -199,8 +199,8 @@
         <h1 id="title">Live View</h1>
         <p id="sentence">Watch every camera in one place. Select a camera to focus on it.</p>
       </div>
-      <button class="btn sm" id="btn-toggle-role" aria-label="Switch between Admin and Viewer">
-        Role: <b id="sbf-role">Admin</b>
+      <button class="btn sm" id="btn-toggle-role" aria-label="Manage session and account role">
+        Session: <b id="sbf-role">Sign in</b>
       </button>
     </div>
 
@@ -227,7 +227,7 @@
       <div class="grid kpis">
         <div class="card kpi">
           <h2>Total cameras</h2>
-          <b id="fleet-total">3</b>
+          <b id="fleet-total">5</b>
           <span>Across the local network</span>
         </div>
         <div class="card kpi good">
@@ -237,7 +237,7 @@
         </div>
         <div class="card kpi warn">
           <h2>Degraded</h2>
-          <b id="fleet-degraded">3</b>
+          <b id="fleet-degraded">5</b>
           <span>Connecting, no frames yet</span>
         </div>
         <div class="card kpi bad">
@@ -321,10 +321,12 @@
             <canvas id="fps-chart-canvas" role="img" aria-label="Frame rate for each camera"></canvas>
             <div class="empty" id="fps-empty"><p>No frames yet.<br>Rates appear once a camera connects.</p></div>
           </div>
-          <div class="legend">
-            <span><i style="background:#f2f2f2"></i>Camera 1: <b id="fps-val-1">0.0 fps</b></span>
-            <span><i style="background:#6aa9e8"></i>Camera 2: <b id="fps-val-2">0.0 fps</b></span>
-            <span><i style="background:#8c8c8c"></i>Camera 3: <b id="fps-val-3">0.0 fps</b></span>
+          <div class="legend" style="flex-wrap:wrap;">
+            <span><i style="background:#f2f2f2"></i>Cam 1 (V380): <b id="fps-val-1">0.0 fps</b></span>
+            <span><i style="background:#6aa9e8"></i>Cam 2 (V380): <b id="fps-val-2">0.0 fps</b></span>
+            <span><i style="background:#00e5ff"></i>O-Kam 1: <b id="fps-val-3">0.0 fps</b></span>
+            <span><i style="background:#7dd87d"></i>O-Kam 2: <b id="fps-val-4">0.0 fps</b></span>
+            <span><i style="background:#f5b942"></i>O-Kam 3: <b id="fps-val-5">0.0 fps</b></span>
           </div>
         </div>
       </div>
@@ -391,11 +393,19 @@
         </div>
 
         <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
             <h2>Archive Segments</h2>
             <button class="btn sq sm" id="refresh-recordings" title="Refresh recordings list">
               <svg class="ico"><use href="#i-re"/></svg>
             </button>
+          </div>
+          <div class="seg" id="recordings-cam-filter" role="group" aria-label="Filter recordings by camera" style="margin-bottom:10px;flex-wrap:wrap">
+            <button aria-pressed="true" data-rec-cid="">All</button>
+            <button aria-pressed="false" data-rec-cid="v380-1">Cam 1</button>
+            <button aria-pressed="false" data-rec-cid="v380-2">Cam 2</button>
+            <button aria-pressed="false" data-rec-cid="okam_1">O-Kam 1</button>
+            <button aria-pressed="false" data-rec-cid="okam_2">O-Kam 2</button>
+            <button aria-pressed="false" data-rec-cid="okam_3">O-Kam 3</button>
           </div>
           <div class="rec-list" id="recordings-list">
             <div class="empty"><p>Loading recordings…</p></div>
@@ -709,9 +719,40 @@
   </div>
 </dialog>
 
+<dialog id="auth-dialog" style="max-width:420px;width:92vw;">
+  <h2 id="auth-dlg-title">CamHUB Sign In</h2>
+  <p id="auth-dlg-sub" class="sub" style="margin-bottom:14px">Authenticate with your server-verified Admin or Viewer account.</p>
+  <form id="auth-form">
+    <div class="form-group" id="auth-bootstrap-group" style="display:none;">
+      <label for="auth-bootstrap">Bootstrap Token (from <code>config/auth_bootstrap.token</code>)</label>
+      <input type="password" id="auth-bootstrap" class="input-text" autocomplete="off" />
+    </div>
+    <div class="form-group">
+      <label for="auth-username">Username</label>
+      <input type="text" id="auth-username" class="input-text" value="admin" autocomplete="username" required />
+    </div>
+    <div class="form-group">
+      <label for="auth-password">Password</label>
+      <input type="password" id="auth-password" class="input-text" autocomplete="current-password" required />
+    </div>
+    <div class="form-group" id="auth-viewer-pw-group" style="display:none;">
+      <label for="auth-viewer-password">Optional Viewer Password (min 8 chars)</label>
+      <input type="password" id="auth-viewer-password" class="input-text" autocomplete="new-password" />
+    </div>
+    <p id="auth-error-msg" class="bad-t" style="display:none;font-size:12.5px;margin:6px 0 10px;"></p>
+    <div class="acts" style="justify-content:space-between;">
+      <button class="btn dng" type="button" id="auth-logout-btn" style="display:none;">Sign Out</button>
+      <div style="display:flex;gap:8px;margin-left:auto;">
+        <button class="btn" type="button" id="auth-cancel-btn">Close</button>
+        <button class="btn primary" type="submit" id="auth-submit-btn">Sign In</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <!-- Application Logic -->
-<script src="app.js?v=5.9"></script>
+<script src="app.js?v=6.0"></script>
 </body>
 </html>

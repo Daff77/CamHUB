@@ -19,6 +19,14 @@ from urllib.request import Request, urlopen
 import numpy as np
 from PIL import Image
 
+from core.media_index import (
+    sanitize_path,
+    get_index_lock,
+    read_json_index,
+    atomic_write_json_index,
+    safe_remove_media_file,
+)
+
 # CamHUB project root directory (parent of core/)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_EVENTS_DIR = os.path.join(BASE_DIR, "events")
@@ -37,14 +45,6 @@ DEFAULT_MOTION_CONFIG = {
     "maxStorageMb": 1000.0,
     "cameras": {}                     # Per-camera threshold overrides
 }
-
-def sanitize_path(base_dir: str, target_path: str) -> str:
-    """Ensure target path is strictly within base directory (prevents path traversal)."""
-    abs_base = os.path.abspath(base_dir)
-    abs_target = os.path.abspath(target_path)
-    if os.path.commonpath([abs_base, abs_target]) != abs_base:
-        raise ValueError("Access denied: path traversal detected")
-    return abs_target
 
 class CameraMotionTracker:
     """Tracks running background model and evaluates motion for a single camera."""
@@ -196,21 +196,22 @@ class MotionDetectorService:
 
     def __init__(self, config_provider, base_dir: str = None):
         self.config_provider = config_provider
-        self.base_dir = base_dir or BASE_DIR
-        self.lock = threading.RLock()
+        self.base_dir = os.path.abspath(base_dir or BASE_DIR)
         self.trackers = {}
         self.running = False
         self.worker_thread = None
 
-        cfg = self.config_provider().get("motionDetection", {})
+        cfg = (self.config_provider() or {}).get("motionDetection", {})
         self.config = dict(DEFAULT_MOTION_CONFIG)
         self.config.update(cfg)
 
         self.storage_dir = os.path.join(self.base_dir, "events")
         os.makedirs(self.storage_dir, exist_ok=True)
         self.index_file = os.path.join(self.storage_dir, "events_index.json")
+        self.lock = get_index_lock(self.index_file)
 
         self.index = {}  # event_id -> event dict
+        self._index_mtime = 0.0
         self.load_index()
 
         # Service metrics
@@ -316,38 +317,26 @@ class MotionDetectorService:
         self.save_index()
 
     def load_index(self):
-        if os.path.exists(self.index_file):
-            try:
-                with open(self.index_file, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                    if content:
-                        self.index = json.loads(content)
-            except Exception as e:
-                print(f"[MOTION] Error reading event index: {e}", file=sys.stderr)
-        else:
-            if not self.index:
-                self.index = {}
+        with self.lock:
+            if os.path.exists(self.index_file):
+                try:
+                    mtime = os.path.getmtime(self.index_file)
+                    if mtime != self._index_mtime or not self.index:
+                        self.index = read_json_index(self.index_file)
+                        self._index_mtime = mtime
+                except Exception as e:
+                    print(f"[MOTION] Error reading event index: {e}", file=sys.stderr)
+            else:
+                if not self.index:
+                    self.index = {}
+                self._index_mtime = 0.0
 
     def save_index(self):
         with self.lock:
             try:
-                tmp_file = f"{self.index_file}.tmp.{os.getpid()}"
-                with open(tmp_file, "w", encoding="utf-8") as f:
-                    json.dump(self.index, f, indent=2)
-                for _ in range(3):
-                    try:
-                        os.replace(tmp_file, self.index_file)
-                        break
-                    except OSError:
-                        time.sleep(0.05)
-                else:
-                    with open(self.index_file, "w", encoding="utf-8") as f:
-                        json.dump(self.index, f, indent=2)
-                    if os.path.exists(tmp_file):
-                        try:
-                            os.remove(tmp_file)
-                        except:
-                            pass
+                atomic_write_json_index(self.index_file, self.index)
+                if os.path.exists(self.index_file):
+                    self._index_mtime = os.path.getmtime(self.index_file)
             except Exception as e:
                 print(f"[MOTION] Error saving event index: {e}", file=sys.stderr)
 
@@ -499,8 +488,9 @@ class MotionDetectorService:
         for item in items:
             start_sec = item.get("timestamp", 0) / 1000.0
             if (now_ts - start_sec) > max_age_sec:
-                purged_ids.append(item["id"])
-                self._delete_snapshot_file(item)
+                can_unindex, _ = self._delete_snapshot_file(item)
+                if can_unindex:
+                    purged_ids.append(item["id"])
 
         with self.lock:
             for eid in purged_ids:
@@ -513,42 +503,40 @@ class MotionDetectorService:
         max_bytes = max_storage_mb * (1024 * 1024)
 
         if total_bytes > max_bytes:
-            # Sort oldest first
             sorted_items = sorted(items, key=lambda x: x.get("timestamp", 0))
             for item in sorted_items:
                 if total_bytes <= max_bytes:
                     break
-                self._delete_snapshot_file(item)
-                total_bytes -= item.get("fileSizeBytes", 0)
-                with self.lock:
-                    if item["id"] in self.index:
-                        del self.index[item["id"]]
+                can_unindex, _ = self._delete_snapshot_file(item)
+                if can_unindex:
+                    total_bytes -= item.get("fileSizeBytes", 0)
+                    with self.lock:
+                        if item["id"] in self.index:
+                            del self.index[item["id"]]
 
         self.save_index()
 
-    def _delete_snapshot_file(self, item: dict):
-        try:
-            rel = item.get("snapshotPath")
-            if rel:
-                full = sanitize_path(self.base_dir, os.path.join(self.base_dir, rel))
-                if os.path.exists(full):
-                    os.remove(full)
-                    parent = os.path.dirname(full)
-                    if os.path.exists(parent) and not os.listdir(parent):
-                        os.rmdir(parent)
-        except:
-            pass
+    def _delete_snapshot_file(self, item: dict) -> Tuple[bool, Optional[str]]:
+        rel = item.get("snapshotPath")
+        if not rel:
+            return True, None
+        can_unindex, _, err = safe_remove_media_file(self.base_dir, self.storage_dir, rel)
+        return can_unindex, err
 
     def delete_event(self, event_id: str) -> tuple[bool, str]:
         with self.lock:
+            self.load_index()
             item = self.index.get(event_id)
             if not item:
                 return False, f"Event '{event_id}' not found"
-            del self.index[event_id]
 
-        self._delete_snapshot_file(item)
-        self.save_index()
-        return True, f"Deleted event '{event_id}'"
+            can_unindex, err = self._delete_snapshot_file(item)
+            if not can_unindex:
+                return False, f"Failed to delete snapshot file for event '{event_id}': {err}"
+
+            del self.index[event_id]
+            self.save_index()
+            return True, f"Deleted event '{event_id}'"
 
     def enrich_event_with_ai(self, event_id: str) -> Optional[dict]:
         """Run on-demand AI detection on an existing event's snapshot and update index."""

@@ -239,6 +239,8 @@ class CameraHealthTracker:
             "fps": round(src_fps, 1),
             "targetFps": round(target_fps, 1),
             "latencyMs": round(lat_ms, 1),
+            "resolution": metrics_data.get("resolution"),
+            "workerStatus": metrics_data.get("status"),
             "totalFrames": total_frames,
             "frameAgeSeconds": round(frame_age, 1),
             "queueDepth": q_depth,
@@ -365,6 +367,7 @@ class CameraHealthMonitor:
             self.global_thresholds.update(global_thresholds)
 
         self.trackers = {}
+        self.aliases = {}
         self.lock = threading.Lock()
         self.running = False
         self.worker_thread = None
@@ -392,11 +395,14 @@ class CameraHealthMonitor:
 
         with self.lock:
             active_ids = set()
+            self.aliases.clear()
             for cam in cameras:
                 cid = cam.get("id")
                 port = cam.get("port")
                 name = cam.get("name", cid)
                 active_ids.add(cid)
+                for al in cam.get("aliases", []):
+                    self.aliases[al] = cid
 
                 # Merge global and per-camera thresholds
                 merged_thresh = dict(self.global_thresholds)
@@ -411,6 +417,7 @@ class CameraHealthMonitor:
                     self.trackers[cid] = CameraHealthTracker(cid, name, port, merged_thresh)
                 else:
                     self.trackers[cid].port = port
+                    self.trackers[cid].name = name
                     self.trackers[cid].thresholds = merged_thresh
 
                 self.trackers[cid].metrics_path = metrics_path
@@ -486,7 +493,8 @@ class CameraHealthMonitor:
 
     def get_camera_health(self, camera_id: str) -> dict:
         with self.lock:
-            tracker = self.trackers.get(camera_id)
+            resolved = self.aliases.get(camera_id, camera_id)
+            tracker = self.trackers.get(resolved)
             if tracker:
                 return tracker.to_dict()
         return None
